@@ -1,0 +1,29 @@
+MIT License
+
+Copyright (c) 2026 prjToka (Tokas / Xiang-zi Xie)
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+---
+
+本授權（MIT）僅涵蓋本專案的「程式碼」。另有下列不同來源與條款：
+
+- 地圖圖資：© OpenStreetMap 貢獻者，採 ODbL；地圖圖磚 © CARTO。使用時須保留署名。
+- 使用者上傳之照片與文字：著作權屬各上傳者，並依站內投稿條款以公開方式分享。
+- 「一百種停下來的理由」椅子資料整理自 ArcGIS StoryMaps，公開展示前請確認原作者授權並標註來源。

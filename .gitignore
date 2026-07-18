@@ -1,0 +1,8 @@
+# 執行期資料（不進版控）
+/data/*
+!/data/.gitkeep
+/photos/*
+!/photos/.gitkeep
+
+# 機密設定（含 admin PIN、鹽值）—— 部署時由 config.example.php 複製後填入
+/api/config.php
