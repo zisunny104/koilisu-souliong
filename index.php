@@ -46,6 +46,9 @@ switch ($action) {
     case 'manager':
         require __DIR__ . '/api/admin.php';        // 主站管理：<base>/manager（相容 /admin、?api=admin）
         return;
+    case 'privacy':
+        include __DIR__ . '/privacy.php';          // 隱私與資料說明：<base>/privacy
+        return;
     default:
         // 地圖或首頁：<base>/<mapid> 開該地圖；<base>/ 顯示地圖清單
         $proj = ($action !== 'index' && $action !== '') ? $action : ($_GET['p'] ?? '');

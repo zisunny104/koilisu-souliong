@@ -14,6 +14,7 @@ window.MapApp = (() => {
   const ORG_URL = 'https://toka.dev';          // prjToka
   const CREDIT_HTML =
     '<a href="' + REPO_URL + '" target="_blank" rel="noopener" aria-label="GitHub 原始碼"><i class="fa-brands fa-github"></i></a> &middot; ' +
+    '<a href="https://leafletjs.com" target="_blank" rel="noopener">Leaflet</a> &middot; ' +
     '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> 貢獻者 &middot; ' +
     '<a href="https://carto.com/attributions" target="_blank" rel="noopener">CARTO</a> &middot; ' +
     '<a href="' + SITE_URL + '">Souliong</a> &middot; <a href="' + ORG_URL + '" target="_blank" rel="noopener">prjToka</a>';
@@ -95,9 +96,22 @@ window.MapApp = (() => {
   function canPost() { return !EMBED && (!APP.gated || !!storedCode()); }
   function applyPostState() {
     document.body.classList.toggle('noupload', !canPost());
-    const row = document.getElementById('unlockRow');
-    if (row) row.style.display = (APP.gated && !storedCode() && !EMBED) ? '' : 'none';
+    const fab = document.getElementById('unlockFab');
+    if (fab) fab.style.display = (APP.gated && !storedCode() && !EMBED) ? '' : 'none';
+    updateIdentity();
     if (current) renderEntries();   // 讓「編輯說明」鈕跟著出現/消失
+  }
+  // 右上身分指示：顯示目前暱稱（未輸入則顯示本次匿名預覽名）；解鎖狀態附鎖圖示
+  function updateIdentity() {
+    const el = document.getElementById('identity');
+    if (!el) return;
+    if (EMBED) { el.style.display = 'none'; return; }
+    let name = '';
+    try { name = (localStorage.getItem('myName') || '').trim(); } catch (e) {}
+    const shown = name || SESSION_ANON;
+    const unlocked = !APP.gated || !!storedCode();
+    el.innerHTML = '<i class="fa-solid ' + (unlocked ? 'fa-user-check' : 'fa-user') + '"></i> ' + esc(shown);
+    el.title = '投稿者身分：' + shown + (name ? '' : '（尚未命名，送出前可改）');
   }
   async function doUnlock(code) {
     code = (code || '').trim();
@@ -660,9 +674,10 @@ window.MapApp = (() => {
     META = APP.meta || await fetch(APP.base + 'projects/' + PROJECT + '/meta.json').then(r => r.json());
     POINTS = APP.points || await fetch(APP.base + 'projects/' + PROJECT + '/' + (META.points || 'points.json')).then(r => r.json());
     document.title = (META.title || '地圖') + (META.subtitle ? '・' + META.subtitle : '');
-    document.getElementById('title').textContent = META.title + (META.subtitle ? '・' + META.subtitle : '');
-    document.getElementById('foot').textContent = (META.source ? '資料來源：' + META.source + '。' : '') +
-      '照片與文字由投稿者公開分享，僅本人可刪除；網站以本機儲存記住你的偏好，不使用追蹤 Cookie。';
+    document.getElementById('titleTxt').textContent = META.title + (META.subtitle ? '・' + META.subtitle : '');
+    document.getElementById('foot').innerHTML =
+      (META.source ? '<div class="foot-src">資料來源：' + esc(META.source) + '</div>' : '') +
+      '<div class="foot-note">投稿內容由投稿者公開分享。<a href="' + esc(APP.base) + 'privacy" target="_blank" rel="noopener">隱私與資料說明</a></div>';
 
     const seen = {};
     POINTS.forEach(c => { if (!seen[c.cat]) seen[c.cat] = { key: c.cat, label: c.catLabel, color: c.color }; });
@@ -748,8 +763,16 @@ window.MapApp = (() => {
       document.getElementById('submitAllBtn').onclick = submitAll;
     }
 
-    // 上傳權限：解鎖彈窗（含 QR 掃描）+ 邀請連結 ?code=
-    const ub = document.getElementById('unlockBtn');
+    // 右上：分享、重置、身分；左下：重置地圖
+    const shareBtn = document.getElementById('shareBtn'); if (shareBtn) shareBtn.onclick = openShare;
+    document.getElementById('shareCopyBtn').onclick = copyShareLink;
+    const resetBtn = document.getElementById('resetBtn'); if (resetBtn) resetBtn.onclick = resetView;
+    const idEl = document.getElementById('identity');
+    const idAction = () => { if (canPost()) { resetQueue(); openModal(null); setTimeout(() => { const n = document.getElementById('modalName'); if (n) n.focus(); }, 60); } else if (APP.gated) { openUnlock(); } };
+    if (idEl) { idEl.onclick = idAction; idEl.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); idAction(); } }; }
+
+    // 上傳權限：解鎖 FAB（右下）+ 彈窗（含 QR 掃描）+ 邀請連結 ?code=
+    const ub = document.getElementById('unlockFab');
     if (ub) ub.onclick = openUnlock;
     document.getElementById('unlockSubmit').onclick = trySubmitUnlock;
     document.getElementById('scanBtn').onclick = startScan;
@@ -767,7 +790,19 @@ window.MapApp = (() => {
     // 關閉浮動卡片：×、地圖背景點擊、Esc
     const pc = document.querySelector('.p-close'); if (pc) pc.onclick = closePanel;
     map.on('click', () => closePanel());
-    document.addEventListener('keydown', e => { if (e.key === 'Escape') { closePanel(); closeModal(); closeEmbed(); } });
+    setupTitleMarquee();
+
+    // 鍵盤快速鍵（無障礙）：方向鍵/＋－由 Leaflet 平移縮放；此處補全域鍵
+    document.addEventListener('keydown', e => {
+      const tag = (e.target && e.target.tagName) || '';
+      if (/^(INPUT|TEXTAREA|SELECT)$/.test(tag) || e.metaKey || e.ctrlKey || e.altKey) return;
+      const k = e.key.toLowerCase();
+      if (k === 'escape') { closePanel(); closeModal(); closeEmbed(); closeUnlock(); closeShare(); closePin(); }
+      else if (k === 'r') { resetView(); }
+      else if (k === 's' && !EMBED) { openShare(); }
+      else if (k === 't') { const b = document.getElementById('themeBtn'); if (b) b.click(); }
+      else if (k === 'u' && !EMBED) { if (canPost()) { resetQueue(); openModal(current); } else if (APP.gated) openUnlock(); }
+    });
 
     await computeMyHash();       // 先算出本裝置擁有者雜湊（供「刪自己的」判斷）
     await loadContributions();
@@ -791,6 +826,46 @@ window.MapApp = (() => {
     document.getElementById('embedDialog').classList.add('open');
   }
   function closeEmbed() { document.getElementById('embedDialog').classList.remove('open'); }
+
+  // 公開地圖網址（分享用，不含 embed/code）
+  function mapPublicUrl() { return location.origin + APP.base + PROJECT; }
+  // 重置地圖回初始視角（左下地圖操作）
+  function resetView() {
+    if (!map) return;
+    if (POINTS && POINTS.length) map.fitBounds(L.latLngBounds(POINTS.map(c => [c.lat, c.lon])).pad(0.08));
+    else map.setView(META.center || [23.9, 120.7], META.zoom || 14);
+    feature('reset');
+  }
+  // 全螢幕分享：地圖背景 + 中央浮空卡片（含 QR）
+  function openShare() {
+    feature('share');
+    const url = mapPublicUrl();
+    document.getElementById('shareTitle').textContent = META.title || 'Souliong 循跡';
+    document.getElementById('shareSub').textContent = META.subtitle || '循著地方留下的痕跡，用地圖探索一座城市。';
+    document.getElementById('shareUrl').textContent = url;
+    const box = document.getElementById('shareQr'); box.innerHTML = '';
+    try { const qr = qrcode(0, 'M'); qr.addData(url); qr.make(); box.innerHTML = qr.createSvgTag({ cellSize: 5, margin: 2, scalable: true }); }
+    catch (e) { box.textContent = 'QR 產生失敗'; }
+    document.getElementById('shareScreen').classList.add('open');
+  }
+  function closeShare() { document.getElementById('shareScreen').classList.remove('open'); }
+  async function copyShareLink() {
+    try { await navigator.clipboard.writeText(mapPublicUrl()); } catch (e) { }
+    const m = document.getElementById('shareCopyMsg'); if (m) { m.textContent = '已複製 ✓'; setTimeout(() => m.textContent = '', 2000); }
+  }
+  // 標題單擊 → 若名稱溢出則跑馬燈一次（與形狀彩蛋並存，兩者都綁在同一次點擊）
+  function setupTitleMarquee() {
+    const el = document.getElementById('title');
+    if (!el) return;
+    const run = () => {
+      if (el.scrollWidth > el.clientWidth + 2) {
+        el.classList.remove('marquee'); void el.offsetWidth; el.classList.add('marquee');
+        setTimeout(() => el.classList.remove('marquee'), 9000);
+      }
+    };
+    el.addEventListener('click', run);
+    el.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); run(); } });
+  }
 
   // 圓角形狀（內嵌 SVG，stroke-linejoin:round → 尖角變圓角）；顏色用 currentColor 跟主題
   function polyPoints(sides, R) {
@@ -891,5 +966,5 @@ window.MapApp = (() => {
   function closePin() { document.getElementById('pinDialog').classList.remove('open'); document.removeEventListener('keydown', pinKey); }
 
   boot();
-  return { closePanel, closeModal, openLightbox, openEmbed, closeEmbed, closePin, closeUnlock };
+  return { closePanel, closeModal, openLightbox, openEmbed, closeEmbed, closePin, closeUnlock, closeShare };
 })();

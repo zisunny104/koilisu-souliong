@@ -64,12 +64,9 @@ $jsonFlags = JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JS
 
 <div id="controls" class="floatcard">
   <div class="ctl-head">
-    <a class="icon-btn hide-in-embed" href="<?= $b ?>" title="回地圖列表" aria-label="回地圖列表"><i class="fa-solid fa-house" aria-hidden="true"></i></a>
-    <span class="brand" id="title">Souliong 循跡</span>
+    <span class="brand" id="title" title="點一下看完整名稱" role="button" tabindex="0"><span class="brand-txt" id="titleTxt">Souliong 循跡</span></span>
     <span id="brandShape" class="brand-shape" aria-hidden="true"></span>
     <span class="spacer"></span>
-    <button id="embedBtn" class="icon-btn hide-in-embed" title="取得嵌入碼" aria-label="嵌入本地圖"><i class="fa-solid fa-code" aria-hidden="true"></i></button>
-    <button id="themeBtn" class="icon-btn" title="切換主題（系統／淺／深）" aria-label="切換深淺主題"><i class="fa-solid fa-circle-half-stroke" aria-hidden="true"></i></button>
     <button id="collapseBtn" class="icon-btn" title="收折" aria-label="收合控制面板"><i class="fa-solid fa-chevron-down" aria-hidden="true"></i></button>
   </div>
   <div class="ctl-body" id="ctlBody">
@@ -81,16 +78,38 @@ $jsonFlags = JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JS
     <div class="ctl-row">
       <select id="personFilter" title="篩選投稿者，看他的觀察地圖"><option value="">所有投稿者</option></select>
     </div>
-    <div class="ctl-row" id="unlockRow" style="display:none">
-      <button class="btn" id="unlockBtn" title="輸入投稿碼以解鎖上傳"><i class="fa-solid fa-lock"></i> 解鎖投稿</button>
-    </div>
     <div class="ctl-foot" id="foot"></div>
   </div>
 </div>
 
+<div id="topright" class="tr-group">
+  <span id="identity" class="idchip" title="投稿者身分" role="button" tabindex="0"></span>
+  <a class="icon-btn hide-in-embed" id="homeBtn" href="<?= $b ?>" title="回地圖列表" aria-label="回地圖列表"><i class="fa-solid fa-house" aria-hidden="true"></i></a>
+  <button class="icon-btn" id="shareBtn" title="分享這張地圖" aria-label="分享這張地圖"><i class="fa-solid fa-share-nodes" aria-hidden="true"></i></button>
+  <button id="embedBtn" class="icon-btn hide-in-embed" title="取得嵌入碼" aria-label="嵌入本地圖"><i class="fa-solid fa-code" aria-hidden="true"></i></button>
+  <button id="themeBtn" class="icon-btn" title="切換主題（系統／淺／深）" aria-label="切換深淺主題"><i class="fa-solid fa-circle-half-stroke" aria-hidden="true"></i></button>
+</div>
+
+<button class="icon-btn mapop-btn" id="resetBtn" title="回到地圖初始位置（R）" aria-label="重置地圖視角"><i class="fa-solid fa-location-crosshairs" aria-hidden="true"></i></button>
+
 <button class="fab upload-only" id="uploadBtn"><i class="fa-solid fa-plus"></i> 上傳</button>
+<button class="fab fab-unlock" id="unlockFab" style="display:none"><i class="fa-solid fa-lock"></i> 解鎖投稿</button>
 <input type="file" id="pickImages" multiple hidden>
 <input type="text" id="myName" hidden>
+
+<div id="shareScreen" class="sharescreen" aria-hidden="true">
+  <div class="share-card">
+    <button class="icon-btn share-close" onclick="MapApp.closeShare()" aria-label="關閉"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>
+    <div class="share-qr" id="shareQr" aria-hidden="true"></div>
+    <div class="share-title" id="shareTitle"></div>
+    <div class="share-sub" id="shareSub"></div>
+    <div class="share-url" id="shareUrl"></div>
+    <div class="dialog-actions" style="justify-content:center">
+      <button class="btn primary" id="shareCopyBtn"><i class="fa-solid fa-link"></i> 複製連結</button>
+      <span id="shareCopyMsg" class="hint"></span>
+    </div>
+  </div>
+</div>
 
 <div id="cloudWarn" class="toast" style="display:none"></div>
 
@@ -163,6 +182,7 @@ $jsonFlags = JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JS
 <script src="https://cdn.jsdelivr.net/npm/exifr/dist/full.umd.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
+<script><?php readfile(__DIR__ . '/assets/vendor/qrcode-generator.js'); ?></script>
 <script><?php readfile(__DIR__ . '/assets/viewer.js'); ?></script>
 </body>
 </html>

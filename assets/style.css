@@ -212,7 +212,8 @@ button i{pointer-events:none}
 .leaflet-bar a:hover{background:var(--hover)}
 .leaflet-bar a:last-child{border-bottom:none}
 .leaflet-bar a.leaflet-disabled{opacity:.4}
-.leaflet-control-attribution{background:var(--glass) !important;-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);color:var(--muted) !important;border:1px solid var(--line);border-radius:999px;padding:3px 11px !important;font-size:10px;line-height:1.4;margin:16px !important;box-shadow:var(--sh-1)}
+.leaflet-control-attribution{background:var(--glass) !important;-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);color:var(--muted) !important;border:1px solid var(--line);border-radius:14px;padding:4px 12px !important;font-size:10px;line-height:1.5;margin:14px !important;box-shadow:var(--sh-1);max-width:calc(100vw - 28px);white-space:normal;text-align:center;word-break:keep-all}
+.leaflet-control-attribution i{margin:0 1px}
 .leaflet-control-attribution a{color:var(--muted) !important;text-decoration:none}
 .leaflet-touch .leaflet-bar a{width:36px;height:36px;line-height:36px}
 /* 版權置中於下方（縮放留在左下） */
@@ -225,3 +226,42 @@ button i{pointer-events:none}
 #lb{position:fixed;inset:0;background:rgba(0,0,0,.92);display:none;align-items:center;justify-content:center;z-index:2000;cursor:zoom-out;padding:16px}
 #lb img{max-width:94vw;max-height:86vh;border-radius:var(--r-md);box-shadow:var(--sh-3)}
 #lb .cap{position:absolute;bottom:20px;left:0;right:0;text-align:center;color:#fff;font-size:13px;opacity:.9}
+
+/* ── 右上：網頁資訊群組 ── */
+.tr-group{position:fixed;top:14px;right:14px;z-index:1250;display:flex;align-items:center;gap:.375rem;background:var(--glass);-webkit-backdrop-filter:blur(16px) saturate(1.6);backdrop-filter:blur(16px) saturate(1.6);border:1px solid var(--line);border-radius:999px;box-shadow:var(--sh-2);padding:.3rem .45rem;max-width:calc(100vw - 28px)}
+.idchip{display:inline-flex;align-items:center;gap:.4rem;font-size:.75rem;font-weight:700;color:var(--fg);background:var(--hover);border-radius:999px;padding:.35rem .6rem;max-width:34vw;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer;transition:background var(--t)}
+.idchip:hover{background:var(--line)}.idchip i{color:var(--muted)}
+body.embed .tr-group{display:none}
+/* 桌機時把點位卡片下移，讓出右上群組 */
+@media (min-width:641px){ #panel{top:60px;max-height:calc(100dvh - 74px)} }
+
+/* ── 左下：地圖操作（重置，位於縮放鈕上方）── */
+.mapop-btn{position:fixed;left:14px;bottom:calc(88px + env(safe-area-inset-bottom));z-index:1000;background:var(--glass);-webkit-backdrop-filter:blur(16px);backdrop-filter:blur(16px);border:1px solid var(--line);box-shadow:var(--sh-1);width:2.1rem;height:2.1rem;color:var(--fg)}
+body.embed .mapop-btn{display:none}
+
+/* ── 右下：解鎖 FAB（與上傳互斥同位）── */
+.fab-unlock{background:var(--panel);color:var(--fg);border:1px solid var(--line)}
+
+/* ── 全螢幕分享（地圖背景 + 中央浮空卡片）── */
+.sharescreen{position:fixed;inset:0;z-index:1700;display:none;align-items:center;justify-content:center;padding:1.25rem;background:rgba(0,0,0,.5);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)}
+.sharescreen.open{display:flex}
+.share-card{position:relative;background:var(--panel);border:1px solid var(--line);border-radius:var(--r-lg);box-shadow:var(--sh-3);padding:1.6rem 1.5rem 1.4rem;width:min(22.5rem,92vw);text-align:center}
+.share-close{position:absolute;top:.6rem;right:.6rem}
+.share-qr{width:min(15rem,70vw);height:min(15rem,70vw);margin:.25rem auto .9rem;background:#fff;padding:.6rem;border-radius:14px;box-sizing:border-box}
+.share-qr svg{width:100%;height:100%;display:block}
+.share-title{font-size:1.15rem;font-weight:800;line-height:1.3}
+.share-sub{font-size:.82rem;color:var(--muted);margin-top:.25rem;line-height:1.6}
+.share-url{font-family:ui-monospace,Consolas,monospace;font-size:.72rem;color:var(--muted);word-break:break-all;margin:.75rem 0 .9rem;background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:.5rem .6rem}
+
+/* ── 標題跑馬燈（單擊一次；與形狀彩蛋並存）── */
+.brand{max-width:min(52vw,220px)}
+.brand-txt{display:inline-block;white-space:nowrap}
+.brand.marquee{overflow:hidden}
+.brand.marquee .brand-txt{animation:marquee 8s ease-in-out}
+@keyframes marquee{0%,8%{transform:translateX(0)}50%{transform:translateX(var(--mq-shift,0))}92%,100%{transform:translateX(0)}}
+@media (prefers-reduced-motion:reduce){ .brand.marquee .brand-txt{animation:none} }
+
+/* 卡片底部：資料來源（上）與平台聲明（下，較淡並以細線分隔） */
+.foot-src{font-size:11px;color:var(--muted);line-height:1.6}
+.foot-note{font-size:10.5px;color:var(--muted);opacity:.85;line-height:1.6;margin-top:6px;padding-top:6px;border-top:1px solid var(--line)}
+.foot-src:empty{display:none}
