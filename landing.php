@@ -91,9 +91,9 @@ footer a{color:inherit}
   <?php endif; ?>
 </div>
 <footer>
-  <a href="https://leafletjs.com" target="_blank" rel="noopener">Leaflet</a>
-  ・ &copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> 貢獻者
+  &copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> 貢獻者
   ・ <a href="https://carto.com/attributions" target="_blank" rel="noopener">CARTO</a>
+  ・ <a href="https://leafletjs.com" target="_blank" rel="noopener">Leaflet</a>
   ・ <a href="https://github.com/zisunny104/koilisu-souliong" target="_blank" rel="noopener"><i class="fa-brands fa-github"></i> GitHub</a>
   ・ <a href="<?= $b ?>">Souliong</a>
   ・ <a href="https://toka.dev" target="_blank" rel="noopener">prjToka</a><br>

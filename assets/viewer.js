@@ -8,14 +8,14 @@ window.MapApp = (() => {
   const apiUrl = (action) => APP.base + '?api=' + action;
   const catOrder = ['green', 'pink', 'blue'];
 
-  // 版權標註（依 OSM 慣例含連結）——第三方（義務標註）在前；自家連結依重要性排後：GitHub → Souliong → prjToka
+  // 版權標註（依 OSM 慣例含連結）——資料著作權（OSM）領頭，其次圖磚/框架（CARTO/Leaflet），自家連結依重要性排最後：GitHub → Souliong → prjToka
   const REPO_URL = 'https://github.com/zisunny104/koilisu-souliong';
   const SITE_URL = (APP.base || '/');          // Souliong 平台首頁
   const ORG_URL = 'https://toka.dev';          // prjToka
   const CREDIT_HTML =
-    '<a href="https://leafletjs.com" target="_blank" rel="noopener">Leaflet</a> &middot; ' +
     '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> 貢獻者 &middot; ' +
     '<a href="https://carto.com/attributions" target="_blank" rel="noopener">CARTO</a> &middot; ' +
+    '<a href="https://leafletjs.com" target="_blank" rel="noopener">Leaflet</a> &middot; ' +
     '<a href="' + REPO_URL + '" target="_blank" rel="noopener" aria-label="GitHub 原始碼"><i class="fa-brands fa-github"></i></a> &middot; ' +
     '<a href="' + SITE_URL + '">Souliong</a> &middot; <a href="' + ORG_URL + '" target="_blank" rel="noopener">prjToka</a>';
   // 主題：system / light / dark（手動可覆蓋系統偏好）
