@@ -45,22 +45,22 @@ body{margin:0;font-family:system-ui,sans-serif;background:var(--bg);color:var(--
 .page{position:relative;z-index:2}
 .wrap{max-width:940px;margin:0 auto;padding:0 20px 24px}
 header{text-align:center;padding:60px 20px 26px}
-header .logo{font-size:32px;font-weight:800;letter-spacing:-.02em}
-header .tag{color:var(--muted);font-size:14px;margin-top:10px;line-height:1.7}
+header .logo{font-size:2rem;font-weight:800;letter-spacing:-.02em}
+header .tag{color:var(--muted);font-size:0.875rem;margin-top:10px;line-height:1.7}
 .bar{display:flex;justify-content:center;gap:10px;margin:24px 0 6px;flex-wrap:wrap}
-.btn{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:999px;padding:10px 18px;font-size:14px;font-weight:600;background:var(--card);color:var(--fg);cursor:pointer;text-decoration:none;transition:transform .15s,box-shadow .15s;-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px)}
+.btn{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:999px;padding:10px 18px;font-size:0.875rem;font-weight:600;background:var(--card);color:var(--fg);cursor:pointer;text-decoration:none;transition:transform .15s,box-shadow .15s;-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px)}
 .btn.primary{background:var(--accent);color:var(--accent-fg);border-color:var(--accent)}
 .btn:hover{transform:translateY(-1px);box-shadow:0 6px 20px rgba(0,0,0,.15)}
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:18px;margin-top:26px}
 .card{display:flex;flex-direction:column;text-decoration:none;color:inherit;background:var(--card);border:1px solid var(--line);border-radius:var(--r-lg);overflow:hidden;transition:transform .16s,box-shadow .16s;-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px)}
 .card:hover{transform:translateY(-3px);box-shadow:0 16px 44px rgba(0,0,0,.18)}
-.card .cover{height:120px;display:flex;align-items:center;justify-content:center;font-size:40px;color:#fff;background:linear-gradient(135deg,#2e9e5b,#2f7ec6 55%,#e34a6f)}
+.card .cover{height:120px;display:flex;align-items:center;justify-content:center;font-size:2.5rem;color:#fff;background:linear-gradient(135deg,#2e9e5b,#2f7ec6 55%,#e34a6f)}
 .card .body{padding:16px 18px}
-.card h2{margin:0 0 3px;font-size:18px;font-weight:800}
-.card .st{color:var(--muted);font-size:12.5px;margin-bottom:9px}
-.card .desc{font-size:13px;line-height:1.6}
-.empty{text-align:center;color:var(--muted);padding:50px;font-size:14px}
-footer{text-align:center;color:var(--muted);font-size:12px;padding:22px;line-height:1.8}
+.card h2{margin:0 0 3px;font-size:1.125rem;font-weight:800}
+.card .st{color:var(--muted);font-size:0.7813rem;margin-bottom:9px}
+.card .desc{font-size:0.8125rem;line-height:1.6}
+.empty{text-align:center;color:var(--muted);padding:50px;font-size:0.875rem}
+footer{text-align:center;color:var(--muted);font-size:0.75rem;padding:22px;line-height:1.8}
 footer a{color:inherit}
 </style>
 </head>

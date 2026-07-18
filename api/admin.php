@@ -30,7 +30,7 @@ if (!$authed) {
     http_response_code(401);
     header('Content-Type: text/html; charset=utf-8');
     ?><!DOCTYPE html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>管理登入</title>
-    <style>:root{color-scheme:light dark;--bg:#111113;--fg:#f1f1f3;--muted:#9c9ca3;--line:#2b2b2f;--card:#1c1c1f;--accent:#f1f1f3;--accent-fg:#151517}@media(prefers-color-scheme:light){:root{--bg:#f6f6f7;--fg:#1b1b1d;--muted:#6b6b70;--line:#e7e7ea;--card:#fff;--accent:#1b1b1d;--accent-fg:#fff}}*{box-sizing:border-box}body{margin:0;height:100vh;display:grid;place-items:center;background:var(--bg);color:var(--fg);font-family:system-ui,sans-serif}form{background:var(--card);border:1px solid var(--line);border-radius:20px;padding:28px;width:min(320px,90vw);box-shadow:0 12px 40px rgba(0,0,0,.3);text-align:center}h1{font-size:18px;margin:0 0 4px}.s{font-size:12px;color:var(--muted);margin-bottom:18px}input{width:100%;text-align:center;letter-spacing:4px;font-size:20px;padding:12px;border:1px solid var(--line);border-radius:12px;background:var(--bg);color:var(--fg);margin-bottom:12px}button{width:100%;border:none;border-radius:12px;background:var(--accent);color:var(--accent-fg);font-size:15px;font-weight:700;padding:12px;cursor:pointer}.err{color:#ff6b6b;font-size:13px;margin-bottom:10px;min-height:18px}</style></head><body>
+    <style>:root{color-scheme:light dark;--bg:#111113;--fg:#f1f1f3;--muted:#9c9ca3;--line:#2b2b2f;--card:#1c1c1f;--accent:#f1f1f3;--accent-fg:#151517}@media(prefers-color-scheme:light){:root{--bg:#f6f6f7;--fg:#1b1b1d;--muted:#6b6b70;--line:#e7e7ea;--card:#fff;--accent:#1b1b1d;--accent-fg:#fff}}*{box-sizing:border-box}body{margin:0;height:100vh;display:grid;place-items:center;background:var(--bg);color:var(--fg);font-family:system-ui,sans-serif}form{background:var(--card);border:1px solid var(--line);border-radius:20px;padding:28px;width:min(320px,90vw);box-shadow:0 12px 40px rgba(0,0,0,.3);text-align:center}h1{font-size:1.125rem;margin:0 0 4px}.s{font-size:0.75rem;color:var(--muted);margin-bottom:18px}input{width:100%;text-align:center;letter-spacing:4px;font-size:1.25rem;padding:12px;border:1px solid var(--line);border-radius:12px;background:var(--bg);color:var(--fg);margin-bottom:12px}button{width:100%;border:none;border-radius:12px;background:var(--accent);color:var(--accent-fg);font-size:0.9375rem;font-weight:700;padding:12px;cursor:pointer}.err{color:#ff6b6b;font-size:0.8125rem;margin-bottom:10px;min-height:18px}</style></head><body>
     <form method="post"><input type="hidden" name="action" value="login"><input type="hidden" name="project" value="<?= $esc($reqProject) ?>">
       <h1>Souliong 循跡</h1><div class="s"><?= $reqProject !== '' ? $esc($reqProject) . ' 專案管理 · ' : '主要管理 · ' ?>輸入管理 PIN</div>
       <div class="err"><?= $esc($loginErr) ?></div>
@@ -203,48 +203,48 @@ header('Content-Type: text/html; charset=utf-8');
 *{box-sizing:border-box}body{margin:0;font-family:system-ui,sans-serif;background:var(--bg);color:var(--fg);-webkit-font-smoothing:antialiased}
 .wrap{max-width:1000px;margin:0 auto;padding:24px 20px 60px}
 .top{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
-h1{font-size:22px;font-weight:800;margin:0;display:flex;align-items:center;gap:10px;flex:1}h1 .sub{font-size:12px;font-weight:500;color:var(--muted)}
-h2{font-size:13px;font-weight:700;color:var(--muted);letter-spacing:.06em;text-transform:uppercase;margin:28px 0 12px}
+h1{font-size:1.375rem;font-weight:800;margin:0;display:flex;align-items:center;gap:10px;flex:1}h1 .sub{font-size:0.75rem;font-weight:500;color:var(--muted)}
+h2{font-size:0.8125rem;font-weight:700;color:var(--muted);letter-spacing:.06em;text-transform:uppercase;margin:28px 0 12px}
 .card{background:var(--card);border:1px solid var(--line);border-radius:var(--r-lg);box-shadow:var(--sh)}
 .code-card{display:flex;gap:18px;align-items:flex-start;flex-wrap:wrap;padding:16px 18px;margin-bottom:12px}
 .code-card .qr{background:#fff;padding:6px;border-radius:12px;flex:none;width:120px;height:120px}.code-card .qr svg{width:100%;height:100%;display:block}
 .code-info{flex:1;min-width:220px}
-.code-info .pill{font-size:12px;color:var(--muted);margin-bottom:6px}
-.big{font-family:ui-monospace,Consolas,monospace;font-size:30px;font-weight:800;letter-spacing:4px}
-.invite{font-family:ui-monospace,Consolas,monospace;font-size:12px;color:var(--muted);word-break:break-all;margin-top:8px;background:var(--bg);padding:8px 10px;border-radius:10px;border:1px solid var(--line)}
+.code-info .pill{font-size:0.75rem;color:var(--muted);margin-bottom:6px}
+.big{font-family:ui-monospace,Consolas,monospace;font-size:1.875rem;font-weight:800;letter-spacing:4px}
+.invite{font-family:ui-monospace,Consolas,monospace;font-size:0.75rem;color:var(--muted);word-break:break-all;margin-top:8px;background:var(--bg);padding:8px 10px;border-radius:10px;border:1px solid var(--line)}
 .acts{display:flex;flex-direction:column;gap:8px}
 .row{display:flex;gap:6px;align-items:center;margin-top:8px}
 .metaedit{margin-top:12px;border-top:1px solid var(--line);padding-top:10px}
-.metaedit>summary{cursor:pointer;font-size:12.5px;font-weight:600;color:var(--muted);list-style:none}
+.metaedit>summary{cursor:pointer;font-size:0.7813rem;font-weight:600;color:var(--muted);list-style:none}
 .metaedit>summary::-webkit-details-marker{display:none}
 .metaedit>summary:hover{color:var(--fg)}
 .metaform{display:flex;flex-direction:column;gap:8px;margin-top:10px}
-.metaform label{display:flex;flex-direction:column;gap:4px;font-size:11px;color:var(--muted)}
-.metaform input,.metaform textarea{border:1px solid var(--line);border-radius:10px;background:var(--bg);color:var(--fg);padding:8px 10px;font-size:13px;width:100%;resize:vertical}
-.row input{border:1px solid var(--line);border-radius:10px;background:var(--bg);color:var(--fg);padding:7px 10px;font-size:13px;width:140px}
-.btn{border:1px solid var(--line);border-radius:999px;background:var(--card);color:var(--fg);font-size:13px;font-weight:600;padding:8px 14px;cursor:pointer;display:inline-flex;align-items:center;gap:6px;text-decoration:none;white-space:nowrap}
+.metaform label{display:flex;flex-direction:column;gap:4px;font-size:0.6875rem;color:var(--muted)}
+.metaform input,.metaform textarea{border:1px solid var(--line);border-radius:10px;background:var(--bg);color:var(--fg);padding:8px 10px;font-size:0.8125rem;width:100%;resize:vertical}
+.row input{border:1px solid var(--line);border-radius:10px;background:var(--bg);color:var(--fg);padding:7px 10px;font-size:0.8125rem;width:140px}
+.btn{border:1px solid var(--line);border-radius:999px;background:var(--card);color:var(--fg);font-size:0.8125rem;font-weight:600;padding:8px 14px;cursor:pointer;display:inline-flex;align-items:center;gap:6px;text-decoration:none;white-space:nowrap}
 .btn:hover{background:var(--bg)}.btn.danger{color:var(--danger)}.btn.solid{background:var(--accent);color:var(--accent-fg);border-color:var(--accent)}
 .tabs{display:flex;gap:8px;flex-wrap:wrap;margin:16px 0 4px}
-.tab{font-size:13px;font-weight:600;padding:7px 14px;border-radius:999px;border:1px solid var(--line);background:var(--card);color:var(--fg);text-decoration:none}
+.tab{font-size:0.8125rem;font-weight:600;padding:7px 14px;border-radius:999px;border:1px solid var(--line);background:var(--card);color:var(--fg);text-decoration:none}
 .tab.on{background:var(--accent);color:var(--accent-fg);border-color:var(--accent)}.tab:hover{background:var(--bg)}
 .stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px}
 .tile{background:var(--card);border:1px solid var(--line);border-radius:var(--r-md);padding:14px 16px}
-.tile .n{font-size:26px;font-weight:800}.tile .l{font-size:12px;color:var(--muted);margin-top:2px}
-.break{font-size:12px;color:var(--muted);margin-top:10px;line-height:1.7}.break b{color:var(--fg)}
+.tile .n{font-size:1.625rem;font-weight:800}.tile .l{font-size:0.75rem;color:var(--muted);margin-top:2px}
+.break{font-size:0.75rem;color:var(--muted);margin-top:10px;line-height:1.7}.break b{color:var(--fg)}
 .tablewrap{overflow-x:auto;border:1px solid var(--line);border-radius:var(--r-lg);background:var(--card)}
-table{border-collapse:collapse;width:100%;font-size:13px;min-width:820px}
-th{background:var(--bg);position:sticky;top:0;text-align:left;font-weight:700;color:var(--muted);font-size:11px;letter-spacing:.04em;text-transform:uppercase}
+table{border-collapse:collapse;width:100%;font-size:0.8125rem;min-width:820px}
+th{background:var(--bg);position:sticky;top:0;text-align:left;font-weight:700;color:var(--muted);font-size:0.6875rem;letter-spacing:.04em;text-transform:uppercase}
 th,td{padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:top}tr:hover td{background:var(--bg)}
 td img{width:80px;height:80px;object-fit:cover;border-radius:10px;display:block}
-.mono{font-family:ui-monospace,Consolas,monospace;font-size:11px;color:var(--muted)}
-.tag{display:inline-block;font-size:11px;font-weight:600;padding:2px 8px;border-radius:999px;background:var(--bg);border:1px solid var(--line)}
-.hint{font-size:12px;color:var(--muted);margin-top:14px;line-height:1.7}
-.iconbtn{background:none;border:none;color:var(--danger);cursor:pointer;font-size:15px}
-.badge{font-size:11px;color:var(--muted)}
+.mono{font-family:ui-monospace,Consolas,monospace;font-size:0.6875rem;color:var(--muted)}
+.tag{display:inline-block;font-size:0.6875rem;font-weight:600;padding:2px 8px;border-radius:999px;background:var(--bg);border:1px solid var(--line)}
+.hint{font-size:0.75rem;color:var(--muted);margin-top:14px;line-height:1.7}
+.iconbtn{background:none;border:none;color:var(--danger);cursor:pointer;font-size:0.9375rem}
+.badge{font-size:0.6875rem;color:var(--muted)}
 .pinlist{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:8px}
-.pinchip{display:inline-flex;align-items:center;gap:6px;font-size:12px;background:var(--bg);border:1px solid var(--line);border-radius:999px;padding:5px 6px 5px 12px}
+.pinchip{display:inline-flex;align-items:center;gap:6px;font-size:0.75rem;background:var(--bg);border:1px solid var(--line);border-radius:999px;padding:5px 6px 5px 12px}
 .pinchip form{display:inline;margin:0}
-.pinchip .x{background:none;border:none;color:var(--danger);cursor:pointer;font-size:16px;line-height:1;padding:0 4px}
+.pinchip .x{background:none;border:none;color:var(--danger);cursor:pointer;font-size:1rem;line-height:1;padding:0 4px}
 </style></head>
 <body><div class="wrap">
 <div class="top">
@@ -266,7 +266,7 @@ td img{width:80px;height:80px;object-fit:cover;border-radius:10px;display:block}
   <span class="badge"><i class="fa-solid fa-upload"></i> 匯入備份 ZIP</span>
   <label class="btn" style="cursor:pointer"><i class="fa-solid fa-folder-open"></i> <span data-file>選擇 ZIP 檔</span>
     <input type="file" name="backup" accept=".zip" required hidden onchange="this.parentNode.querySelector('[data-file]').textContent=this.files[0]?this.files[0].name:'選擇 ZIP 檔'"></label>
-  <select name="mode" style="border:1px solid var(--line);border-radius:10px;background:var(--bg);color:var(--fg);padding:7px 10px;font-size:13px"><option value="merge">合併（依 id 聯集，不重複）</option><option value="replace">覆蓋</option></select>
+  <select name="mode" style="border:1px solid var(--line);border-radius:10px;background:var(--bg);color:var(--fg);padding:7px 10px;font-size:0.8125rem"><option value="merge">合併（依 id 聯集，不重複）</option><option value="replace">覆蓋</option></select>
   <button class="btn">還原</button>
 </form>
 
@@ -344,7 +344,7 @@ td img{width:80px;height:80px;object-fit:cover;border-radius:10px;display:block}
     $top = function ($arr, $n = 5) { $o = []; foreach (array_slice($arr, 0, $n, true) as $k => $v) $o[] = $k . '·' . $v; return $o ? implode('、', $o) : '—'; };
 ?>
 <div style="margin-bottom:14px">
-  <div style="font-size:13px;font-weight:700;margin-bottom:8px"><?= $esc($p) ?></div>
+  <div style="font-size:0.8125rem;font-weight:700;margin-bottom:8px"><?= $esc($p) ?></div>
   <div class="stats-grid">
     <div class="tile"><div class="n"><?= (int)($s['views'] ?? 0) ?></div><div class="l">瀏覽</div></div>
     <div class="tile"><div class="n"><?= (int)($s['sessions'] ?? 0) ?></div><div class="l">工作階段</div></div>

@@ -156,7 +156,7 @@ $jsonFlags = JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JS
   <div class="dialog-box">
     <div class="dialog-head"><b>解鎖投稿</b><button class="icon-btn" onclick="MapApp.closeUnlock()" aria-label="關閉"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button></div>
     <div class="hint">輸入主辦者提供的投稿碼，或掃描邀請 QR。</div>
-    <input id="unlockCodeInput" class="name-in" style="width:100%;letter-spacing:8px;text-align:center;font-size:22px" placeholder="6 位數字" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" inputmode="numeric" pattern="[0-9]*" maxlength="8" aria-label="投稿碼">
+    <input id="unlockCodeInput" class="name-in" style="width:100%;letter-spacing:8px;text-align:center;font-size:1.375rem" placeholder="6 位數字" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" inputmode="numeric" pattern="[0-9]*" maxlength="8" aria-label="投稿碼">
     <div id="unlockMsg" class="hint" role="status"></div>
     <div class="dialog-actions">
       <button class="btn" id="scanBtn"><i class="fa-solid fa-qrcode"></i> 掃描 QR</button>
