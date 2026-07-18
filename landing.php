@@ -93,8 +93,9 @@ footer a{color:inherit}
 <footer>
   &copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> 貢獻者
   ・ &copy; <a href="https://carto.com/attributions" target="_blank" rel="noopener">CARTO</a>
-  ・ <a href="https://toka.dev" target="_blank" rel="noopener">© 2026 prjToka</a><br>
-  Souliong ・ 開放的地方探索地圖平台 ・ 以瀏覽器 localStorage 記住偏好，不使用追蹤 Cookie
+  ・ <a href="https://toka.dev" target="_blank" rel="noopener">Souliong · prjToka</a>
+  ・ <a href="https://github.com/zisunny104/koilisu-souliong" target="_blank" rel="noopener">GitHub</a><br>
+  開放的地方探索地圖平台 ・ 以瀏覽器 localStorage 記住偏好，不使用追蹤 Cookie
 </footer>
 </div>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>

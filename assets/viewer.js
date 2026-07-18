@@ -9,10 +9,12 @@ const MapApp = (() => {
   const catOrder = ['green', 'pink', 'blue'];
 
   // 版權標註（依 OSM 慣例含連結；prjToka 一併放在此）——連結可自行修改
+  const REPO_URL = 'https://github.com/zisunny104/koilisu-souliong';
   const CREDIT_HTML =
     '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> 貢獻者 &middot; ' +
     '<a href="https://carto.com/attributions" target="_blank" rel="noopener">CARTO</a> &middot; ' +
-    '<a href="https://toka.dev" target="_blank" rel="noopener">循跡 by prjToka</a>';
+    '<a href="https://toka.dev" target="_blank" rel="noopener">Souliong · prjToka</a> &middot; ' +
+    '<a href="' + REPO_URL + '" target="_blank" rel="noopener" aria-label="GitHub 原始碼"><i class="fa-brands fa-github"></i></a>';
   // 主題：system / light / dark（手動可覆蓋系統偏好）
   const TILE_OPTS = { maxZoom: 20, subdomains: 'abcd', detectRetina: true, attribution: CREDIT_HTML };
   const systemDark = () => !!(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
