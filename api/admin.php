@@ -70,6 +70,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'rotat
     if ($p !== '' && $canProject($p)) { @unlink(rtrim($cfg['store_dir'], '/\\') . '/' . $p . '.code.txt'); }
     header('Location: ?api=admin' . ($scopeProject !== '' ? '&project=' . urlencode($scopeProject) : '')); exit;
 }
+// 編輯專案描述（只改標題/副標/說明/資料來源，其餘欄位保留；免手改 meta.json）
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'meta') {
+    need_csrf($csrf);
+    $p = preg_replace('/[^a-z0-9_-]/', '', $_POST['project'] ?? '');
+    if ($p === '' || !$canProject($p)) { error_page(403, '沒有權限', '您沒有這個專案的管理權限。', '?api=admin', '返回後台'); }
+    $mf = $cfg['projects_dir'] . '/' . $p . '/meta.json';
+    $meta = is_file($mf) ? json_decode((string)@file_get_contents($mf), true) : [];
+    if (!is_array($meta)) $meta = [];
+    foreach (['title', 'subtitle', 'desc', 'source'] as $k) {
+        $raw = trim((string)($_POST[$k] ?? ''));
+        $v = preg_replace('/^(.{0,300}).*$/su', '$1', $raw);   // UTF-8 安全截斷
+        if ($v === null) { continue; }                          // 非法 UTF-8 → 略過此欄，不動舊值
+        if ($v === '') { unset($meta[$k]); } else { $meta[$k] = $v; }
+    }
+    $json = json_encode($meta, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    if ($json !== false && is_dir(dirname($mf))) { @file_put_contents($mf, $json, LOCK_EX); }   // 編碼失敗絕不覆寫，避免清空 meta
+    header('Location: ?api=admin' . ($scopeProject !== '' ? '&project=' . urlencode($p) : '')); exit;
+}
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && in_array(($_POST['action'] ?? ''), ['addpin', 'delpin'], true)) {
     need_csrf($csrf);
     if (!$master) { error_page(403, '沒有權限', 'PIN 權限管理僅限主要管理者。', '?api=admin', '返回後台'); }   // 權限管理限主 PIN
@@ -196,6 +214,13 @@ h2{font-size:13px;font-weight:700;color:var(--muted);letter-spacing:.06em;text-t
 .invite{font-family:ui-monospace,Consolas,monospace;font-size:12px;color:var(--muted);word-break:break-all;margin-top:8px;background:var(--bg);padding:8px 10px;border-radius:10px;border:1px solid var(--line)}
 .acts{display:flex;flex-direction:column;gap:8px}
 .row{display:flex;gap:6px;align-items:center;margin-top:8px}
+.metaedit{margin-top:12px;border-top:1px solid var(--line);padding-top:10px}
+.metaedit>summary{cursor:pointer;font-size:12.5px;font-weight:600;color:var(--muted);list-style:none}
+.metaedit>summary::-webkit-details-marker{display:none}
+.metaedit>summary:hover{color:var(--fg)}
+.metaform{display:flex;flex-direction:column;gap:8px;margin-top:10px}
+.metaform label{display:flex;flex-direction:column;gap:4px;font-size:11px;color:var(--muted)}
+.metaform input,.metaform textarea{border:1px solid var(--line);border-radius:10px;background:var(--bg);color:var(--fg);padding:8px 10px;font-size:13px;width:100%;resize:vertical}
 .row input{border:1px solid var(--line);border-radius:10px;background:var(--bg);color:var(--fg);padding:7px 10px;font-size:13px;width:140px}
 .btn{border:1px solid var(--line);border-radius:999px;background:var(--card);color:var(--fg);font-size:13px;font-weight:600;padding:8px 14px;cursor:pointer;display:inline-flex;align-items:center;gap:6px;text-decoration:none;white-space:nowrap}
 .btn:hover{background:var(--bg)}.btn.danger{color:var(--danger)}.btn.solid{background:var(--accent);color:var(--accent-fg);border-color:var(--accent)}
@@ -290,6 +315,17 @@ td img{width:80px;height:80px;object-fit:cover;border-radius:10px;display:block}
       <input name="pin_new" placeholder="新專案 PIN" autocomplete="off"><input name="label" placeholder="暱稱（可選）" autocomplete="off"><button class="btn">新增</button>
     </form>
     <?php endif; ?>
+    <details class="metaedit">
+      <summary><i class="fa-solid fa-pen-to-square"></i> 編輯專案描述</summary>
+      <form method="post" class="metaform">
+        <input type="hidden" name="csrf" value="<?= $esc_csrf ?>"><input type="hidden" name="action" value="meta"><input type="hidden" name="project" value="<?= $esc($p) ?>">
+        <label>標題<input name="title" maxlength="300" value="<?= $esc($meta['title'] ?? '') ?>" placeholder="地圖標題"></label>
+        <label>副標<input name="subtitle" maxlength="300" value="<?= $esc($meta['subtitle'] ?? '') ?>" placeholder="副標題（可選）"></label>
+        <label>說明<textarea name="desc" rows="2" maxlength="300" placeholder="首頁卡片的簡短說明（可選）"><?= $esc($meta['desc'] ?? '') ?></textarea></label>
+        <label>資料來源<input name="source" maxlength="300" value="<?= $esc($meta['source'] ?? '') ?>" placeholder="例：ArcGIS StoryMaps「…」（可選）"></label>
+        <button class="btn primary"><i class="fa-solid fa-floppy-disk"></i> 儲存描述</button>
+      </form>
+    </details>
   </div>
   <div class="acts">
     <a class="btn" href="?api=admin&backup=project&project=<?= $esc($p) ?>"><i class="fa-solid fa-download"></i> 備份此專案</a>
