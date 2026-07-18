@@ -15,7 +15,7 @@ window.MapApp = (() => {
   const CREDIT_HTML =
     '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> 貢獻者 &middot; ' +
     '<a href="https://carto.com/attributions" target="_blank" rel="noopener">CARTO</a> &middot; ' +
-    '<a href="https://leafletjs.com" target="_blank" rel="noopener">Leaflet</a> &middot; ' +
+    '<a href="https://leafletjs.com" target="_blank" rel="noopener">Leaflet</a> | ' +
     '<a href="' + REPO_URL + '" target="_blank" rel="noopener" aria-label="GitHub 原始碼"><i class="fa-brands fa-github"></i></a> &middot; ' +
     '<a href="' + SITE_URL + '">Souliong</a> &middot; <a href="' + ORG_URL + '" target="_blank" rel="noopener">prjToka</a>';
   // 主題：system / light / dark（手動可覆蓋系統偏好）
