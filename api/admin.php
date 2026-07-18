@@ -32,7 +32,7 @@ if (!$authed) {
     ?><!DOCTYPE html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>管理登入</title>
     <style>:root{color-scheme:light dark;--bg:#111113;--fg:#f1f1f3;--muted:#9c9ca3;--line:#2b2b2f;--card:#1c1c1f;--accent:#f1f1f3;--accent-fg:#151517}@media(prefers-color-scheme:light){:root{--bg:#f6f6f7;--fg:#1b1b1d;--muted:#6b6b70;--line:#e7e7ea;--card:#fff;--accent:#1b1b1d;--accent-fg:#fff}}*{box-sizing:border-box}body{margin:0;height:100vh;display:grid;place-items:center;background:var(--bg);color:var(--fg);font-family:system-ui,sans-serif}form{background:var(--card);border:1px solid var(--line);border-radius:20px;padding:28px;width:min(320px,90vw);box-shadow:0 12px 40px rgba(0,0,0,.3);text-align:center}h1{font-size:18px;margin:0 0 4px}.s{font-size:12px;color:var(--muted);margin-bottom:18px}input{width:100%;text-align:center;letter-spacing:4px;font-size:20px;padding:12px;border:1px solid var(--line);border-radius:12px;background:var(--bg);color:var(--fg);margin-bottom:12px}button{width:100%;border:none;border-radius:12px;background:var(--accent);color:var(--accent-fg);font-size:15px;font-weight:700;padding:12px;cursor:pointer}.err{color:#ff6b6b;font-size:13px;margin-bottom:10px;min-height:18px}</style></head><body>
     <form method="post"><input type="hidden" name="action" value="login"><input type="hidden" name="project" value="<?= $esc($reqProject) ?>">
-      <h1>Souliong 管理</h1><div class="s"><?= $reqProject !== '' ? $esc($reqProject) . ' · ' : '' ?>輸入管理 PIN</div>
+      <h1>Souliong 循跡</h1><div class="s"><?= $reqProject !== '' ? $esc($reqProject) . ' 專案管理 · ' : '主要管理 · ' ?>輸入管理 PIN</div>
       <div class="err"><?= $esc($loginErr) ?></div>
       <input name="pin" type="password" inputmode="numeric" autocomplete="off" autofocus placeholder="PIN">
       <button>登入</button>
@@ -177,7 +177,7 @@ $short = fn($s) => $s ? substr((string)$s, 0, 8) : '—';
 
 header('Content-Type: text/html; charset=utf-8');
 ?><!DOCTYPE html><html lang="zh-Hant"><head>
-<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Souliong 管理</title>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Souliong 循跡 · 管理</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
 <style>
 :root{color-scheme:light dark;--bg:#f6f6f7;--fg:#1b1b1d;--muted:#6b6b70;--line:#e7e7ea;--card:#fff;--accent:#1b1b1d;--accent-fg:#fff;--r-lg:20px;--r-md:13px;--sh:0 6px 24px rgba(0,0,0,.08);--danger:#c0392b}
@@ -223,7 +223,7 @@ td img{width:80px;height:80px;object-fit:cover;border-radius:10px;display:block}
 </style></head>
 <body><div class="wrap">
 <div class="top">
-  <h1><i class="fa-solid fa-gauge-high"></i> Souliong 管理 <span class="sub"><?= $master ? '主要管理' : $esc($reqProject) . ' 專案管理' ?> · <?= count($rows) ?> 筆</span></h1>
+  <h1><i class="fa-solid fa-gauge-high"></i> Souliong 循跡 <span class="sub"><?= $master ? '主要管理' : $esc($reqProject) . ' 專案管理' ?> · <?= count($rows) ?> 筆</span></h1>
   <?php if ($master): ?><a class="btn solid" href="?api=admin&backup=all"><i class="fa-solid fa-download"></i> 備份全部</a><?php endif; ?>
   <a class="btn" href="?api=admin&logout=1"><i class="fa-solid fa-right-from-bracket"></i> 登出</a>
 </div>

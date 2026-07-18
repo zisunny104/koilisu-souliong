@@ -43,13 +43,20 @@ switch ($action) {
         require __DIR__ . '/api/stat.php';
         return;
     case 'admin':
-        require __DIR__ . '/api/admin.php';
+    case 'manager':
+        require __DIR__ . '/api/admin.php';        // 主站管理：<base>/manager（相容 /admin、?api=admin）
         return;
     default:
         // 地圖或首頁：<base>/<mapid> 開該地圖；<base>/ 顯示地圖清單
         $proj = ($action !== 'index' && $action !== '') ? $action : ($_GET['p'] ?? '');
         $proj = preg_replace('/[^a-z0-9_-]/', '', $proj);
         if ($proj !== '' && is_dir(__DIR__ . '/projects/' . $proj)) {
+            // <base>/<mapid>/manager|edit → 該專案管理
+            if (isset($seg[1]) && in_array($seg[1], ['manager', 'edit', 'admin'], true)) {
+                $_GET['project'] = $proj;
+                require __DIR__ . '/api/admin.php';
+                return;
+            }
             $_GET['p'] = $proj;
             include __DIR__ . '/view.php';
         } else {

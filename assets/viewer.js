@@ -8,18 +8,21 @@ window.MapApp = (() => {
   const apiUrl = (action) => APP.base + '?api=' + action;
   const catOrder = ['green', 'pink', 'blue'];
 
-  // 版權標註（依 OSM 慣例含連結；prjToka 一併放在此）——連結可自行修改
+  // 版權標註（依 OSM 慣例含連結）——GitHub 靠前；Souliong 與 prjToka 各自獨立連結，連結可自行修改
   const REPO_URL = 'https://github.com/zisunny104/koilisu-souliong';
+  const SITE_URL = (APP.base || '/');          // Souliong 平台首頁
+  const ORG_URL = 'https://toka.dev';          // prjToka
   const CREDIT_HTML =
+    '<a href="' + REPO_URL + '" target="_blank" rel="noopener" aria-label="GitHub 原始碼"><i class="fa-brands fa-github"></i></a> &middot; ' +
     '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> 貢獻者 &middot; ' +
     '<a href="https://carto.com/attributions" target="_blank" rel="noopener">CARTO</a> &middot; ' +
-    '<a href="https://toka.dev" target="_blank" rel="noopener">Souliong · prjToka</a> &middot; ' +
-    '<a href="' + REPO_URL + '" target="_blank" rel="noopener" aria-label="GitHub 原始碼"><i class="fa-brands fa-github"></i></a>';
+    '<a href="' + SITE_URL + '">Souliong</a> &middot; <a href="' + ORG_URL + '" target="_blank" rel="noopener">prjToka</a>';
   // 主題：system / light / dark（手動可覆蓋系統偏好）
   const TILE_OPTS = { maxZoom: 20, subdomains: 'abcd', detectRetina: true, attribution: CREDIT_HTML };
   const systemDark = () => !!(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
   const isDark = () => { const t = document.documentElement.dataset.theme; return t === 'dark' ? true : t === 'light' ? false : systemDark(); };
-  const tileUrl = () => 'https://{s}.basemaps.cartocdn.com/' + (isDark() ? 'dark_all' : 'light_all') + '/{z}/{x}/{y}{r}.png';
+  // 底圖：淺色用 Voyager（道路較寬、有淡彩），深色用 Dark Matter
+  const tileUrl = () => 'https://{s}.basemaps.cartocdn.com/' + (isDark() ? 'dark_all' : 'rastertiles/voyager') + '/{z}/{x}/{y}{r}.png';
   let themeMode = localStorage.getItem('theme') || 'system';
   if (themeMode !== 'system') document.documentElement.dataset.theme = themeMode;
 
@@ -659,7 +662,7 @@ window.MapApp = (() => {
     document.title = (META.title || '地圖') + (META.subtitle ? '・' + META.subtitle : '');
     document.getElementById('title').textContent = META.title + (META.subtitle ? '・' + META.subtitle : '');
     document.getElementById('foot').textContent = (META.source ? '資料來源：' + META.source + '。' : '') +
-      '投稿公開共享，可刪自己的；偏好存於本機，無追蹤 Cookie。';
+      '照片與文字由投稿者公開分享，僅本人可刪除；網站以本機儲存記住你的偏好，不使用追蹤 Cookie。';
 
     const seen = {};
     POINTS.forEach(c => { if (!seen[c.cat]) seen[c.cat] = { key: c.cat, label: c.catLabel, color: c.color }; });

@@ -104,7 +104,7 @@ var BASE = <?= json_encode($base) ?>, IDS = <?= json_encode(array_map(fn($m) => 
 var BG = <?= json_encode($bg) ?>;
 (function(){
   var dark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
-  var url = 'https://{s}.basemaps.cartocdn.com/' + (dark ? 'dark_all' : 'light_all') + '/{z}/{x}/{y}{r}.png';
+  var url = 'https://{s}.basemaps.cartocdn.com/' + (dark ? 'dark_all' : 'rastertiles/voyager') + '/{z}/{x}/{y}{r}.png';
   var map = L.map('bgmap', { zoomControl:false, attributionControl:false, dragging:false, scrollWheelZoom:false, doubleClickZoom:false, boxZoom:false, keyboard:false, touchZoom:false, tap:false, inertia:false, fadeAnimation:true })
     .setView(BG.center || [23.9,120.7], BG.zoom || 14);
   L.tileLayer(url, { maxZoom:20, subdomains:'abcd', detectRetina:true }).addTo(map);
