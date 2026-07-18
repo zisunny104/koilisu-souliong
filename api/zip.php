@@ -23,7 +23,7 @@ function zip__dostime(int $ts): array {
  * 寫出 ZIP 到 $out。$files = [ zip內名稱 => 磁碟絕對路徑 ]。
  * 以串流複製寫入，不會把整個檔案讀進記憶體。成功回傳 true。
  */
-function zip_write(string $out, array $files): bool {
+function zip_pack(string $out, array $files): bool {
     $fp = @fopen($out, 'wb');
     if (!$fp) return false;
     $central = '';
@@ -62,7 +62,7 @@ function zip_write(string $out, array $files): bool {
  * 讀取 ZIP，回傳 [ 名稱 => 內容 ]，只回傳 $accept($name) 為真者。
  * 為求簡潔會把整個備份讀進記憶體（備份規模不大，足堪使用）。
  */
-function zip_read(string $path, callable $accept): array {
+function zip_unpack(string $path, callable $accept): array {
     $data = @file_get_contents($path);
     if ($data === false || $data === '') return [];
     $eocd = strrpos($data, "PK\x05\x06");

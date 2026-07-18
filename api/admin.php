@@ -113,7 +113,7 @@ if (isset($_GET['backup'])) {
         $addDir($cfg['photos_dir'] . '/' . $bp, 'photos/' . $bp); $name = 'souliong-' . $bp . '-' . date('Ymd-His') . '.zip';
     } else { $addDir($cfg['store_dir'], 'data'); $addDir($cfg['photos_dir'], 'photos'); $name = 'souliong-all-' . date('Ymd-His') . '.zip'; }
     $tmp = tempnam(sys_get_temp_dir(), 'skbk');
-    if (!zip_write($tmp, $files)) { http_response_code(500); exit('備份失敗（暫存無法寫入）'); }
+    if (!zip_pack($tmp, $files)) { http_response_code(500); exit('備份失敗（暫存無法寫入）'); }
     header('Content-Type: application/zip'); header('Content-Disposition: attachment; filename="' . $name . '"'); header('Content-Length: ' . filesize($tmp));
     readfile($tmp); @unlink($tmp); exit;
 }
@@ -130,7 +130,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'impor
         // 只接受 data/、photos/ 底下、無 .. 的安全路徑
         $accept = fn($nm) => strpos(str_replace('\\', '/', (string)$nm), '..') === false
             && preg_match('#^(data|photos)/[A-Za-z0-9_./-]+$#', str_replace('\\', '/', (string)$nm));
-        $entries = zip_read($_FILES['backup']['tmp_name'], $accept);
+        $entries = zip_unpack($_FILES['backup']['tmp_name'], $accept);
         // 1) 資料（jsonl）
         foreach ($entries as $nm => $content) {
             if (!preg_match('#^data/([a-z0-9_-]+)\.jsonl$#', str_replace('\\', '/', $nm), $mm)) continue;
@@ -239,7 +239,8 @@ td img{width:80px;height:80px;object-fit:cover;border-radius:10px;display:block}
 <form class="card" method="post" enctype="multipart/form-data" style="padding:12px 16px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:12px">
   <input type="hidden" name="csrf" value="<?= $esc_csrf ?>"><input type="hidden" name="action" value="import">
   <span class="badge"><i class="fa-solid fa-upload"></i> 匯入備份 ZIP</span>
-  <input type="file" name="backup" accept=".zip" required style="font-size:13px">
+  <label class="btn" style="cursor:pointer"><i class="fa-solid fa-folder-open"></i> <span data-file>選擇 ZIP 檔</span>
+    <input type="file" name="backup" accept=".zip" required hidden onchange="this.parentNode.querySelector('[data-file]').textContent=this.files[0]?this.files[0].name:'選擇 ZIP 檔'"></label>
   <select name="mode" style="border:1px solid var(--line);border-radius:10px;background:var(--bg);color:var(--fg);padding:7px 10px;font-size:13px"><option value="merge">合併（依 id 聯集，不重複）</option><option value="replace">覆蓋</option></select>
   <button class="btn">還原</button>
 </form>
@@ -250,8 +251,9 @@ td img{width:80px;height:80px;object-fit:cover;border-radius:10px;display:block}
 </div>
 <?php endif; ?>
 
-<?php if ($master): $mpins = pins_load($cfg)['master']; ?>
-<h2>主 PIN · Master Key（開所有專案）</h2>
+<?php if ($master && $scopeProject === ''): $mpins = pins_load($cfg)['master']; ?>
+<h2>主要管理 PIN（可進入所有專案）</h2>
+<div class="hint" style="margin:-6px 0 12px">主站層級：僅在此「全部」頁管理；進入單一專案後不會顯示。</div>
 <div class="card" style="padding:16px 18px">
   <div class="pinlist">
     <span class="pinchip">主設定 · <span class="mono">config</span></span>
@@ -260,7 +262,7 @@ td img{width:80px;height:80px;object-fit:cover;border-radius:10px;display:block}
     <?php endforeach; ?>
   </div>
   <form class="row" method="post" style="margin-top:10px"><input type="hidden" name="csrf" value="<?= $esc_csrf ?>"><input type="hidden" name="action" value="addpin"><input type="hidden" name="scope" value="master">
-    <input name="pin_new" placeholder="新主 PIN" autocomplete="off"><input name="label" placeholder="暱稱（可選）" autocomplete="off"><button class="btn">新增主 PIN</button>
+    <input name="pin_new" placeholder="新增主要管理 PIN" autocomplete="off"><input name="label" placeholder="暱稱（可選）" autocomplete="off"><button class="btn">新增</button>
   </form>
 </div>
 <?php endif; ?>
