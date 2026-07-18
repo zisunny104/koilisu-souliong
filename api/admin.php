@@ -189,7 +189,7 @@ h1{font-size:22px;font-weight:800;margin:0;display:flex;align-items:center;gap:1
 h2{font-size:13px;font-weight:700;color:var(--muted);letter-spacing:.06em;text-transform:uppercase;margin:28px 0 12px}
 .card{background:var(--card);border:1px solid var(--line);border-radius:var(--r-lg);box-shadow:var(--sh)}
 .code-card{display:flex;gap:18px;align-items:flex-start;flex-wrap:wrap;padding:16px 18px;margin-bottom:12px}
-.code-card canvas{border-radius:12px;background:#fff;padding:6px;flex:none}
+.code-card .qr{background:#fff;padding:6px;border-radius:12px;flex:none;width:120px;height:120px}.code-card .qr svg{width:100%;height:100%;display:block}
 .code-info{flex:1;min-width:220px}
 .code-info .pill{font-size:12px;color:var(--muted);margin-bottom:6px}
 .big{font-family:ui-monospace,Consolas,monospace;font-size:30px;font-weight:800;letter-spacing:4px}
@@ -253,7 +253,7 @@ td img{width:80px;height:80px;object-fit:cover;border-radius:10px;display:block}
 
 <?php if ($master && $scopeProject === ''): $mpins = pins_load($cfg)['master']; ?>
 <h2>主要管理 PIN（可進入所有專案）</h2>
-<div class="hint" style="margin:-6px 0 12px">主站層級：僅在此「全部」頁管理；進入單一專案後不會顯示。</div>
+<div class="hint" style="margin:-6px 0 12px">主要管理層級：僅在此「全部」頁管理；進入單一專案後不會顯示。</div>
 <div class="card" style="padding:16px 18px">
   <div class="pinlist">
     <span class="pinchip">主設定 · <span class="mono">config</span></span>
@@ -275,7 +275,7 @@ td img{width:80px;height:80px;object-fit:cover;border-radius:10px;display:block}
     $invite = $origin . $basePath . $p . '?code=' . $code;
 ?>
 <div class="card code-card">
-  <?php if ($code !== ''): ?><canvas class="qr" data-url="<?= $esc($invite) ?>" width="120" height="120"></canvas><?php endif; ?>
+  <?php if ($code !== ''): ?><div class="qr" data-url="<?= $esc($invite) ?>"></div><?php endif; ?>
   <div class="code-info">
     <div class="pill"><i class="fa-solid fa-map-location-dot"></i> <?= $esc($meta['title'] ?? $p) ?>（<?= $esc($p) ?>）</div>
     <?php if ($code !== ''): ?><div class="big"><?= $esc($code) ?></div><div class="invite"><?= $esc($invite) ?></div><?php else: ?><div class="badge">此地圖未設投稿碼（meta.json 的 "gated": true 才需要）</div><?php endif; ?>
@@ -337,6 +337,6 @@ td img{width:80px;height:80px;object-fit:cover;border-radius:10px;display:block}
 </table></div>
 <div class="hint">o＝owner（同源可群組追蹤）、s＝加鹽 IP 雜湊；同一 owner 出現多個不同 s 可能是投稿碼外流／冒名。<?= $master ? '　主 PIN 可管理所有專案並設定各專案 PIN；專案 PIN 僅能管理該專案。' : '' ?></div>
 </div>
-<script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.4/build/qrcode.min.js"></script>
-<script>document.querySelectorAll('canvas.qr').forEach(function(c){ if(window.QRCode) QRCode.toCanvas(c,c.dataset.url,{width:120,margin:1},function(){}); });</script>
+<script><?php readfile(__DIR__ . '/../assets/vendor/qrcode-generator.js'); ?></script>
+<script>document.querySelectorAll('.qr').forEach(function(el){ try{ var qr=qrcode(0,'M'); qr.addData(el.dataset.url); qr.make(); el.innerHTML=qr.createSvgTag({cellSize:4,margin:2,scalable:true}); }catch(e){ el.textContent='QR 產生失敗'; } });</script>
 </body></html>
