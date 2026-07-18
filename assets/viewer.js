@@ -242,9 +242,10 @@ window.MapApp = (() => {
   /* ---------- map ---------- */
   function chairIcon(c, count) {
     const badge = count ? '<div class="badge">' + count + '</div>' : '';
+    const cls = 'dot-pin' + (count ? ' has-contrib' : '');
     return L.divIcon({
       className: '', iconSize: [24, 24], iconAnchor: [12, 12], popupAnchor: [0, -12],
-      html: '<div class="dot-pin" style="background:' + c.color + '"><span>' + c.num + '</span>' + badge + '</div>'
+      html: '<div class="' + cls + '" style="background:' + c.color + '"><span>' + c.num + '</span>' + badge + '</div>'
     });
   }
   function renderChairs() {
@@ -652,6 +653,15 @@ window.MapApp = (() => {
   function recount() {
     counts = {};
     CONTRIB.forEach(e => { if (e.kind !== 'desc' && e.photo && e.item_num != null) counts[e.item_num] = (counts[e.item_num] || 0) + 1; });
+    updatePhotoBtn();
+  }
+  // 「投稿」鈕顯示有投稿的點數（與全部點區分）
+  function updatePhotoBtn() {
+    const btn = document.getElementById('photoLayerBtn');
+    if (!btn) return;
+    const n = Object.keys(counts).length;
+    btn.innerHTML = '<i class="fa-solid fa-image"></i> 投稿' + (n ? ' <span class="cnt">' + n + '</span>' : '');
+    btn.title = n ? ('有投稿的地點：' + n + ' / 全部 ' + POINTS.length + '；開啟後淡化沒有投稿的點') : '顯示/隱藏投稿照片';
   }
 
   /* ---------- data loading ---------- */
@@ -730,7 +740,7 @@ window.MapApp = (() => {
     // 圖層/路徑切換
     document.getElementById('routeBtn').onclick = function () { routeOn = !routeOn; this.classList.toggle('on', routeOn); drawRoute(); if (routeOn) feature('route'); };
     const plb = document.getElementById('photoLayerBtn'); plb.classList.add('on');
-    plb.onclick = function () { photoLayerOn = !photoLayerOn; this.classList.toggle('on', photoLayerOn); if (photoLayerOn) { renderPhotoLayer(); feature('photos'); } else map.removeLayer(photoLayer); };
+    plb.onclick = function () { photoLayerOn = !photoLayerOn; this.classList.toggle('on', photoLayerOn); document.body.classList.toggle('focus-contrib', photoLayerOn); if (photoLayerOn) { renderPhotoLayer(); feature('photos'); } else map.removeLayer(photoLayer); };
 
     // 投稿者篩選 → 顯示某人的觀察地圖
     const pf = document.getElementById('personFilter');
@@ -868,20 +878,22 @@ window.MapApp = (() => {
   }
 
   // 圓角形狀（內嵌 SVG，stroke-linejoin:round → 尖角變圓角）；顏色用 currentColor 跟主題
-  function polyPoints(sides, R) {
+  function polyPoints(sides, R, rot) {
+    rot = rot || 0;
     const p = [];
-    for (let i = 0; i < sides; i++) { const a = (-90 + i * 360 / sides) * Math.PI / 180; p.push((12 + R * Math.cos(a)).toFixed(1) + ',' + (12 + R * Math.sin(a)).toFixed(1)); }
+    for (let i = 0; i < sides; i++) { const a = (-90 + rot + i * 360 / sides) * Math.PI / 180; p.push((12 + R * Math.cos(a)).toFixed(1) + ',' + (12 + R * Math.sin(a)).toFixed(1)); }
     return p.join(' ');
   }
   function shapeSVG(kind) {
-    const open = '<svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="3.5" stroke-linejoin="round" stroke-linecap="round">';
+    // 角度各有變化：方塊微斜、五角略轉、六角平頂；線改厚矩形；stroke-linejoin:round → 圓角
+    const open = '<svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="4" stroke-linejoin="round" stroke-linecap="round">';
     const inner = {
       dot: '<circle cx="12" cy="12" r="5.5" stroke="none"/>',
-      line: '<rect x="4" y="10" width="16" height="4" rx="2" stroke="none"/>',
-      triangle: '<polygon points="' + polyPoints(3, 8) + '"/>',
-      square: '<rect x="5.5" y="5.5" width="13" height="13" rx="4"/>',
-      pentagon: '<polygon points="' + polyPoints(5, 8) + '"/>',
-      hexagon: '<polygon points="' + polyPoints(6, 8) + '"/>',
+      line: '<rect x="3.5" y="8.5" width="17" height="7" rx="3.5" stroke="none"/>',
+      triangle: '<polygon points="' + polyPoints(3, 8.2, 0) + '"/>',
+      square: '<rect x="5.5" y="5.5" width="13" height="13" rx="4.5" transform="rotate(7 12 12)"/>',
+      pentagon: '<polygon points="' + polyPoints(5, 8, -8) + '"/>',
+      hexagon: '<polygon points="' + polyPoints(6, 8, 30) + '"/>',
     }[kind] || '';
     return open + inner + '</svg>';
   }

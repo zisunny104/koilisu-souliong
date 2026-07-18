@@ -265,3 +265,11 @@ body.embed .mapop-btn{display:none}
 .foot-src{font-size:11px;color:var(--muted);line-height:1.6}
 .foot-note{font-size:10.5px;color:var(--muted);opacity:.85;line-height:1.6;margin-top:6px;padding-top:6px;border-top:1px solid var(--line)}
 .foot-src:empty{display:none}
+
+/* 有投稿的點：加光環標記；開「投稿」聚焦模式時淡化沒有投稿的點 */
+.dot-pin.has-contrib{box-shadow:0 2px 6px rgba(0,0,0,.35),0 0 0 3px rgba(255,255,255,.55),0 0 10px 2px rgba(0,0,0,.28)}
+body.focus-contrib .dot-pin:not(.has-contrib){opacity:.32;filter:grayscale(.55)}
+.dot-pin{transition:opacity .2s,filter .2s}
+/* 「投稿」鈕上的數量標 */
+.btn .cnt{display:inline-flex;align-items:center;justify-content:center;min-width:1.05rem;height:1.05rem;padding:0 .3rem;border-radius:999px;background:var(--accent);color:var(--accent-fg);font-size:.68rem;font-weight:800;line-height:1}
+.btn.on .cnt{background:var(--accent-fg);color:var(--accent)}
