@@ -83,11 +83,14 @@ $jsonFlags = JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JS
 </div>
 
 <div id="topright" class="tr-group">
-  <span id="identity" class="idchip" title="投稿者身分" role="button" tabindex="0"></span>
-  <a class="icon-btn hide-in-embed" id="homeBtn" href="<?= $b ?>" title="回地圖列表" aria-label="回地圖列表"><i class="fa-solid fa-house" aria-hidden="true"></i></a>
-  <button class="icon-btn" id="shareBtn" title="分享這張地圖" aria-label="分享這張地圖"><i class="fa-solid fa-share-nodes" aria-hidden="true"></i></button>
-  <button id="embedBtn" class="icon-btn hide-in-embed" title="取得嵌入碼" aria-label="嵌入本地圖"><i class="fa-solid fa-code" aria-hidden="true"></i></button>
-  <button id="themeBtn" class="icon-btn" title="切換主題（系統／淺／深）" aria-label="切換深淺主題"><i class="fa-solid fa-circle-half-stroke" aria-hidden="true"></i></button>
+  <button class="icon-btn tr-toggle" id="trToggle" title="更多選項" aria-label="展開頁面選項" aria-expanded="false" aria-controls="trItems"><i class="fa-solid fa-bars" aria-hidden="true"></i></button>
+  <div class="tr-items" id="trItems">
+    <span id="identity" class="idchip" title="投稿者身分" role="button" tabindex="0"></span>
+    <a class="icon-btn hide-in-embed" id="homeBtn" href="<?= $b ?>" title="回地圖列表" aria-label="回地圖列表"><i class="fa-solid fa-house" aria-hidden="true"></i></a>
+    <button class="icon-btn" id="shareBtn" title="分享這張地圖" aria-label="分享這張地圖"><i class="fa-solid fa-share-nodes" aria-hidden="true"></i></button>
+    <button id="embedBtn" class="icon-btn hide-in-embed" title="取得嵌入碼" aria-label="嵌入本地圖"><i class="fa-solid fa-code" aria-hidden="true"></i></button>
+    <button id="themeBtn" class="icon-btn" title="切換主題（系統／淺／深）" aria-label="切換深淺主題"><i class="fa-solid fa-circle-half-stroke" aria-hidden="true"></i></button>
+  </div>
 </div>
 
 <button class="icon-btn mapop-btn" id="resetBtn" title="回到地圖初始位置（R）" aria-label="重置地圖視角"><i class="fa-solid fa-location-crosshairs" aria-hidden="true"></i></button>
@@ -122,7 +125,6 @@ $jsonFlags = JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JS
   </div>
   <div class="p-body">
     <button class="btn primary upload-only" id="panelUploadBtn" style="width:100%"><i class="fa-solid fa-plus"></i> 上傳照片到這個點</button>
-    <div class="sec-t">大家的紀錄（依時間）</div>
     <div id="entries"></div>
   </div>
 </div>

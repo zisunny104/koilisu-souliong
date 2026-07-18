@@ -229,11 +229,23 @@ button i{pointer-events:none}
 
 /* ── 右上：網頁資訊群組 ── */
 .tr-group{position:fixed;top:14px;right:14px;z-index:1250;display:flex;align-items:center;gap:.375rem;background:var(--glass);-webkit-backdrop-filter:blur(16px) saturate(1.6);backdrop-filter:blur(16px) saturate(1.6);border:1px solid var(--line);border-radius:999px;box-shadow:var(--sh-2);padding:.3rem .45rem;max-width:calc(100vw - 28px)}
+.tr-items{display:flex;align-items:center;gap:.375rem}
+.tr-toggle{display:none}
 .idchip{display:inline-flex;align-items:center;gap:.4rem;font-size:.75rem;font-weight:700;color:var(--fg);background:var(--hover);border-radius:999px;padding:.35rem .6rem;max-width:34vw;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer;transition:background var(--t)}
 .idchip:hover{background:var(--line)}.idchip i{color:var(--muted)}
 body.embed .tr-group{display:none}
 /* 桌機時把點位卡片下移，讓出右上群組 */
 @media (min-width:641px){ #panel{top:60px;max-height:calc(100dvh - 74px)} }
+
+/* 手機：右上群組收成漢堡，避免遮擋卡片；點開後以下拉卡片顯示 */
+@media (max-width:640px){
+  .tr-toggle{display:inline-flex}
+  .tr-items{display:none;position:absolute;top:calc(100% + .5rem);right:0;flex-direction:column;align-items:stretch;gap:.3rem;background:var(--glass);-webkit-backdrop-filter:blur(16px) saturate(1.6);backdrop-filter:blur(16px) saturate(1.6);border:1px solid var(--line);border-radius:1rem;box-shadow:var(--sh-2);padding:.5rem;min-width:11rem}
+  .tr-group.open .tr-items{display:flex}
+  .tr-items .idchip{max-width:none;justify-content:center}
+  .tr-items .icon-btn{width:100%;height:auto;border-radius:.7rem;justify-content:flex-start;padding:.45rem .6rem;gap:.5rem}
+  .tr-items .icon-btn::after{content:attr(aria-label);font-size:.75rem;font-weight:600}
+}
 
 /* ── 左下：地圖操作（重置，位於縮放鈕上方）── */
 .mapop-btn{position:fixed;left:14px;bottom:calc(88px + env(safe-area-inset-bottom));z-index:1000;background:var(--glass);-webkit-backdrop-filter:blur(16px);backdrop-filter:blur(16px);border:1px solid var(--line);box-shadow:var(--sh-1);width:2.1rem;height:2.1rem;color:var(--fg)}

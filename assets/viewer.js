@@ -8,15 +8,15 @@ window.MapApp = (() => {
   const apiUrl = (action) => APP.base + '?api=' + action;
   const catOrder = ['green', 'pink', 'blue'];
 
-  // 版權標註（依 OSM 慣例含連結）——GitHub 靠前；Souliong 與 prjToka 各自獨立連結，連結可自行修改
+  // 版權標註（依 OSM 慣例含連結）——第三方（義務標註）在前；自家連結依重要性排後：GitHub → Souliong → prjToka
   const REPO_URL = 'https://github.com/zisunny104/koilisu-souliong';
   const SITE_URL = (APP.base || '/');          // Souliong 平台首頁
   const ORG_URL = 'https://toka.dev';          // prjToka
   const CREDIT_HTML =
-    '<a href="' + REPO_URL + '" target="_blank" rel="noopener" aria-label="GitHub 原始碼"><i class="fa-brands fa-github"></i></a> &middot; ' +
     '<a href="https://leafletjs.com" target="_blank" rel="noopener">Leaflet</a> &middot; ' +
     '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> 貢獻者 &middot; ' +
     '<a href="https://carto.com/attributions" target="_blank" rel="noopener">CARTO</a> &middot; ' +
+    '<a href="' + REPO_URL + '" target="_blank" rel="noopener" aria-label="GitHub 原始碼"><i class="fa-brands fa-github"></i></a> &middot; ' +
     '<a href="' + SITE_URL + '">Souliong</a> &middot; <a href="' + ORG_URL + '" target="_blank" rel="noopener">prjToka</a>';
   // 主題：system / light / dark（手動可覆蓋系統偏好）
   const TILE_OPTS = { maxZoom: 20, subdomains: 'abcd', detectRetina: true, attribution: CREDIT_HTML };
@@ -356,7 +356,7 @@ window.MapApp = (() => {
     const story = document.createElement('div'); story.className = 'story';
     story.innerHTML =
       '<div class="story-head">這個地點的故事</div>' +
-      '<div class="story-body">' + (latest ? esc(latest.comment) : '<span class="empty">還沒有故事，來寫下第一段。</span>') + '</div>' +
+      '<div class="story-body">' + (latest ? esc(latest.comment) : '<span class="empty">這裡還沒有故事，等一位旅人來開場。</span>') + '</div>' +
       (byLine ? '<div class="story-by">' + byLine + '</div>' : '') +
       '<div class="story-actions">' +
       (!canPost() ? '' : '<button class="btn small" id="editDescBtn"><i class="fa-solid fa-pen"></i> 編輯說明</button>') +
@@ -368,7 +368,7 @@ window.MapApp = (() => {
 
     // 照片牆
     const gwrap = document.createElement('div');
-    if (!photos.length) gwrap.innerHTML = '<div class="empty" style="margin-top:12px">還沒有照片，上傳你在這裡的一張。</div>';
+    if (!photos.length) gwrap.innerHTML = '<div class="empty" style="margin-top:12px">還沒有照片，等一位旅人留下第一張。</div>';
     photos.forEach(e => {
       const url = photoFullUrl(e);
       const d = document.createElement('div'); d.className = 'entry';
@@ -782,6 +782,22 @@ window.MapApp = (() => {
       document.getElementById('submitAllBtn').onclick = submitAll;
     }
 
+    // 右上：手機收成漢堡（避免遮住卡片），點外部或 Esc 收合
+    const trGroup = document.getElementById('topright');
+    const trToggle = document.getElementById('trToggle');
+    if (trToggle && trGroup) {
+      trToggle.onclick = () => {
+        const open = trGroup.classList.toggle('open');
+        trToggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+      };
+      document.addEventListener('click', e => {
+        if (trGroup.classList.contains('open') && !trGroup.contains(e.target)) {
+          trGroup.classList.remove('open');
+          trToggle.setAttribute('aria-expanded', 'false');
+        }
+      });
+    }
+
     // 右上：分享、重置、身分；左下：重置地圖
     const shareBtn = document.getElementById('shareBtn'); if (shareBtn) shareBtn.onclick = openShare;
     document.getElementById('shareCopyBtn').onclick = copyShareLink;
@@ -816,7 +832,11 @@ window.MapApp = (() => {
       const tag = (e.target && e.target.tagName) || '';
       if (/^(INPUT|TEXTAREA|SELECT)$/.test(tag) || e.metaKey || e.ctrlKey || e.altKey) return;
       const k = e.key.toLowerCase();
-      if (k === 'escape') { closePanel(); closeModal(); closeEmbed(); closeUnlock(); closeShare(); closePin(); }
+      if (k === 'escape') {
+        closePanel(); closeModal(); closeEmbed(); closeUnlock(); closeShare(); closePin();
+        const trG = document.getElementById('topright'), trT = document.getElementById('trToggle');
+        if (trG) { trG.classList.remove('open'); if (trT) trT.setAttribute('aria-expanded', 'false'); }
+      }
       else if (k === 'r') { resetView(); }
       else if (k === 's' && !EMBED) { openShare(); }
       else if (k === 't') { const b = document.getElementById('themeBtn'); if (b) b.click(); }
