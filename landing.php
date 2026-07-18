@@ -69,7 +69,7 @@ footer a{color:inherit}
 <div class="scrim"></div>
 <div class="page">
 <header>
-  <div class="logo">Souliong 循跡</div>
+  <div class="logo" id="logo">Souliong 循跡<span id="logoShape" class="logo-shape"></span></div>
   <div class="tag">循著地方留下的痕跡，用地圖探索、記錄一座城市。<br>每個地方都留下痕跡，每一道痕跡都有故事。</div>
   <div class="bar">
     <?php if ($maps): ?><a class="btn primary" id="randomBtn"><i class="fa-solid fa-shuffle"></i> 隨機探索</a><?php endif; ?>

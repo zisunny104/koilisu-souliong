@@ -9,8 +9,8 @@ return [
     'name_max'        => 60,
     'comment_max'     => 1000,
 
-    // 管理 PIN（長按品牌以 PIN 面板輸入；也可 ?api=admin&token=）
-    'admin_token'     => 'CHANGE-ME',
+    // 管理 PIN（人輸入；驗證後以 httpOnly cookie 保持登入，PIN 不進網址）
+    'admin_pin'       => 'CHANGE-ME',
 
     // 韌性 / 資安
     'rate_max'        => 40,

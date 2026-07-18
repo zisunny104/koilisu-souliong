@@ -13,5 +13,6 @@ if ($project === '' || !is_dir($cfg['projects_dir'] . '/' . $project)) { json_ou
 $meta = json_decode((string)@file_get_contents($cfg['projects_dir'] . '/' . $project . '/meta.json'), true);
 $real = project_code($cfg, $project, is_array($meta) ? $meta : null);
 if ($real === '') { json_out(['ok' => true, 'gated' => false]); }        // 此地圖未 gated
-if (!hash_equals($real, strtoupper(trim((string)($_POST['code'] ?? ''))))) { json_out(['error' => '投稿碼不正確'], 403); }
+$given = preg_replace('/\D/', '', (string)($_POST['code'] ?? ''));   // 純數字碼：容忍空白/貼上
+if (!hash_equals($real, $given)) { json_out(['error' => '投稿碼不正確'], 403); }
 json_out(['ok' => true]);

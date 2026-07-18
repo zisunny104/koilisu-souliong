@@ -20,7 +20,7 @@ if (!preg_match('/^[a-z0-9_-]{1,40}$/', $project) || !is_dir($cfg['projects_dir'
 // 投稿碼：限特定人上傳（碼存在 meta.json，前端拿不到，這裡才是真正把關）
 $metaU = json_decode((string)@file_get_contents($cfg['projects_dir'] . '/' . $project . '/meta.json'), true);
 $needCode = project_code($cfg, $project, is_array($metaU) ? $metaU : null);
-if ($needCode !== '' && !hash_equals($needCode, strtoupper(trim((string)($_POST['code'] ?? ''))))) {
+if ($needCode !== '' && !hash_equals($needCode, preg_replace('/\D/', '', (string)($_POST['code'] ?? '')))) {
     json_out(['error' => '需要正確的投稿碼才能上傳'], 403);
 }
 

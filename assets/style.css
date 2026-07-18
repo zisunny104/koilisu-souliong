@@ -106,6 +106,7 @@ button i{pointer-events:none}
 .pin-dot{display:inline-flex;align-items:center;justify-content:center;color:var(--muted)}
 .pin-dot.filled{color:var(--accent)}
 .pin-dot.pop{animation:brandpop .2s ease}
+@keyframes pinshake{0%,100%{transform:translateX(0)}20%{transform:translateX(-8px)}40%{transform:translateX(8px)}60%{transform:translateX(-6px)}80%{transform:translateX(6px)}}
 .pin-pad{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
 .pin-key{height:52px;border:1px solid var(--line);border-radius:var(--r-md);background:var(--bg);color:var(--fg);font-size:20px;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:background var(--t)}
 .pin-key:hover{background:var(--hover)}

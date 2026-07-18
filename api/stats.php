@@ -13,7 +13,7 @@
  * 效能：單一小檔、加鎖讀寫、有 key 數上限，攻擊者無法灌爆。
  *
  * 之後要「顯示」怎麼做（不需另建資料表）：
- *   讀取：GET  <base>/stat/<project>?read=1&token=管理密碼   （見 stat.php）
+ *   讀取：登入管理後（cookie）GET  ?api=stat&project=<id>&read=1   （見 stat.php）
  *   前端可用回傳 JSON 畫圖，例如：
  *     - points 由大到小排序 → 熱門點位長條圖 / 在地圖上用大小標記
  *     - by_hour → 24 格熱力/折線；by_dow → 一週長條

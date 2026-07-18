@@ -1,6 +1,6 @@
 /* 通用地圖檢視器 —— 由 ?p=<project> 載入 projects/<project>/meta.json 與點位資料。
    後端：api/list.php、api/upload.php（純 PHP，append-only）。 */
-const MapApp = (() => {
+window.MapApp = (() => {
   const APP = window.APP || { base: './', project: 'chairs' };
   const params = new URLSearchParams(location.search);
   const PROJECT = (APP.project || params.get('p') || 'chairs').replace(/[^a-z0-9_-]/gi, '');
@@ -853,7 +853,17 @@ const MapApp = (() => {
   }
   function pinAdd(d) { if (pinVal.length < PIN_MAX) { pinVal += d; renderPin(); } }
   function pinDel() { pinVal = pinVal.slice(0, -1); renderPin(); }
-  function pinSubmit() { if (!pinVal) return; const t = pinVal; closePin(); location.href = APP.base + '?api=admin&token=' + encodeURIComponent(t); }
+  async function pinSubmit() {
+    if (!pinVal) return;
+    try {
+      const fd = new FormData(); fd.append('action', 'login'); fd.append('json', '1'); fd.append('pin', pinVal);
+      const res = await fetch(APP.base + '?api=admin', { method: 'POST', body: fd });
+      const j = await res.json().catch(() => ({}));
+      if (res.ok && j.ok) { closePin(); location.href = APP.base + '?api=admin&project=' + encodeURIComponent(PROJECT); return; }
+    } catch (e) {}
+    pinVal = ''; renderPin();
+    const box = document.querySelector('.pin-box'); if (box) { box.style.animation = 'none'; void box.offsetWidth; box.style.animation = 'pinshake .3s'; }
+  }
   function pinKey(e) {
     if (e.key >= '0' && e.key <= '9') { pinAdd(e.key); e.preventDefault(); }
     else if (e.key === 'Backspace') { pinDel(); e.preventDefault(); }

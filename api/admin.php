@@ -1,126 +1,306 @@
 <?php
-// 管理頁：?api=admin&token=你的PIN[&project=xxx]
+// 管理頁：?api=admin （httpOnly cookie 認證；PIN 走 POST。主 PIN 全域、各專案 PIN 僅該專案）
 require __DIR__ . '/store.php';
 require __DIR__ . '/security.php';
 require __DIR__ . '/stats.php';
 $cfg = require __DIR__ . '/config.php';
-rate_limit($cfg, 'admin');   // 防 PIN 暴力嘗試
+rate_limit($cfg, 'admin');
+$esc = fn($s) => htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8');
 
-$token = $_GET['token'] ?? ($_POST['token'] ?? '');
-if (!hash_equals($cfg['admin_token'], (string)$token)) {
-    http_response_code(403);
+// ── 登入（POST pin[, project]）→ 種 cookie ──
+$loginErr = '';
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'login') {
+    $pin = (string)($_POST['pin'] ?? '');
+    $proj = preg_replace('/[^a-z0-9_-]/', '', $_POST['project'] ?? '');
+    $ok = false; $go = '?api=admin';
+    if (check_master_pin($cfg, $pin)) { admin_set_cookie($cfg); $ok = true; }
+    elseif ($proj !== '' && check_project_pin($cfg, $proj, $pin)) { padm_set_cookie($cfg, $proj); $ok = true; $go = '?api=admin&project=' . urlencode($proj); }
+    if (isset($_POST['json'])) { header('Content-Type: application/json; charset=utf-8'); if ($ok) echo json_encode(['ok' => true]); else { http_response_code(403); echo json_encode(['error' => 'PIN 不正確']); } exit; }
+    if ($ok) { header('Location: ' . $go); exit; }
+    $loginErr = 'PIN 不正確';
+}
+if (isset($_GET['logout'])) { admin_clear_cookie(); header('Location: ?api=admin'); exit; }
+
+// ── 認證與範圍 ──
+$reqProject = preg_replace('/[^a-z0-9_-]/', '', $_GET['project'] ?? '');
+$master = admin_authed($cfg);
+$authed = $master || ($reqProject !== '' && admin_can($cfg, $reqProject));
+if (!$authed) {
+    http_response_code(401);
     header('Content-Type: text/html; charset=utf-8');
-    echo '<!doctype html><meta charset="utf-8"><style>body{font-family:system-ui,"Microsoft JhengHei",sans-serif;display:grid;place-items:center;height:100vh;margin:0;background:#151517;color:#f1f1f3}</style><h3>403 · 需要正確的 PIN</h3>';
+    ?><!DOCTYPE html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>管理登入</title>
+    <style>:root{color-scheme:light dark;--bg:#111113;--fg:#f1f1f3;--muted:#9c9ca3;--line:#2b2b2f;--card:#1c1c1f;--accent:#f1f1f3;--accent-fg:#151517}@media(prefers-color-scheme:light){:root{--bg:#f6f6f7;--fg:#1b1b1d;--muted:#6b6b70;--line:#e7e7ea;--card:#fff;--accent:#1b1b1d;--accent-fg:#fff}}*{box-sizing:border-box}body{margin:0;height:100vh;display:grid;place-items:center;background:var(--bg);color:var(--fg);font-family:"Noto Sans TC",system-ui,sans-serif}form{background:var(--card);border:1px solid var(--line);border-radius:20px;padding:28px;width:min(320px,90vw);box-shadow:0 12px 40px rgba(0,0,0,.3);text-align:center}h1{font-size:18px;margin:0 0 4px}.s{font-size:12px;color:var(--muted);margin-bottom:18px}input{width:100%;text-align:center;letter-spacing:4px;font-size:20px;padding:12px;border:1px solid var(--line);border-radius:12px;background:var(--bg);color:var(--fg);margin-bottom:12px}button{width:100%;border:none;border-radius:12px;background:var(--accent);color:var(--accent-fg);font-size:15px;font-weight:700;padding:12px;cursor:pointer}.err{color:#ff6b6b;font-size:13px;margin-bottom:10px;min-height:18px}</style></head><body>
+    <form method="post"><input type="hidden" name="action" value="login"><input type="hidden" name="project" value="<?= $esc($reqProject) ?>">
+      <h1>Souliong 管理</h1><div class="s"><?= $reqProject !== '' ? $esc($reqProject) . ' · ' : '' ?>輸入管理 PIN</div>
+      <div class="err"><?= $esc($loginErr) ?></div>
+      <input name="pin" type="password" inputmode="numeric" autocomplete="off" autofocus placeholder="PIN">
+      <button>登入</button>
+    </form></body></html><?php
     exit;
 }
 
-// 站方刪除
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'delete') {
-    $project = preg_replace('/[^a-z0-9_-]/', '', $_POST['project'] ?? '');
-    $id = (string)($_POST['id'] ?? '');
-    if ($project !== '' && $id !== '') {
-        $removed = store_delete($cfg, $project, $id);
-        if ($removed && !empty($removed['photo'])) { @unlink($cfg['photos_dir'] . '/' . $removed['photo']); }
-    }
-    $q = preg_replace('/[^a-z0-9_-]/', '', $_GET['project'] ?? '');
-    header('Location: ?api=admin&token=' . urlencode($token) . ($q !== '' ? '&project=' . urlencode($q) : ''));
-    exit;
-}
-// 重新產生投稿碼
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'rotate') {
-    $project = preg_replace('/[^a-z0-9_-]/', '', $_POST['project'] ?? '');
-    if ($project !== '') { @unlink(rtrim($cfg['store_dir'], '/\\') . '/' . $project . '.code.txt'); }
-    header('Location: ?api=admin&token=' . urlencode($token));
-    exit;
-}
+// 範圍：主 PIN → 可全部（?project= 選填）；專案 PIN → 鎖定該專案
+$scopeProject = $master ? $reqProject : $reqProject;   // 專案管理者恆為 $reqProject
+$csrf = $master ? admin_derived($cfg) : padm_derived($cfg, $reqProject);
+$esc_csrf = $esc($csrf);
+function need_csrf(string $csrf): void { if (!hash_equals($csrf, (string)($_POST['csrf'] ?? ''))) { http_response_code(403); exit('bad csrf'); } }
 
-$onlyProject = preg_replace('/[^a-z0-9_-]/', '', $_GET['project'] ?? '');
+// 允許操作某專案？（主全通；專案管理者只能動自己的）
+$canProject = fn($p) => $master || ($p === $reqProject && admin_can($cfg, $p));
+
+// 專案清單（供備份/檢視）
 $allProjects = store_projects($cfg);
 foreach (glob($cfg['projects_dir'] . '/*', GLOB_ONLYDIR) as $d) { $pid = basename($d); if (!in_array($pid, $allProjects, true)) $allProjects[] = $pid; }
-$projects = $onlyProject !== '' ? [$onlyProject] : $allProjects;
+
+// ── 動作 ──
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'delete') {
+    need_csrf($csrf);
+    $p = preg_replace('/[^a-z0-9_-]/', '', $_POST['project'] ?? '');
+    $id = (string)($_POST['id'] ?? '');
+    if ($p !== '' && $id !== '' && $canProject($p)) {
+        $removed = store_delete($cfg, $p, $id);
+        if ($removed && !empty($removed['photo'])) { @unlink($cfg['photos_dir'] . '/' . $removed['photo']); }
+    }
+    header('Location: ?api=admin' . ($scopeProject !== '' ? '&project=' . urlencode($scopeProject) : '')); exit;
+}
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'rotate') {
+    need_csrf($csrf);
+    $p = preg_replace('/[^a-z0-9_-]/', '', $_POST['project'] ?? '');
+    if ($p !== '' && $canProject($p)) { @unlink(rtrim($cfg['store_dir'], '/\\') . '/' . $p . '.code.txt'); }
+    header('Location: ?api=admin' . ($scopeProject !== '' ? '&project=' . urlencode($scopeProject) : '')); exit;
+}
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && in_array(($_POST['action'] ?? ''), ['addpin', 'delpin'], true)) {
+    need_csrf($csrf);
+    if (!$master) { http_response_code(403); exit('僅主管理者可管理 PIN'); }   // 權限管理限主 PIN
+    $scope = ($_POST['scope'] ?? '') === 'master' ? 'master' : 'project';
+    $tp = preg_replace('/[^a-z0-9_-]/', '', $_POST['project'] ?? '');
+    $d = pins_load($cfg);
+    if (($_POST['action']) === 'addpin') {
+        $np = trim((string)($_POST['pin_new'] ?? ''));
+        $label = substr(trim((string)($_POST['label'] ?? '')), 0, 80);
+        if ($np !== '') {
+            $entry = ['pin' => $np, 'label' => $label];
+            if ($scope === 'master') { $d['master'][] = $entry; }
+            elseif ($tp !== '') { $d['projects'][$tp] = $d['projects'][$tp] ?? []; $d['projects'][$tp][] = $entry; }
+        }
+    } else {
+        $del = (string)($_POST['pin_del'] ?? '');
+        $filter = fn($list) => array_values(array_filter($list, fn($e) => !isset($e['pin']) || (string)$e['pin'] !== $del));
+        if ($scope === 'master') { $d['master'] = $filter($d['master']); }
+        elseif ($tp !== '') { $d['projects'][$tp] = $filter($d['projects'][$tp] ?? []); }
+    }
+    pins_save($cfg, $d);
+    header('Location: ?api=admin' . ($scope === 'project' && $tp !== '' ? '&project=' . urlencode($tp) : '')); exit;
+}
+// ── 備份（ZIP，含照片；純 PHP zip，零擴充依賴） ──
+if (isset($_GET['backup'])) {
+    require_once __DIR__ . '/zip.php';
+    $bp = $_GET['backup'] === 'project' ? preg_replace('/[^a-z0-9_-]/', '', $_GET['project'] ?? '') : null;
+    if ($bp === null && !$master) { http_response_code(403); exit('僅主管理者可備份全部'); }
+    if ($bp !== null && !$canProject($bp)) { http_response_code(403); exit('無權限'); }
+    $files = [];
+    $addDir = function ($absDir, $prefix) use (&$files) {
+        if (!is_dir($absDir)) return;
+        foreach (new RecursiveIteratorIterator(new RecursiveDirectoryIterator($absDir, FilesystemIterator::SKIP_DOTS)) as $f) {
+            if (!$f->isFile() || strpos($f->getPathname(), DIRECTORY_SEPARATOR . '.rate' . DIRECTORY_SEPARATOR) !== false) continue;
+            $rel = ltrim(str_replace('\\', '/', substr($f->getPathname(), strlen($absDir))), '/');
+            $files[$prefix . '/' . $rel] = $f->getPathname();
+        }
+    };
+    if ($bp) {
+        foreach (['.jsonl', '.stats.json', '.code.txt'] as $ext) { $q = rtrim($cfg['store_dir'], '/\\') . '/' . $bp . $ext; if (is_file($q)) $files['data/' . $bp . $ext] = $q; }
+        $addDir($cfg['photos_dir'] . '/' . $bp, 'photos/' . $bp); $name = 'souliong-' . $bp . '-' . date('Ymd-His') . '.zip';
+    } else { $addDir($cfg['store_dir'], 'data'); $addDir($cfg['photos_dir'], 'photos'); $name = 'souliong-all-' . date('Ymd-His') . '.zip'; }
+    $tmp = tempnam(sys_get_temp_dir(), 'skbk');
+    if (!zip_write($tmp, $files)) { http_response_code(500); exit('備份失敗（暫存無法寫入）'); }
+    header('Content-Type: application/zip'); header('Content-Disposition: attachment; filename="' . $name . '"'); header('Content-Length: ' . filesize($tmp));
+    readfile($tmp); @unlink($tmp); exit;
+}
+
+// ── 匯入還原（合併／覆蓋）：主管理者限定 ──
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'import') {
+    need_csrf($csrf);
+    if (!$master) { http_response_code(403); exit('僅主管理者可匯入'); }
+    require_once __DIR__ . '/zip.php';
+    $imported = 0;
+    if (isset($_FILES['backup']) && $_FILES['backup']['error'] === UPLOAD_ERR_OK) {
+        $mode = ($_POST['mode'] ?? 'merge') === 'replace' ? 'replace' : 'merge';
+        $sd = rtrim($cfg['store_dir'], '/\\');
+        // 只接受 data/、photos/ 底下、無 .. 的安全路徑
+        $accept = fn($nm) => strpos(str_replace('\\', '/', (string)$nm), '..') === false
+            && preg_match('#^(data|photos)/[A-Za-z0-9_./-]+$#', str_replace('\\', '/', (string)$nm));
+        $entries = zip_read($_FILES['backup']['tmp_name'], $accept);
+        // 1) 資料（jsonl）
+        foreach ($entries as $nm => $content) {
+            if (!preg_match('#^data/([a-z0-9_-]+)\.jsonl$#', str_replace('\\', '/', $nm), $mm)) continue;
+            $proj = $mm[1];
+            if ($mode === 'replace') { @file_put_contents("$sd/$proj.jsonl", $content, LOCK_EX); }
+            else {
+                $ids = [];
+                foreach (store_all($cfg, $proj) as $r) { $ids[(string)($r['id'] ?? '')] = true; }
+                foreach (preg_split('/\r?\n/', (string)$content) as $ln) {
+                    $ln = trim($ln); if ($ln === '') continue;
+                    $rec = json_decode($ln, true);
+                    if (is_array($rec) && !isset($ids[(string)($rec['id'] ?? '')])) { store_append($cfg, $proj, $rec); $imported++; }
+                }
+            }
+        }
+        // 2) 統計 / 投稿碼（僅覆蓋模式才蓋掉）
+        if ($mode === 'replace') {
+            foreach ($entries as $nm => $content) {
+                if (preg_match('#^data/([a-z0-9_-]+\.(?:stats\.json|code\.txt))$#', str_replace('\\', '/', $nm), $mm)) @file_put_contents("$sd/{$mm[1]}", $content, LOCK_EX);
+            }
+        }
+        // 3) 照片（合併只補缺的；覆蓋才蓋）
+        foreach ($entries as $nm => $content) {
+            if (!preg_match('#^photos/([a-z0-9_-]+)/([A-Za-z0-9_.-]+)$#', str_replace('\\', '/', $nm), $mm)) continue;
+            $destDir = $cfg['photos_dir'] . '/' . $mm[1]; if (!is_dir($destDir)) @mkdir($destDir, 0775, true);
+            $dest = $destDir . '/' . $mm[2];
+            if ($mode === 'replace' || !is_file($dest)) @file_put_contents($dest, $content);
+        }
+    }
+    header('Location: ?api=admin'); exit;
+}
+
+// ── 資料 ──
+$allProjects = store_projects($cfg);
+foreach (glob($cfg['projects_dir'] . '/*', GLOB_ONLYDIR) as $d) { $pid = basename($d); if (!in_array($pid, $allProjects, true)) $allProjects[] = $pid; }
+$viewProjects = $master ? ($scopeProject !== '' ? [$scopeProject] : $allProjects) : [$reqProject];
 
 $rows = [];
-foreach ($projects as $p) {
-    foreach (store_all($cfg, $p) as $r) { $r['project'] = $p; $rows[] = $r; }
-}
+foreach ($viewProjects as $p) { foreach (store_all($cfg, $p) as $r) { $r['project'] = $p; $rows[] = $r; } }
 usort($rows, fn($a, $b) => strcmp((string)($b['created_at'] ?? ''), (string)($a['created_at'] ?? '')));
-
 $origin = ((!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http') . '://' . ($_SERVER['HTTP_HOST'] ?? '');
 $basePath = preg_replace('#\?.*$#', '', $_SERVER['REQUEST_URI'] ?? '/');
+$short = fn($s) => $s ? substr((string)$s, 0, 8) : '—';
 
 header('Content-Type: text/html; charset=utf-8');
-$esc = fn($s) => htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8');
-$short = fn($s) => $s ? substr((string)$s, 0, 8) : '—';
-?><!DOCTYPE html>
-<html lang="zh-Hant"><head>
-<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Souliong 管理</title>
+?><!DOCTYPE html><html lang="zh-Hant"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Souliong 管理</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
 <style>
 :root{color-scheme:light dark;--bg:#f6f6f7;--fg:#1b1b1d;--muted:#6b6b70;--line:#e7e7ea;--card:#fff;--accent:#1b1b1d;--accent-fg:#fff;--r-lg:20px;--r-md:13px;--sh:0 6px 24px rgba(0,0,0,.08);--danger:#c0392b}
 @media (prefers-color-scheme:dark){:root{--bg:#111113;--fg:#f1f1f3;--muted:#9c9ca3;--line:#2b2b2f;--card:#1c1c1f;--accent:#f1f1f3;--accent-fg:#151517;--sh:0 6px 24px rgba(0,0,0,.4);--danger:#ff6b6b}}
-*{box-sizing:border-box}
-body{margin:0;font-family:"Noto Sans TC","PingFang TC","Microsoft JhengHei",system-ui,sans-serif;background:var(--bg);color:var(--fg);-webkit-font-smoothing:antialiased}
-.wrap{max-width:1000px;margin:0 auto;padding:28px 20px 60px}
-h1{font-size:22px;font-weight:800;letter-spacing:-.01em;margin:0 0 4px;display:flex;align-items:center;gap:10px}
-h1 .sub{font-size:12px;font-weight:500;color:var(--muted)}
-h2{font-size:13px;font-weight:700;color:var(--muted);letter-spacing:.06em;text-transform:uppercase;margin:30px 0 12px}
+*{box-sizing:border-box}body{margin:0;font-family:"Noto Sans TC","PingFang TC","Microsoft JhengHei",system-ui,sans-serif;background:var(--bg);color:var(--fg);-webkit-font-smoothing:antialiased}
+.wrap{max-width:1000px;margin:0 auto;padding:24px 20px 60px}
+.top{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+h1{font-size:22px;font-weight:800;margin:0;display:flex;align-items:center;gap:10px;flex:1}h1 .sub{font-size:12px;font-weight:500;color:var(--muted)}
+h2{font-size:13px;font-weight:700;color:var(--muted);letter-spacing:.06em;text-transform:uppercase;margin:28px 0 12px}
 .card{background:var(--card);border:1px solid var(--line);border-radius:var(--r-lg);box-shadow:var(--sh)}
-.code-card{display:flex;gap:18px;align-items:center;flex-wrap:wrap;padding:16px 18px;margin-bottom:12px}
+.code-card{display:flex;gap:18px;align-items:flex-start;flex-wrap:wrap;padding:16px 18px;margin-bottom:12px}
 .code-card canvas{border-radius:12px;background:#fff;padding:6px;flex:none}
 .code-info{flex:1;min-width:220px}
-.code-info .pill{display:inline-block;font-size:12px;color:var(--muted);margin-bottom:6px}
+.code-info .pill{font-size:12px;color:var(--muted);margin-bottom:6px}
 .big{font-family:ui-monospace,Consolas,monospace;font-size:30px;font-weight:800;letter-spacing:4px}
 .invite{font-family:ui-monospace,Consolas,monospace;font-size:12px;color:var(--muted);word-break:break-all;margin-top:8px;background:var(--bg);padding:8px 10px;border-radius:10px;border:1px solid var(--line)}
-.btn{border:1px solid var(--line);border-radius:999px;background:var(--card);color:var(--fg);font-size:13px;font-weight:600;padding:8px 14px;cursor:pointer;display:inline-flex;align-items:center;gap:6px;text-decoration:none}
-.btn:hover{background:var(--bg)}
-.btn.danger{color:var(--danger)}
+.acts{display:flex;flex-direction:column;gap:8px}
+.row{display:flex;gap:6px;align-items:center;margin-top:8px}
+.row input{border:1px solid var(--line);border-radius:10px;background:var(--bg);color:var(--fg);padding:7px 10px;font-size:13px;width:140px}
+.btn{border:1px solid var(--line);border-radius:999px;background:var(--card);color:var(--fg);font-size:13px;font-weight:600;padding:8px 14px;cursor:pointer;display:inline-flex;align-items:center;gap:6px;text-decoration:none;white-space:nowrap}
+.btn:hover{background:var(--bg)}.btn.danger{color:var(--danger)}.btn.solid{background:var(--accent);color:var(--accent-fg);border-color:var(--accent)}
+.tabs{display:flex;gap:8px;flex-wrap:wrap;margin:16px 0 4px}
+.tab{font-size:13px;font-weight:600;padding:7px 14px;border-radius:999px;border:1px solid var(--line);background:var(--card);color:var(--fg);text-decoration:none}
+.tab.on{background:var(--accent);color:var(--accent-fg);border-color:var(--accent)}.tab:hover{background:var(--bg)}
 .stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px}
 .tile{background:var(--card);border:1px solid var(--line);border-radius:var(--r-md);padding:14px 16px}
-.tile .n{font-size:26px;font-weight:800}
-.tile .l{font-size:12px;color:var(--muted);margin-top:2px}
-.break{font-size:12px;color:var(--muted);margin-top:10px;line-height:1.7}
-.break b{color:var(--fg)}
+.tile .n{font-size:26px;font-weight:800}.tile .l{font-size:12px;color:var(--muted);margin-top:2px}
+.break{font-size:12px;color:var(--muted);margin-top:10px;line-height:1.7}.break b{color:var(--fg)}
 .tablewrap{overflow-x:auto;border:1px solid var(--line);border-radius:var(--r-lg);background:var(--card)}
 table{border-collapse:collapse;width:100%;font-size:13px;min-width:820px}
 th{background:var(--bg);position:sticky;top:0;text-align:left;font-weight:700;color:var(--muted);font-size:11px;letter-spacing:.04em;text-transform:uppercase}
-th,td{padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:top}
-tr:hover td{background:var(--bg)}
+th,td{padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:top}tr:hover td{background:var(--bg)}
 td img{width:80px;height:80px;object-fit:cover;border-radius:10px;display:block}
 .mono{font-family:ui-monospace,Consolas,monospace;font-size:11px;color:var(--muted)}
 .tag{display:inline-block;font-size:11px;font-weight:600;padding:2px 8px;border-radius:999px;background:var(--bg);border:1px solid var(--line)}
 .hint{font-size:12px;color:var(--muted);margin-top:14px;line-height:1.7}
 .iconbtn{background:none;border:none;color:var(--danger);cursor:pointer;font-size:15px}
+.badge{font-size:11px;color:var(--muted)}
+.pinlist{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:8px}
+.pinchip{display:inline-flex;align-items:center;gap:6px;font-size:12px;background:var(--bg);border:1px solid var(--line);border-radius:999px;padding:5px 6px 5px 12px}
+.pinchip form{display:inline;margin:0}
+.pinchip .x{background:none;border:none;color:var(--danger);cursor:pointer;font-size:16px;line-height:1;padding:0 4px}
 </style></head>
 <body><div class="wrap">
-<h1><i class="fa-solid fa-gauge-high"></i> Souliong 管理後台 <span class="sub"><?= count($rows) ?> 筆投稿</span></h1>
+<div class="top">
+  <h1><i class="fa-solid fa-gauge-high"></i> Souliong 管理 <span class="sub"><?= $master ? '主管理' : $esc($reqProject) . ' 專案管理' ?> · <?= count($rows) ?> 筆</span></h1>
+  <?php if ($master): ?><a class="btn solid" href="?api=admin&backup=all"><i class="fa-solid fa-download"></i> 備份全部</a><?php endif; ?>
+  <a class="btn" href="?api=admin&logout=1"><i class="fa-solid fa-right-from-bracket"></i> 登出</a>
+</div>
 
-<h2>投稿碼 · 邀請</h2>
-<?php foreach ($allProjects as $p):
+<?php if (!is_writable($cfg['store_dir'])): ?>
+<div class="card" style="border-color:var(--danger);color:var(--danger);padding:14px 18px;margin-top:12px;font-size:.85rem;line-height:1.7">
+  <b><i class="fa-solid fa-triangle-exclamation"></i> 資料夾無法寫入：<?= $esc($cfg['store_dir']) ?></b><br>
+  投稿碼／統計無法保存，會導致「投稿碼永遠驗證失敗」。請讓 PHP 對 <code>data/</code> 與 <code>photos/</code> 有寫入權限（例如 <code>chown -R www-data data photos</code> 或 <code>chmod</code>）。
+</div>
+<?php endif; ?>
+
+<?php if ($master): ?>
+<form class="card" method="post" enctype="multipart/form-data" style="padding:12px 16px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:12px">
+  <input type="hidden" name="csrf" value="<?= $esc_csrf ?>"><input type="hidden" name="action" value="import">
+  <span class="badge"><i class="fa-solid fa-upload"></i> 匯入備份 ZIP</span>
+  <input type="file" name="backup" accept=".zip" required style="font-size:13px">
+  <select name="mode" style="border:1px solid var(--line);border-radius:10px;background:var(--bg);color:var(--fg);padding:7px 10px;font-size:13px"><option value="merge">合併（依 id 聯集，不重複）</option><option value="replace">覆蓋</option></select>
+  <button class="btn">還原</button>
+</form>
+
+<div class="tabs">
+  <a class="tab<?= $scopeProject === '' ? ' on' : '' ?>" href="?api=admin">全部（<?= count($allProjects) ?>）</a>
+  <?php foreach ($allProjects as $tp): ?><a class="tab<?= $scopeProject === $tp ? ' on' : '' ?>" href="?api=admin&project=<?= $esc($tp) ?>"><?= $esc($tp) ?></a><?php endforeach; ?>
+</div>
+<?php endif; ?>
+
+<?php if ($master): $mpins = pins_load($cfg)['master']; ?>
+<h2>主 PIN · Master Key（開所有專案）</h2>
+<div class="card" style="padding:16px 18px">
+  <div class="pinlist">
+    <span class="pinchip">主設定 · <span class="mono">config</span></span>
+    <?php foreach ($mpins as $e): ?><span class="pinchip"><?= $esc(($e['label'] ?? '') !== '' ? $e['label'] : '（無暱稱）') ?> · <span class="mono"><?= $esc($e['pin'] ?? '') ?></span>
+      <form method="post"><input type="hidden" name="csrf" value="<?= $esc_csrf ?>"><input type="hidden" name="action" value="delpin"><input type="hidden" name="scope" value="master"><input type="hidden" name="pin_del" value="<?= $esc($e['pin'] ?? '') ?>"><button class="x" title="移除">×</button></form></span>
+    <?php endforeach; ?>
+  </div>
+  <form class="row" method="post" style="margin-top:10px"><input type="hidden" name="csrf" value="<?= $esc_csrf ?>"><input type="hidden" name="action" value="addpin"><input type="hidden" name="scope" value="master">
+    <input name="pin_new" placeholder="新主 PIN" autocomplete="off"><input name="label" placeholder="暱稱（可選）" autocomplete="off"><button class="btn">新增主 PIN</button>
+  </form>
+</div>
+<?php endif; ?>
+
+<h2>投稿碼 · 邀請<?= $master ? ' · 專案 PIN' : '' ?></h2>
+<?php foreach ($viewProjects as $p):
     $meta = json_decode((string)@file_get_contents($cfg['projects_dir'] . '/' . $p . '/meta.json'), true);
     $code = project_code($cfg, $p, is_array($meta) ? $meta : null);
-    if ($code === '') continue;
+    $ppins = $master ? (pins_load($cfg)['projects'][$p] ?? []) : [];
     $invite = $origin . $basePath . $p . '?code=' . $code;
 ?>
 <div class="card code-card">
-  <canvas class="qr" data-url="<?= $esc($invite) ?>" width="120" height="120"></canvas>
+  <?php if ($code !== ''): ?><canvas class="qr" data-url="<?= $esc($invite) ?>" width="120" height="120"></canvas><?php endif; ?>
   <div class="code-info">
-    <div class="pill"><i class="fa-solid fa-map-location-dot"></i> <?= $esc($meta['title'] ?? $p) ?>（<?= $esc($p) ?>）· 目前投稿碼</div>
-    <div class="big"><?= $esc($code) ?></div>
-    <div class="invite"><?= $esc($invite) ?></div>
+    <div class="pill"><i class="fa-solid fa-map-location-dot"></i> <?= $esc($meta['title'] ?? $p) ?>（<?= $esc($p) ?>）</div>
+    <?php if ($code !== ''): ?><div class="big"><?= $esc($code) ?></div><div class="invite"><?= $esc($invite) ?></div><?php else: ?><div class="badge">此地圖未設投稿碼（meta.json 的 "gated": true 才需要）</div><?php endif; ?>
+    <?php if ($master): ?>
+    <div class="badge" style="margin-top:10px">專案 PIN（房間鑰匙）</div>
+    <div class="pinlist">
+      <?php foreach ($ppins as $e): ?><span class="pinchip"><?= $esc(($e['label'] ?? '') !== '' ? $e['label'] : '（無暱稱）') ?> · <span class="mono"><?= $esc($e['pin'] ?? '') ?></span>
+        <form method="post"><input type="hidden" name="csrf" value="<?= $esc_csrf ?>"><input type="hidden" name="action" value="delpin"><input type="hidden" name="scope" value="project"><input type="hidden" name="project" value="<?= $esc($p) ?>"><input type="hidden" name="pin_del" value="<?= $esc($e['pin'] ?? '') ?>"><button class="x" title="移除">×</button></form></span>
+      <?php endforeach; ?>
+    </div>
+    <form class="row" method="post"><input type="hidden" name="csrf" value="<?= $esc_csrf ?>"><input type="hidden" name="action" value="addpin"><input type="hidden" name="scope" value="project"><input type="hidden" name="project" value="<?= $esc($p) ?>">
+      <input name="pin_new" placeholder="新專案 PIN" autocomplete="off"><input name="label" placeholder="暱稱（可選）" autocomplete="off"><button class="btn">新增</button>
+    </form>
+    <?php endif; ?>
   </div>
-  <form method="post">
-    <input type="hidden" name="token" value="<?= $esc($token) ?>"><input type="hidden" name="action" value="rotate"><input type="hidden" name="project" value="<?= $esc($p) ?>">
-    <button class="btn danger" onclick="return confirm('重新產生會讓舊碼與舊邀請連結失效，確定？')"><i class="fa-solid fa-rotate"></i> 重新產生</button>
-  </form>
+  <div class="acts">
+    <a class="btn" href="?api=admin&backup=project&project=<?= $esc($p) ?>"><i class="fa-solid fa-download"></i> 備份此專案</a>
+    <?php if ($code !== ''): ?><form method="post" style="margin:0"><input type="hidden" name="csrf" value="<?= $esc_csrf ?>"><input type="hidden" name="action" value="rotate"><input type="hidden" name="project" value="<?= $esc($p) ?>">
+      <button class="btn danger" onclick="return confirm('重新產生會讓舊碼與邀請連結失效，確定？')"><i class="fa-solid fa-rotate"></i> 重新產生碼</button></form><?php endif; ?>
+  </div>
 </div>
 <?php endforeach; ?>
 
 <h2>統計摘要</h2>
-<?php foreach ($projects as $p): $s = stats_read($cfg, $p); if (!$s) continue;
+<?php foreach ($viewProjects as $p): $s = stats_read($cfg, $p); if (!$s) continue;
     $s['points'] = $s['points'] ?? []; $s['cameras'] = $s['cameras'] ?? [];
     arsort($s['points']); arsort($s['cameras']);
-    $fmtTop = function ($arr, $n = 5) { $out = []; foreach (array_slice($arr, 0, $n, true) as $k => $v) $out[] = $k . '·' . $v; return $out ? implode('、', $out) : '—'; };
+    $top = function ($arr, $n = 5) { $o = []; foreach (array_slice($arr, 0, $n, true) as $k => $v) $o[] = $k . '·' . $v; return $o ? implode('、', $o) : '—'; };
 ?>
 <div style="margin-bottom:14px">
   <div style="font-size:13px;font-weight:700;margin-bottom:8px"><?= $esc($p) ?></div>
@@ -130,7 +310,7 @@ td img{width:80px;height:80px;object-fit:cover;border-radius:10px;display:block}
     <div class="tile"><div class="n"><?= (int)($s['uploads'] ?? 0) ?></div><div class="l">上傳</div></div>
     <div class="tile"><div class="n"><?= (int)(($s['device']['mobile'] ?? 0)) ?>/<?= (int)(($s['device']['desktop'] ?? 0)) ?></div><div class="l">手機/桌機</div></div>
   </div>
-  <div class="break">熱門點位：<b><?= $esc($fmtTop($s['points'])) ?></b><br>相機：<b><?= $esc($fmtTop($s['cameras'])) ?></b>　功能：<b><?= $esc(json_encode($s['features'] ?? [], JSON_UNESCAPED_UNICODE)) ?></b></div>
+  <div class="break">熱門點位：<b><?= $esc($top($s['points'])) ?></b><br>相機：<b><?= $esc($top($s['cameras'])) ?></b>　功能：<b><?= $esc(json_encode($s['features'] ?? [], JSON_UNESCAPED_UNICODE)) ?></b></div>
 </div>
 <?php endforeach; ?>
 
@@ -139,24 +319,20 @@ td img{width:80px;height:80px;object-fit:cover;border-radius:10px;display:block}
 <tr><th>項目</th><th>點</th><th>類型</th><th>照片</th><th>暱稱</th><th>內容</th><th>相機</th><th>時間</th><th>座標</th><th>o/s</th><th></th></tr>
 <?php foreach ($rows as $r): ?>
 <tr>
-  <td><?= $esc($r['project']) ?></td>
-  <td><?= $esc($r['item_num'] ?? '') ?></td>
-  <td><span class="tag"><?= $esc($r['kind'] ?? 'photo') ?></span></td>
+  <td><?= $esc($r['project']) ?></td><td><?= $esc($r['item_num'] ?? '') ?></td><td><span class="tag"><?= $esc($r['kind'] ?? 'photo') ?></span></td>
   <td><?= !empty($r['photo']) ? '<a href="?api=photo&f=' . $esc($r['photo']) . '" target="_blank"><img src="?api=photo&f=' . $esc($r['photo']) . '" alt=""></a>' : '' ?></td>
-  <td><?= $esc($r['name'] ?? '') ?></td>
-  <td><?= nl2br($esc($r['comment'] ?? '')) ?></td>
-  <td class="mono"><?= $esc(is_array($r['exif'] ?? null) ? implode(' ', array_map(fn($k, $v) => "$v", array_keys($r['exif']), $r['exif'])) : '') ?></td>
+  <td><?= $esc($r['name'] ?? '') ?></td><td><?= nl2br($esc($r['comment'] ?? '')) ?></td>
+  <td class="mono"><?= $esc(is_array($r['exif'] ?? null) ? implode(' ', $r['exif']) : '') ?></td>
   <td class="mono"><?= $esc(substr((string)($r['photo_time'] ?? $r['created_at'] ?? ''), 0, 16)) ?></td>
   <td class="mono"><?= $esc(round((float)($r['lat'] ?? 0), 4)) ?>,<?= $esc(round((float)($r['lon'] ?? 0), 4)) ?><br><?= $esc($r['loc_source'] ?? '') ?></td>
   <td class="mono"><?= $esc($short($r['owner_hash'] ?? '')) ?><br><?= $esc($short($r['src_hash'] ?? '')) ?></td>
-  <td><form method="post" onsubmit="return confirm('確定刪除？')">
-    <input type="hidden" name="token" value="<?= $esc($token) ?>"><input type="hidden" name="action" value="delete">
+  <td><form method="post" onsubmit="return confirm('確定刪除？')"><input type="hidden" name="csrf" value="<?= $esc_csrf ?>"><input type="hidden" name="action" value="delete">
     <input type="hidden" name="project" value="<?= $esc($r['project']) ?>"><input type="hidden" name="id" value="<?= $esc($r['id'] ?? '') ?>">
     <button class="iconbtn" title="刪除"><i class="fa-solid fa-trash"></i></button></form></td>
 </tr>
 <?php endforeach; ?>
 </table></div>
-<div class="hint">o＝owner（同源可群組追蹤）、s＝加鹽 IP 雜湊；同一 owner 出現多個不同 s 可能是投稿碼外流／冒名。</div>
+<div class="hint">o＝owner（同源可群組追蹤）、s＝加鹽 IP 雜湊；同一 owner 出現多個不同 s 可能是投稿碼外流／冒名。<?= $master ? '　主 PIN 可管理所有專案並設定各專案 PIN；專案 PIN 僅能管理該專案。' : '' ?></div>
 </div>
 <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.4/build/qrcode.min.js"></script>
 <script>document.querySelectorAll('canvas.qr').forEach(function(c){ if(window.QRCode) QRCode.toCanvas(c,c.dataset.url,{width:120,margin:1},function(){}); });</script>
