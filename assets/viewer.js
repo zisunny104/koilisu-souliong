@@ -946,10 +946,10 @@ window.MapApp = (() => {
   async function pinSubmit() {
     if (!pinVal) return;
     try {
-      const fd = new FormData(); fd.append('action', 'login'); fd.append('json', '1'); fd.append('pin', pinVal);
+      const fd = new FormData(); fd.append('action', 'login'); fd.append('json', '1'); fd.append('pin', pinVal); fd.append('project', PROJECT);
       const res = await fetch(APP.base + '?api=admin', { method: 'POST', body: fd });
       const j = await res.json().catch(() => ({}));
-      if (res.ok && j.ok) { closePin(); location.href = APP.base + '?api=admin&project=' + encodeURIComponent(PROJECT); return; }
+      if (res.ok && j.ok) { closePin(); location.href = APP.base + encodeURIComponent(PROJECT) + '/manager'; return; }
     } catch (e) {}
     pinVal = ''; renderPin();
     const box = document.querySelector('.pin-box'); if (box) { box.style.animation = 'none'; void box.offsetWidth; box.style.animation = 'pinshake .3s'; }
