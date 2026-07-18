@@ -39,7 +39,7 @@ $bg = $maps ? $maps[array_rand($maps)] : ['center' => [23.9, 120.7], 'zoom' => 1
 :root{ --bg:#fafafa; --fg:#1b1b1d; --muted:#6b6b70; --line:#e7e7ea; --card:rgba(255,255,255,.86); --accent:#1b1b1d; --accent-fg:#fff; --r-lg:22px; --scrim:rgba(250,250,250,.72); }
 @media (prefers-color-scheme: dark){ :root{ --bg:#141416; --fg:#f1f1f3; --muted:#9c9ca3; --line:#2e2e31; --card:rgba(29,29,32,.86); --accent:#f1f1f3; --accent-fg:#141416; --scrim:rgba(20,20,22,.72); } }
 *{box-sizing:border-box}
-body{margin:0;font-family:"Noto Sans TC","PingFang TC","Microsoft JhengHei",system-ui,sans-serif;background:var(--bg);color:var(--fg);-webkit-font-smoothing:antialiased;min-height:100vh}
+body{margin:0;font-family:system-ui,sans-serif;background:var(--bg);color:var(--fg);-webkit-font-smoothing:antialiased;min-height:100vh}
 #bgmap{position:fixed;inset:0;z-index:0;pointer-events:none}
 .scrim{position:fixed;inset:0;z-index:1;background:var(--scrim);-webkit-backdrop-filter:blur(1.5px);backdrop-filter:blur(1.5px)}
 .page{position:relative;z-index:2}

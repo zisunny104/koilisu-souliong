@@ -26,7 +26,7 @@
   --sh-1:0 1px 3px rgba(0,0,0,.4); --sh-2:0 8px 28px rgba(0,0,0,.5); --sh-3:0 20px 52px rgba(0,0,0,.62);
 }
 *{box-sizing:border-box}
-html,body{margin:0;height:100%;font-family:"Noto Sans TC","PingFang TC","Microsoft JhengHei",system-ui,sans-serif;color:var(--fg);background:var(--bg);-webkit-font-smoothing:antialiased}
+html,body{margin:0;height:100%;font-family:system-ui,sans-serif;color:var(--fg);background:var(--bg);-webkit-font-smoothing:antialiased}
 a{color:inherit}
 #map{position:fixed;inset:0;z-index:0}
 body.embed .hide-in-embed{display:none !important}

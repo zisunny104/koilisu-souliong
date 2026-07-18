@@ -3,6 +3,7 @@
 require __DIR__ . '/store.php';
 require __DIR__ . '/security.php';
 require __DIR__ . '/stats.php';
+require __DIR__ . '/../error.php';
 $cfg = require __DIR__ . '/config.php';
 rate_limit($cfg, 'admin');
 $esc = fn($s) => htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8');
@@ -29,7 +30,7 @@ if (!$authed) {
     http_response_code(401);
     header('Content-Type: text/html; charset=utf-8');
     ?><!DOCTYPE html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>管理登入</title>
-    <style>:root{color-scheme:light dark;--bg:#111113;--fg:#f1f1f3;--muted:#9c9ca3;--line:#2b2b2f;--card:#1c1c1f;--accent:#f1f1f3;--accent-fg:#151517}@media(prefers-color-scheme:light){:root{--bg:#f6f6f7;--fg:#1b1b1d;--muted:#6b6b70;--line:#e7e7ea;--card:#fff;--accent:#1b1b1d;--accent-fg:#fff}}*{box-sizing:border-box}body{margin:0;height:100vh;display:grid;place-items:center;background:var(--bg);color:var(--fg);font-family:"Noto Sans TC",system-ui,sans-serif}form{background:var(--card);border:1px solid var(--line);border-radius:20px;padding:28px;width:min(320px,90vw);box-shadow:0 12px 40px rgba(0,0,0,.3);text-align:center}h1{font-size:18px;margin:0 0 4px}.s{font-size:12px;color:var(--muted);margin-bottom:18px}input{width:100%;text-align:center;letter-spacing:4px;font-size:20px;padding:12px;border:1px solid var(--line);border-radius:12px;background:var(--bg);color:var(--fg);margin-bottom:12px}button{width:100%;border:none;border-radius:12px;background:var(--accent);color:var(--accent-fg);font-size:15px;font-weight:700;padding:12px;cursor:pointer}.err{color:#ff6b6b;font-size:13px;margin-bottom:10px;min-height:18px}</style></head><body>
+    <style>:root{color-scheme:light dark;--bg:#111113;--fg:#f1f1f3;--muted:#9c9ca3;--line:#2b2b2f;--card:#1c1c1f;--accent:#f1f1f3;--accent-fg:#151517}@media(prefers-color-scheme:light){:root{--bg:#f6f6f7;--fg:#1b1b1d;--muted:#6b6b70;--line:#e7e7ea;--card:#fff;--accent:#1b1b1d;--accent-fg:#fff}}*{box-sizing:border-box}body{margin:0;height:100vh;display:grid;place-items:center;background:var(--bg);color:var(--fg);font-family:system-ui,sans-serif}form{background:var(--card);border:1px solid var(--line);border-radius:20px;padding:28px;width:min(320px,90vw);box-shadow:0 12px 40px rgba(0,0,0,.3);text-align:center}h1{font-size:18px;margin:0 0 4px}.s{font-size:12px;color:var(--muted);margin-bottom:18px}input{width:100%;text-align:center;letter-spacing:4px;font-size:20px;padding:12px;border:1px solid var(--line);border-radius:12px;background:var(--bg);color:var(--fg);margin-bottom:12px}button{width:100%;border:none;border-radius:12px;background:var(--accent);color:var(--accent-fg);font-size:15px;font-weight:700;padding:12px;cursor:pointer}.err{color:#ff6b6b;font-size:13px;margin-bottom:10px;min-height:18px}</style></head><body>
     <form method="post"><input type="hidden" name="action" value="login"><input type="hidden" name="project" value="<?= $esc($reqProject) ?>">
       <h1>Souliong 管理</h1><div class="s"><?= $reqProject !== '' ? $esc($reqProject) . ' · ' : '' ?>輸入管理 PIN</div>
       <div class="err"><?= $esc($loginErr) ?></div>
@@ -43,7 +44,7 @@ if (!$authed) {
 $scopeProject = $master ? $reqProject : $reqProject;   // 專案管理者恆為 $reqProject
 $csrf = $master ? admin_derived($cfg) : padm_derived($cfg, $reqProject);
 $esc_csrf = $esc($csrf);
-function need_csrf(string $csrf): void { if (!hash_equals($csrf, (string)($_POST['csrf'] ?? ''))) { http_response_code(403); exit('bad csrf'); } }
+function need_csrf(string $csrf): void { if (!hash_equals($csrf, (string)($_POST['csrf'] ?? ''))) { error_page(403, '憑證失效', '請重新整理頁面後再操作一次。', '?api=admin', '返回後台'); } }
 
 // 允許操作某專案？（主全通；專案管理者只能動自己的）
 $canProject = fn($p) => $master || ($p === $reqProject && admin_can($cfg, $p));
@@ -71,7 +72,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'rotat
 }
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && in_array(($_POST['action'] ?? ''), ['addpin', 'delpin'], true)) {
     need_csrf($csrf);
-    if (!$master) { http_response_code(403); exit('僅主管理者可管理 PIN'); }   // 權限管理限主 PIN
+    if (!$master) { error_page(403, '沒有權限', 'PIN 權限管理僅限主要管理者。', '?api=admin', '返回後台'); }   // 權限管理限主 PIN
     $scope = ($_POST['scope'] ?? '') === 'master' ? 'master' : 'project';
     $tp = preg_replace('/[^a-z0-9_-]/', '', $_POST['project'] ?? '');
     $d = pins_load($cfg);
@@ -96,8 +97,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && in_array(($_POST['action'] ?? ''), 
 if (isset($_GET['backup'])) {
     require_once __DIR__ . '/zip.php';
     $bp = $_GET['backup'] === 'project' ? preg_replace('/[^a-z0-9_-]/', '', $_GET['project'] ?? '') : null;
-    if ($bp === null && !$master) { http_response_code(403); exit('僅主管理者可備份全部'); }
-    if ($bp !== null && !$canProject($bp)) { http_response_code(403); exit('無權限'); }
+    if ($bp === null && !$master) { error_page(403, '沒有權限', '只有主要管理者可以備份全部專案。', '?api=admin', '返回後台'); }
+    if ($bp !== null && !$canProject($bp)) { error_page(403, '沒有權限', '您沒有這個專案的管理權限。', '?api=admin', '返回後台'); }
     $files = [];
     $addDir = function ($absDir, $prefix) use (&$files) {
         if (!is_dir($absDir)) return;
@@ -117,10 +118,10 @@ if (isset($_GET['backup'])) {
     readfile($tmp); @unlink($tmp); exit;
 }
 
-// ── 匯入還原（合併／覆蓋）：主管理者限定 ──
+// ── 匯入還原（合併／覆蓋）：主要管理者限定 ──
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'import') {
     need_csrf($csrf);
-    if (!$master) { http_response_code(403); exit('僅主管理者可匯入'); }
+    if (!$master) { error_page(403, '沒有權限', '只有主要管理者可以匯入還原。', '?api=admin', '返回後台'); }
     require_once __DIR__ . '/zip.php';
     $imported = 0;
     if (isset($_FILES['backup']) && $_FILES['backup']['error'] === UPLOAD_ERR_OK) {
@@ -181,7 +182,7 @@ header('Content-Type: text/html; charset=utf-8');
 <style>
 :root{color-scheme:light dark;--bg:#f6f6f7;--fg:#1b1b1d;--muted:#6b6b70;--line:#e7e7ea;--card:#fff;--accent:#1b1b1d;--accent-fg:#fff;--r-lg:20px;--r-md:13px;--sh:0 6px 24px rgba(0,0,0,.08);--danger:#c0392b}
 @media (prefers-color-scheme:dark){:root{--bg:#111113;--fg:#f1f1f3;--muted:#9c9ca3;--line:#2b2b2f;--card:#1c1c1f;--accent:#f1f1f3;--accent-fg:#151517;--sh:0 6px 24px rgba(0,0,0,.4);--danger:#ff6b6b}}
-*{box-sizing:border-box}body{margin:0;font-family:"Noto Sans TC","PingFang TC","Microsoft JhengHei",system-ui,sans-serif;background:var(--bg);color:var(--fg);-webkit-font-smoothing:antialiased}
+*{box-sizing:border-box}body{margin:0;font-family:system-ui,sans-serif;background:var(--bg);color:var(--fg);-webkit-font-smoothing:antialiased}
 .wrap{max-width:1000px;margin:0 auto;padding:24px 20px 60px}
 .top{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 h1{font-size:22px;font-weight:800;margin:0;display:flex;align-items:center;gap:10px;flex:1}h1 .sub{font-size:12px;font-weight:500;color:var(--muted)}
@@ -222,7 +223,7 @@ td img{width:80px;height:80px;object-fit:cover;border-radius:10px;display:block}
 </style></head>
 <body><div class="wrap">
 <div class="top">
-  <h1><i class="fa-solid fa-gauge-high"></i> Souliong 管理 <span class="sub"><?= $master ? '主管理' : $esc($reqProject) . ' 專案管理' ?> · <?= count($rows) ?> 筆</span></h1>
+  <h1><i class="fa-solid fa-gauge-high"></i> Souliong 管理 <span class="sub"><?= $master ? '主要管理' : $esc($reqProject) . ' 專案管理' ?> · <?= count($rows) ?> 筆</span></h1>
   <?php if ($master): ?><a class="btn solid" href="?api=admin&backup=all"><i class="fa-solid fa-download"></i> 備份全部</a><?php endif; ?>
   <a class="btn" href="?api=admin&logout=1"><i class="fa-solid fa-right-from-bracket"></i> 登出</a>
 </div>
