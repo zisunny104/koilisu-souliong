@@ -78,7 +78,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'meta'
     $mf = $cfg['projects_dir'] . '/' . $p . '/meta.json';
     $meta = is_file($mf) ? json_decode((string)@file_get_contents($mf), true) : [];
     if (!is_array($meta)) $meta = [];
-    foreach (['title', 'subtitle', 'desc', 'source'] as $k) {
+    foreach (['title', 'subtitle', 'desc', 'source', 'credit'] as $k) {
         $raw = trim((string)($_POST[$k] ?? ''));
         $v = preg_replace('/^(.{0,300}).*$/su', '$1', $raw);   // UTF-8 安全截斷
         if ($v === null) { continue; }                          // 非法 UTF-8 → 略過此欄，不動舊值
@@ -323,6 +323,8 @@ td img{width:80px;height:80px;object-fit:cover;border-radius:10px;display:block}
         <label>副標<input name="subtitle" maxlength="300" value="<?= $esc($meta['subtitle'] ?? '') ?>" placeholder="副標題（可選）"></label>
         <label>說明<textarea name="desc" rows="2" maxlength="300" placeholder="首頁卡片的簡短說明（可選）"><?= $esc($meta['desc'] ?? '') ?></textarea></label>
         <label>資料來源<input name="source" maxlength="300" value="<?= $esc($meta['source'] ?? '') ?>" placeholder="例：ArcGIS StoryMaps「…」（可選）"></label>
+        <label>原始單位署名<input name="credit" maxlength="300" value="<?= $esc($meta['credit'] ?? '') ?>" placeholder="頁尾顯示的原始單位／團隊（可選）"></label>
+        <div class="badge">來源連結（可展開的多個 StoryMaps）為 meta.json 的 <code>sources</code> 陣列，格式見 EXTENDING.md。</div>
         <button class="btn primary"><i class="fa-solid fa-floppy-disk"></i> 儲存描述</button>
       </form>
     </details>

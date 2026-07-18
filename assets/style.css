@@ -273,3 +273,12 @@ body.focus-contrib .dot-pin:not(.has-contrib){opacity:.32;filter:grayscale(.55)}
 /* 「投稿」鈕上的數量標 */
 .btn .cnt{display:inline-flex;align-items:center;justify-content:center;min-width:1.05rem;height:1.05rem;padding:0 .3rem;border-radius:999px;background:var(--accent);color:var(--accent-fg);font-size:.68rem;font-weight:800;line-height:1}
 .btn.on .cnt{background:var(--accent-fg);color:var(--accent)}
+
+/* 資料來源連結（可展開） */
+.src-links{margin-top:5px}
+.src-links>summary{cursor:pointer;font-size:11px;color:var(--muted);list-style:none}
+.src-links>summary::-webkit-details-marker{display:none}
+.src-links>summary::before{content:'▸ ';font-size:9px}
+.src-links[open]>summary::before{content:'▾ '}
+.src-links a{display:block;font-size:11px;color:var(--muted);margin-top:4px;word-break:break-all;text-decoration:underline}
+.src-links a:hover{color:var(--fg)}

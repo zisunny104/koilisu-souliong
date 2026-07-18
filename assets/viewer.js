@@ -685,8 +685,17 @@ window.MapApp = (() => {
     POINTS = APP.points || await fetch(APP.base + 'projects/' + PROJECT + '/' + (META.points || 'points.json')).then(r => r.json());
     document.title = (META.title || '地圖') + (META.subtitle ? '・' + META.subtitle : '');
     document.getElementById('titleTxt').textContent = META.title + (META.subtitle ? '・' + META.subtitle : '');
+    // 資料來源連結（meta.sources = [{label,url}]，可展開看原始 StoryMaps）與原始單位署名（meta.credit）
+    var srcLinks = '';
+    if (Array.isArray(META.sources) && META.sources.length) {
+      srcLinks = '<details class="src-links"><summary>資料來源連結（' + META.sources.length + '）</summary>' +
+        META.sources.map(function (s) { return '<a href="' + esc(s.url) + '" target="_blank" rel="noopener">' + esc(s.label || s.url) + '</a>'; }).join('') +
+        '</details>';
+    }
     document.getElementById('foot').innerHTML =
       (META.source ? '<div class="foot-src">資料來源：' + esc(META.source) + '</div>' : '') +
+      srcLinks +
+      (META.credit ? '<div class="foot-src">' + esc(META.credit) + '</div>' : '') +
       '<div class="foot-note">投稿內容由投稿者公開分享。<a href="' + esc(APP.base) + 'privacy" target="_blank" rel="noopener">隱私與資料說明</a></div>';
 
     const seen = {};
