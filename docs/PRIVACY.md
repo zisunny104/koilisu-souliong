@@ -12,7 +12,7 @@ We collect as little as possible, keep it de-identified, and use no third-party 
 
 ## 存在你裝置上的資料 / Stored on your device
 
-以瀏覽器 `localStorage` 保存（僅在你的裝置，可自行清除）：主題偏好、你輸入的暱稱、投稿權限（解鎖後記住的投稿碼）、以及一個**有期限**的「擁有者標記」——用來讓你在原裝置刪除自己的投稿。
+以瀏覽器 `localStorage` 儲存（僅在你的裝置，可自行清除）：主題偏好、你輸入的暱稱、投稿權限（解鎖後記住的投稿碼）、以及一個**有期限**的「擁有者標記」——用來讓你在原裝置刪除自己的投稿。
 
 公開地圖頁**不設 Cookie**；只有後台登入使用一個功能性的 `httpOnly` Cookie 維持登入，並非追蹤用途。
 
