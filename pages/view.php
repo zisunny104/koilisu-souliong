@@ -160,6 +160,14 @@ $jsonFlags = JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JS
     <div class="hint">輸入主辦者提供的投稿碼，或掃描邀請 QR。</div>
     <input id="unlockCodeInput" class="name-in" style="width:100%;letter-spacing:8px;text-align:center;font-size:1.375rem" placeholder="6 位數字" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" inputmode="numeric" pattern="[0-9]*" maxlength="8" aria-label="投稿碼">
     <div id="unlockMsg" class="hint" role="status"></div>
+    <div style="margin-top:10px">
+      <button type="button" class="btn" id="idToggleBtn" aria-expanded="false" aria-controls="idFields">建立投稿者身分（可選，供跨裝置管理投稿）</button>
+      <div id="idFields" style="display:none;margin-top:8px">
+        <div class="hint">預設為匿名投稿者。設定 PIN 後，可在其他裝置用同組 PIN 管理／刪除自己的投稿。</div>
+        <input id="unlockPinInput" class="name-in" style="width:100%;margin-top:6px" placeholder="設定 PIN（至少 4 碼）" autocomplete="off" inputmode="numeric" aria-label="投稿者 PIN">
+        <input id="unlockCnameInput" class="name-in" style="width:100%;margin-top:6px" placeholder="顯示暱稱（可留空）" autocomplete="off" maxlength="40" aria-label="投稿者暱稱">
+      </div>
+    </div>
     <div class="dialog-actions">
       <button class="btn" id="scanBtn"><i class="fa-solid fa-qrcode"></i> 掃描 QR</button>
       <span class="spacer"></span>

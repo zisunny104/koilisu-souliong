@@ -66,13 +66,28 @@ window.MapApp = (() => {
       myOwnerHash = [...new Uint8Array(d)].map(x => x.toString(16).padStart(2, '0')).join('');
     } catch (e) { myOwnerHash = ''; }
   }
-  const isMine = (e) => !!(myOwnerHash && e.owner_hash && e.owner_hash === myOwnerHash);
+
+  // 投稿者身分（可選，設 PIN 才有；匿名投稿者無此身分）：token 存於此裝置，跨裝置管理自己的投稿要靠它。
+  function contribInfo() { try { return JSON.parse(localStorage.getItem('contrib_' + PROJECT) || 'null') || null; } catch (e) { return null; } }
+  function contribToken() { const c = contribInfo(); return (c && c.token) ? c.token : ''; }
+  function setContribInfo(info) { try { localStorage.setItem('contrib_' + PROJECT, JSON.stringify(info)); } catch (e) {} }
+  let myContribId = '';
+  async function computeContribId() {
+    const ct = contribToken();
+    if (!ct) { myContribId = ''; return; }
+    try {
+      const d = await crypto.subtle.digest('SHA-256', new TextEncoder().encode('cid|' + ct));
+      myContribId = [...new Uint8Array(d)].map(x => x.toString(16).padStart(2, '0')).join('').slice(0, 12);
+    } catch (e) { myContribId = ''; }
+  }
+  const isMine = (e) => !!((myOwnerHash && e.owner_hash && e.owner_hash === myOwnerHash) || (myContribId && e.contrib_id && e.contrib_id === myContribId));
 
   async function deleteEntry(id) {
     if (!confirm('確定刪除？此動作無法復原')) return;
     try {
       const fd = new FormData();
       fd.append('project', PROJECT); fd.append('id', id); fd.append('owner', ownerToken());
+      const ct = contribToken(); if (ct) fd.append('ctoken', ct);
       const res = await fetch(apiUrl('delete'), { method: 'POST', body: fd });
       const j = await res.json().catch(() => ({}));
       if (!res.ok || j.error) { alert('刪除失敗：' + (j.error || ('HTTP ' + res.status))); return; }
@@ -128,14 +143,19 @@ window.MapApp = (() => {
     el.innerHTML = '<i class="fa-solid ' + (unlocked ? 'fa-user-check' : 'fa-user') + '"></i> ' + esc(shown);
     el.title = '投稿者身分：' + shown + (name ? '' : '（尚未命名，送出前可改；長按可換一個新的匿名稱呼）');
   }
-  async function doUnlock(code) {
+  async function doUnlock(code, cpin, cname) {
     code = (code || '').trim();
     if (!code) return { ok: false, msg: '請輸入投稿碼' };
     try {
       const fd = new FormData(); fd.append('project', PROJECT); fd.append('code', code);
+      if (cpin) { fd.append('cpin', cpin); if (cname) fd.append('cname', cname); }
       const res = await fetch(apiUrl('unlock'), { method: 'POST', body: fd });
       const j = await res.json().catch(() => ({}));
-      if (res.ok && j.ok) { try { localStorage.setItem('uploadCode_' + PROJECT, code); } catch (e) {} applyPostState(); return { ok: true }; }
+      if (res.ok && j.ok) {
+        try { localStorage.setItem('uploadCode_' + PROJECT, code); } catch (e) {}
+        if (j.contrib) { setContribInfo(j.contrib); await computeContribId(); }
+        applyPostState(); return { ok: true };
+      }
       return { ok: false, msg: j.error || '投稿碼不正確' };
     } catch (e) { return { ok: false, msg: '連線失敗，請稍後再試' }; }
   }
@@ -147,6 +167,9 @@ window.MapApp = (() => {
     document.getElementById('unlockCodeInput').value = '';
     const msg = document.getElementById('unlockMsg'); msg.textContent = ''; msg.style.color = '';
     document.getElementById('scanBox').style.display = 'none';
+    const pinEl = document.getElementById('unlockPinInput'), nameEl = document.getElementById('unlockCnameInput'), idFields = document.getElementById('idFields'), idBtn = document.getElementById('idToggleBtn');
+    if (pinEl) pinEl.value = ''; if (nameEl) nameEl.value = '';
+    if (idFields) idFields.style.display = 'none'; if (idBtn) idBtn.setAttribute('aria-expanded', 'false');
     document.getElementById('unlockDialog').classList.add('open');
     setTimeout(() => document.getElementById('unlockCodeInput').focus(), 60);
   }
@@ -154,7 +177,9 @@ window.MapApp = (() => {
   async function trySubmitUnlock() {
     const msg = document.getElementById('unlockMsg');
     msg.style.color = ''; msg.textContent = '驗證中…';
-    const r = await doUnlock(document.getElementById('unlockCodeInput').value);
+    const pinEl = document.getElementById('unlockPinInput'), nameEl = document.getElementById('unlockCnameInput');
+    const cpin = pinEl ? pinEl.value.trim() : '', cname = nameEl ? nameEl.value.trim() : '';
+    const r = await doUnlock(document.getElementById('unlockCodeInput').value, cpin, cname);
     if (r.ok) { closeUnlock(); toast('✓ 已解鎖，可以上傳了'); }
     else { msg.style.color = '#c0392b'; msg.textContent = r.msg; }
   }
@@ -440,6 +465,7 @@ window.MapApp = (() => {
       fd.append('photo_time', new Date().toISOString());
       fd.append('owner', ownerToken());
       fd.append('code', storedCode());
+      const ct1 = contribToken(); if (ct1) fd.append('ctoken', ct1);
       const res = await fetch(apiUrl('upload'), { method: 'POST', body: fd });
       const j = await res.json();
       if (!res.ok || j.error) throw new Error(j.error || ('HTTP ' + res.status));
@@ -638,6 +664,7 @@ window.MapApp = (() => {
       fd.append('loc_source', state.source);
       fd.append('owner', ownerToken());
       fd.append('code', storedCode());
+      const ct2 = contribToken(); if (ct2) fd.append('ctoken', ct2);
       if (state.exif && state.exif.cam) fd.append('exif', JSON.stringify(state.exif.cam));
       if (state.webp) fd.append('photo', state.webp, 'photo.webp');
       const res = await fetch(apiUrl('upload'), { method: 'POST', body: fd });
@@ -835,6 +862,12 @@ window.MapApp = (() => {
     if (ub) ub.onclick = openUnlock;
     document.getElementById('unlockSubmit').onclick = trySubmitUnlock;
     document.getElementById('scanBtn').onclick = startScan;
+    const idBtn = document.getElementById('idToggleBtn'), idFields = document.getElementById('idFields');
+    if (idBtn && idFields) idBtn.onclick = () => {
+      const open = idFields.style.display === 'none';
+      idFields.style.display = open ? '' : 'none';
+      idBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    };
     const uci = document.getElementById('unlockCodeInput');
     if (uci) uci.addEventListener('keydown', e => { if (e.key === 'Enter') trySubmitUnlock(); });
     if (params.get('code') && !EMBED) {
@@ -868,6 +901,7 @@ window.MapApp = (() => {
     });
 
     await computeMyHash();       // 先算出本裝置擁有者雜湊（供「刪自己的」判斷）
+    await computeContribId();    // 若已建立投稿者身分，算出對外可見的投稿者ID（供「刪自己的」判斷）
     await loadContributions();
     statVisit();                 // 匿名累加瀏覽 / 工作階段 / 裝置別
     hideSkeleton();

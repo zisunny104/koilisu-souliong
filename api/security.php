@@ -89,6 +89,37 @@ function project_code(array $cfg, string $project, ?array $meta): string {
     return $c;
 }
 
+/**
+ * 投稿者身分（可選，設 PIN 才有；匿名投稿者無此身分）：可用一組 PIN 建立跨裝置的身分，用來在別的裝置管理自己的投稿。
+ * - token：由 PIN 衍生（同 PIN 同 token），存於使用者 localStorage，是真正的祕密。
+ * - contrib_id：token 的短雜湊，作為對外可見的「投稿者ID」（假名、可分組，無法反推 PIN）。
+ * - contrib_hash：token 的完整雜湊，存於投稿以驗證刪除；list 不外流。
+ */
+function contrib_token(array $cfg, string $project, string $pin): string {
+    return hash_hmac('sha256', 'souliong-contrib', $project . '|' . $pin . '|' . (string)($cfg['ip_salt'] ?? ''));
+}
+function contrib_id_of(string $token): string { return substr(hash('sha256', 'cid|' . $token), 0, 12); }
+function contrib_hash_of(string $token): string { return hash('sha256', $token); }
+
+// 投稿者名冊：data/<project>.contrib.json = { <contrib_id>: {label, created, assigned} }
+function contrib_file(array $cfg, string $project): string { return rtrim($cfg['store_dir'], '/\\') . '/' . $project . '.contrib.json'; }
+function contrib_load(array $cfg, string $project): array {
+    $f = contrib_file($cfg, $project);
+    $d = is_file($f) ? json_decode((string)@file_get_contents($f), true) : null;
+    return is_array($d) ? $d : [];
+}
+function contrib_save(array $cfg, string $project, array $d): void { @file_put_contents(contrib_file($cfg, $project), json_encode($d, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), LOCK_EX); }
+/** 註冊或取得投稿者；回傳 [id, label]。label 僅在首次或本人更新時寫入。 */
+function contrib_register(array $cfg, string $project, string $token, ?string $label): array {
+    $id = contrib_id_of($token);
+    $d = contrib_load($cfg, $project);
+    $label = $label !== null ? preg_replace('/^(.{0,40}).*$/su', '$1', trim($label)) : null;
+    if ($label === null) $label = '';
+    if (!isset($d[$id])) { $d[$id] = ['label' => $label, 'created' => gmdate('c')]; contrib_save($cfg, $project, $d); }
+    elseif ($label !== '' && ($d[$id]['label'] ?? '') !== $label && empty($d[$id]['assigned'])) { $d[$id]['label'] = $label; contrib_save($cfg, $project, $d); }
+    return [$id, $d[$id]['label'] ?? ''];
+}
+
 /** 超過限制時直接以 429 結束請求 */
 function rate_limit(array $cfg, string $bucket = 'default'): void {
     $max = $cfg['rate_max'] ?? 40;

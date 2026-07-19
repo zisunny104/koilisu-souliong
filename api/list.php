@@ -16,7 +16,7 @@ try {
         return strcmp((string)$ta, (string)$tb);
     });
     foreach ($rows as &$r) {
-        unset($r['src_hash']);                 // 鑑識用 IP 雜湊，不對外
+        unset($r['src_hash'], $r['contrib_hash']);   // 鑑識用 IP 雜湊、身分驗刪雜湊，不對外
         $r['photo_url'] = !empty($r['photo']) ? ('photos/' . $r['photo']) : null;
     }
     unset($r);

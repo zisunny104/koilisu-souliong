@@ -106,6 +106,11 @@ try {
     // 冒名鑑識：加鹽來源 IP 雜湊（僅管理端可見，list 不外流；可於 config 關閉）
     $srcHash = !empty($cfg['log_src']) ? substr(hash('sha256', ($cfg['ip_salt'] ?? '') . '|' . client_ip($cfg)), 0, 16) : null;
 
+    // 可選的投稿者身分（ctoken 由 localStorage 帶入）：存公開短 ID 供分組顯示、存 hash 供跨裝置驗刪
+    $ctoken = (string)($_POST['ctoken'] ?? '');
+    $contribId = $ctoken !== '' ? contrib_id_of($ctoken) : null;
+    $contribHash = $ctoken !== '' ? contrib_hash_of($ctoken) : null;
+
     $record = [
         'id'         => bin2hex(random_bytes(8)),
         'project'    => $project,
@@ -121,6 +126,8 @@ try {
         'exif'       => $exif,
         'owner_hash' => $owner !== '' ? hash('sha256', $owner) : null,   // 用於「只刪自己的」與同源追蹤
         'src_hash'   => $srcHash,                                        // 冒名鑑識用，不外流
+        'contrib_id' => $contribId,                                      // 可選：對外可見的假名投稿者ID（分組用）
+        'contrib_hash' => $contribHash,                                 // 可選：跨裝置驗刪用，不外流
         'created_at' => gmdate('c'),
     ];
     store_append($cfg, $project, $record);
@@ -132,7 +139,7 @@ try {
     });
 
     $out = $record;
-    unset($out['src_hash']);                                            // 不外流 IP 雜湊
+    unset($out['src_hash'], $out['contrib_hash']);                      // 不外流 IP 雜湊與身分驗刪雜湊
     $out['photo_url'] = $photoRel ? ('photos/' . $photoRel) : null;
     json_out(['ok' => true, 'item' => $out]);
 } catch (Throwable $e) {
