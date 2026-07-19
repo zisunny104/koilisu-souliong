@@ -72,7 +72,8 @@ $jsonFlags = JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JS
   <div class="ctl-body" id="ctlBody">
     <div class="legend" id="legend"></div>
     <div class="ctl-row">
-      <button class="btn" id="photoLayerBtn" title="顯示/隱藏投稿照片"><i class="fa-solid fa-image"></i> 投稿</button>
+      <button class="btn" id="allPointsBtn" title="顯示全部點位"><i class="fa-solid fa-layer-group"></i> 全部</button>
+      <button class="btn" id="photoLayerBtn" title="依投稿篩選顯示"><i class="fa-solid fa-image"></i> 投稿</button>
       <button class="btn" id="routeBtn" title="依編號串連路徑"><i class="fa-solid fa-route"></i> 路徑</button>
     </div>
     <div class="ctl-row">

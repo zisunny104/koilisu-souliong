@@ -213,7 +213,7 @@ window.MapApp = (() => {
   }
 
   let META = null, POINTS = [], CATS = [], active = {}, CONTRIB = [], counts = {};
-  let map, photoLayer, baseTile = null, routeLine = null, routeOn = false, photoLayerOn = true;
+  let map, photoLayer, baseTile = null, routeLine = null, routeOn = false, photoLayerOn = false;
   let filterPerson = '', personLine = null;
 
   function setBaseTile() {
@@ -790,15 +790,26 @@ window.MapApp = (() => {
 
     // 圖層/路徑切換
     document.getElementById('routeBtn').onclick = function () { routeOn = !routeOn; this.classList.toggle('on', routeOn); drawRoute(); if (routeOn) feature('route'); };
-    const plb = document.getElementById('photoLayerBtn'); plb.classList.add('on');
-    plb.onclick = function () { photoLayerOn = !photoLayerOn; this.classList.toggle('on', photoLayerOn); document.body.classList.toggle('focus-contrib', photoLayerOn); if (photoLayerOn) { renderPhotoLayer(); feature('photos'); } else map.removeLayer(photoLayer); };
 
-    // 投稿者篩選 → 顯示某人的觀察地圖
+    // 全部點位／投稿：互斥的顯示模式，預設「全部」
+    const apb = document.getElementById('allPointsBtn'), plb = document.getElementById('photoLayerBtn');
+    function setContribMode(on) {
+      photoLayerOn = on;
+      plb.classList.toggle('on', on);
+      apb.classList.toggle('on', !on);
+      document.body.classList.toggle('focus-contrib', on);
+      if (on) { renderPhotoLayer(); feature('photos'); } else { map.removeLayer(photoLayer); }
+    }
+    apb.classList.add('on');
+    apb.onclick = function () { if (photoLayerOn) setContribMode(false); };
+    plb.onclick = function () { if (!photoLayerOn) setContribMode(true); };
+
+    // 投稿者篩選 → 顯示某人的觀察地圖（篩選時自動切到「投稿」模式）
     const pf = document.getElementById('personFilter');
     if (pf) pf.onchange = () => {
       filterPerson = pf.value;
       if (filterPerson) feature('filter');
-      if (!photoLayerOn && filterPerson) { photoLayerOn = true; plb.classList.add('on'); }
+      if (!photoLayerOn && filterPerson) setContribMode(true);
       renderPhotoLayer(); drawPersonRoute();
       const pts = filterPerson ? personPoints(filterPerson).map(e => [e.lat, e.lon]) : [];
       if (pts.length) map.fitBounds(L.latLngBounds(pts).pad(0.25));
