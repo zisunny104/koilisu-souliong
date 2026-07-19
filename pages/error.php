@@ -5,7 +5,7 @@
  * 深淺主題自動切換。純自帶（inline CSS/SVG，零外部相依），即使其他東西壞了也能顯示。
  *
  * 用法：
- *   require __DIR__ . '/error.php';
+ *   require __DIR__ . '/../pages/error.php';
  *   error_page(403, '沒有權限', '這個區域需要對應的鑰匙。', $homeUrl);   // 會 echo 並 exit
  */
 function error_page(int $code = 404, ?string $title = null, ?string $msg = null, string $home = '/', string $homeLabel = '返回地圖'): void {

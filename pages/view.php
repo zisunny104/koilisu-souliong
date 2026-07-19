@@ -3,8 +3,8 @@
  * Souliong 主視圖。base 路徑自動推導、資料伺服器端內嵌（框架不供應靜態檔）。
  * ?embed=1 → 精簡檢視模式（僅供瀏覽）。?p=<project> → 切換項目。
  */
-$cfg = include __DIR__ . '/config.php';
-$appName = $_APP['name'] ?? basename(__DIR__);
+$cfg = include __DIR__ . '/../config.php';
+$appName = $_APP['name'] ?? basename(dirname(__DIR__));
 $path = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH);
 $needle = '/' . $appName;
 $i = strpos($path, $needle);
@@ -20,9 +20,9 @@ $base = ($base === '/') ? '/' : $base . '/';
 $b       = htmlspecialchars($base, ENT_QUOTES);
 $embed   = (($_GET['embed'] ?? '') === '1');
 $proj    = preg_replace('/[^a-z0-9_-]/', '', $_GET['p'] ?? ($cfg['default_project'] ?? 'chairs'));
-$metaF   = __DIR__ . '/projects/' . $proj . '/meta.json';
+$metaF   = __DIR__ . '/../projects/' . $proj . '/meta.json';
 $meta    = is_file($metaF) ? json_decode(file_get_contents($metaF), true) : null;
-$ptsF    = $meta ? __DIR__ . '/projects/' . $proj . '/' . ($meta['points'] ?? 'points.json') : null;
+$ptsF    = $meta ? __DIR__ . '/../projects/' . $proj . '/' . ($meta['points'] ?? 'points.json') : null;
 $points  = ($ptsF && is_file($ptsF)) ? json_decode(file_get_contents($ptsF), true) : [];
 
 // 是否需要投稿碼（真正的碼在伺服器端 data/<project>.code.txt，前端拿不到）
@@ -45,7 +45,7 @@ $jsonFlags = JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JS
 <title>Souliong 循跡</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-<style><?php readfile(__DIR__ . '/assets/style.css'); ?></style>
+<style><?php readfile(__DIR__ . '/../assets/style.css'); ?></style>
 <script>try{var t=localStorage.getItem('theme');if(t==='dark'||t==='light')document.documentElement.dataset.theme=t;}catch(e){}</script>
 </head>
 <body class="<?= $embed ? 'embed' : '' ?>">
@@ -184,7 +184,7 @@ $jsonFlags = JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JS
 <script src="https://cdn.jsdelivr.net/npm/exifr/dist/full.umd.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
-<script><?php readfile(__DIR__ . '/assets/vendor/qrcode-generator.js'); ?></script>
-<script><?php readfile(__DIR__ . '/assets/viewer.leaflet.js'); ?></script>
+<script><?php readfile(__DIR__ . '/../assets/vendor/qrcode-generator.js'); ?></script>
+<script><?php readfile(__DIR__ . '/../assets/viewer.leaflet.js'); ?></script>
 </body>
 </html>

@@ -3,7 +3,7 @@
 require __DIR__ . '/store.php';
 require __DIR__ . '/security.php';
 require __DIR__ . '/stats.php';
-require __DIR__ . '/../error.php';
+require __DIR__ . '/../pages/error.php';
 $cfg = require __DIR__ . '/config.php';
 rate_limit($cfg, 'admin');
 $esc = fn($s) => htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8');

@@ -47,7 +47,7 @@ switch ($action) {
         require __DIR__ . '/api/admin.php';        // 主站管理：<base>/manager（相容 /admin、?api=admin）
         return;
     case 'privacy':
-        include __DIR__ . '/privacy.php';          // 隱私與資料說明：<base>/privacy
+        include __DIR__ . '/pages/privacy.php';    // 隱私與資料說明：<base>/privacy
         return;
     default:
         // 地圖或首頁：<base>/<mapid> 開該地圖；<base>/ 顯示地圖清單
@@ -61,9 +61,9 @@ switch ($action) {
                 return;
             }
             $_GET['p'] = $proj;
-            include __DIR__ . '/view.php';
+            include __DIR__ . '/pages/view.php';
         } else {
-            include __DIR__ . '/landing.php';
+            include __DIR__ . '/pages/landing.php';
         }
         return;
 }

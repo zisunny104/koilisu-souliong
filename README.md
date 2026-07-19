@@ -50,7 +50,7 @@ php -S localhost:8000                          # 或掛你的 Nginx/PHP-FPM
   "center":[23.95,120.69], "zoom":14, "points":"points.json",
   "numbering":"suffix", "categoryOrder":["green","pink","blue"], "gated":true }
 ```
-點位每筆：`num, theme, area, chair, material, lat, lon, cat, catLabel, color, story`。詳見 [EXTENDING.md](EXTENDING.md)（含日後加入聲音等媒體的作法與 roadmap）。
+點位每筆：`num, theme, area, chair, material, lat, lon, cat, catLabel, color, story`。詳見 [EXTENDING.md](docs/EXTENDING.md)（含日後加入聲音等媒體的作法與 roadmap）。
 
 網址：`/koilisu/souliong/<id>`；`/koilisu/souliong/` 首頁自動列出所有地圖。
 
@@ -71,6 +71,6 @@ php -S localhost:8000                          # 或掛你的 Nginx/PHP-FPM
 
 ## 授權
 
-程式碼採 **MIT**（見 [LICENSE](LICENSE)）。地圖圖資 © OpenStreetMap 貢獻者（ODbL）、圖磚 © CARTO；使用者照片依投稿條款公開分享。隱私說明見 [PRIVACY.md](PRIVACY.md)、部署與安全見 [DEPLOY.md](DEPLOY.md)。
+程式碼採 **MIT**（見 [LICENSE](LICENSE)）。地圖圖資 © OpenStreetMap 貢獻者（ODbL）、圖磚 © CARTO；使用者照片依投稿條款公開分享。隱私說明見 [PRIVACY.md](docs/PRIVACY.md)、部署與安全見 [DEPLOY.md](docs/DEPLOY.md)。
 
 © 2026 prjToka

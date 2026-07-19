@@ -3,9 +3,9 @@
  * 隱私與資料說明頁（站內、主題感、中英對照）。由路由 <base>/privacy 顯示。
  * 內容為平台通則；不含任何個別使用者資料。
  */
-$cfg = @include __DIR__ . '/config.php';
+$cfg = @include __DIR__ . '/../config.php';
 $path = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH);
-$appName = $_APP['name'] ?? basename(__DIR__);
+$appName = $_APP['name'] ?? basename(dirname(__DIR__));
 $i = strpos($path, '/' . $appName);
 $base = $i !== false ? substr($path, 0, $i + strlen($appName) + 1) . '/' : '/';
 $base = '/' . trim(str_replace('\\', '/', $base), '/');

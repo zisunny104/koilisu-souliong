@@ -37,8 +37,8 @@ This service is not directed at children; do not upload content identifying mino
 
 ## 第三方 / Third parties
 
-地圖以 Leaflet 顯示、圖磚 © CARTO、圖資 © OpenStreetMap 貢獻者（ODbL）；QR 在你的瀏覽器本機產生。皆用於顯示功能，非廣告或追蹤。授權詳見 [LICENSE](LICENSE)。
-Map via Leaflet, tiles © CARTO, data © OpenStreetMap contributors (ODbL); QR generated locally in your browser. For display only. See [LICENSE](LICENSE).
+地圖以 Leaflet 顯示、圖磚 © CARTO、圖資 © OpenStreetMap 貢獻者（ODbL）；QR 在你的瀏覽器本機產生。皆用於顯示功能，非廣告或追蹤。授權詳見 [LICENSE](../LICENSE)。
+Map via Leaflet, tiles © CARTO, data © OpenStreetMap contributors (ODbL); QR generated locally in your browser. For display only. See [LICENSE](../LICENSE).
 
 ---
 

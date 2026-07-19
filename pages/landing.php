@@ -2,8 +2,8 @@
 /**
  * Souliong 地圖清單首頁。背景為隨機一張地圖（不可互動），內容浮在其上。
  */
-$cfg = include __DIR__ . '/config.php';
-$appName = $_APP['name'] ?? basename(__DIR__);
+$cfg = include __DIR__ . '/../config.php';
+$appName = $_APP['name'] ?? basename(dirname(__DIR__));
 $path = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH);
 $i = strpos($path, '/' . $appName);
 $base = $i !== false ? substr($path, 0, $i + strlen($appName) + 1) . '/' : dirname($path);
@@ -12,7 +12,7 @@ $base = '/' . trim($base, '/');
 $base = ($base === '/') ? '/' : $base . '/';
 
 $maps = [];
-foreach (glob(__DIR__ . '/projects/*/meta.json') as $mf) {
+foreach (glob(__DIR__ . '/../projects/*/meta.json') as $mf) {
     $m = json_decode(file_get_contents($mf), true);
     if (!is_array($m)) continue;
     $maps[] = [
@@ -84,7 +84,7 @@ footer a{color:inherit}
 </header>
 <div class="wrap">
   <?php if (!$maps): ?>
-    <div class="empty">尚未有地圖。在 <code>projects/</code> 底下新增資料夾與 meta.json 即可。</div>
+    <div class="empty">尚未有地圖。<a href="<?= $b ?>manager">建立第一張地圖</a>，或請洽主要管理者。</div>
   <?php else: ?>
     <div class="grid">
       <?php foreach ($maps as $m): ?>
