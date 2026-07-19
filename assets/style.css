@@ -1285,6 +1285,7 @@ button i {
   max-width: calc(100vw - 28px);
   white-space: normal;
   word-break: keep-all;
+  text-align: center;
   display: flex;
   align-items: center;
   justify-content: center;

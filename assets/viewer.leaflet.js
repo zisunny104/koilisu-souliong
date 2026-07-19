@@ -121,27 +121,28 @@ window.MapApp = (() => {
     } catch (e) {}
   }
 
-  // 上傳權限（預設 View；需投稿碼解鎖，限特定人。EMBED 一律不可上傳）
+  // 上傳權限（預設 View；需投稿碼解鎖，限特定人。已用管理 PIN 登入者一律視為已解鎖。EMBED 一律不可上傳）
   function storedCode() { try { return localStorage.getItem('uploadCode_' + PROJECT) || ''; } catch (e) { return ''; } }
-  function canPost() { return !EMBED && (!APP.gated || !!storedCode()); }
+  function isUnlocked() { return !APP.gated || !!storedCode() || !!APP.isManager; }
+  function canPost() { return !EMBED && isUnlocked(); }
   function applyPostState() {
     document.body.classList.toggle('noupload', !canPost());
     const fab = document.getElementById('unlockFab');
-    if (fab) fab.style.display = (APP.gated && !storedCode() && !EMBED) ? '' : 'none';
+    if (fab) fab.style.display = (APP.gated && !isUnlocked() && !EMBED) ? '' : 'none';
     updateIdentity();
     if (current) renderEntries();   // 讓「編輯說明」鈕跟著出現/消失
   }
-  // 右上身分指示：顯示目前暱稱（未輸入則顯示本次匿名預覽名）；解鎖狀態附鎖圖示
+  // 右上身分指示：顯示目前暱稱（未輸入則管理者帶入「管理者」、否則顯示本次匿名預覽名）；解鎖狀態附鎖圖示
   function updateIdentity() {
     const el = document.getElementById('identity');
     if (!el) return;
     if (EMBED) { el.style.display = 'none'; return; }
     let name = '';
     try { name = (localStorage.getItem('myName') || '').trim(); } catch (e) {}
-    const shown = name || SESSION_ANON;
-    const unlocked = !APP.gated || !!storedCode();
+    const shown = name || (APP.isManager ? '管理者' : SESSION_ANON);
+    const unlocked = isUnlocked();
     el.innerHTML = '<i class="fa-solid ' + (unlocked ? 'fa-user-check' : 'fa-user') + '"></i> ' + esc(shown);
-    el.title = '投稿者身分：' + shown + (name ? '' : '（尚未命名，送出前可改；長按可換一個新的匿名稱呼）');
+    el.title = '投稿者身分：' + shown + (name ? '' : (APP.isManager ? '（管理者身分，已自動解鎖投稿；送出前可改暱稱）' : '（尚未命名，送出前可改；長按可換一個新的匿名稱呼）'));
   }
   async function doUnlock(code, cpin, cname) {
     code = (code || '').trim();
@@ -259,7 +260,8 @@ window.MapApp = (() => {
     return bits.join('<br>');
   }
   function chairOptionsHtml(selNum) {
-    return POINTS.slice().sort((a, b) => a.num - b.num).map(p =>
+    const none = '<option value=""' + (selNum == null ? ' selected' : '') + '>（不指定，沒有對應地點）</option>';
+    return none + POINTS.slice().sort((a, b) => a.num - b.num).map(p =>
       '<option value="' + p.num + '"' + (p.num === selNum ? ' selected' : '') + '>' +
       pad2(p.num) + '｜' + esc(p.theme || p.chair || '') + '（' + esc(p.area || '') + '）</option>').join('');
   }
@@ -405,6 +407,13 @@ window.MapApp = (() => {
     box.appendChild(story);
     const edb = story.querySelector('#editDescBtn'); if (edb) edb.onclick = () => toggleDescEditor(current.num);
     const hb = story.querySelector('#histBtn'); if (hb) hb.onclick = () => toggleHistory(versions);
+
+    // 上傳照片到這個點：放在故事底下、第一張照片之前
+    const upBtn = document.createElement('button');
+    upBtn.className = 'btn primary upload-only'; upBtn.style.width = '100%';
+    upBtn.innerHTML = '<i class="fa-solid fa-plus"></i> 上傳照片到這個點';
+    upBtn.onclick = () => { resetQueue(); openModal(current); };
+    box.appendChild(upBtn);
 
     // 照片牆
     const gwrap = document.createElement('div');
@@ -558,7 +567,7 @@ window.MapApp = (() => {
         '<div class="time">讀取中…</div>' +
         '<input type="text" class="c-name" placeholder="' + SESSION_ANON + '">' +
         '<textarea class="c-cmt" placeholder="寫一段話…"></textarea>' +
-        '<label class="c-lab">關聯椅子（群組，每張可不同）</label>' +
+        '<label class="c-lab">關聯地點（可不指定，每張可不同）</label>' +
         '<div class="row"><select class="c-chair"></select><button class="btn small c-nearest" type="button">最近</button></div>' +
         '<div class="mini"></div>' +
         '<div class="loc"></div>' +
@@ -580,7 +589,7 @@ window.MapApp = (() => {
       }
       card.querySelector('.time').innerHTML = '<i class="fa-solid fa-clock"></i> ' + fmtTime(state.exif.time);
 
-      // 關聯椅子選單（預設：開啟來源椅子，否則最近的一張；每張卡片獨立）
+      // 關聯地點選單（預設：開啟來源地點，否則最近的一個；可選不指定；每張卡片獨立）
       const defChair = modalContext ? modalContext.num : (nearestPoint(state.loc.lat, state.loc.lon) || {}).num;
       const sel = card.querySelector('.c-chair');
       sel.innerHTML = chairOptionsHtml(defChair);
@@ -595,7 +604,7 @@ window.MapApp = (() => {
         card.querySelector('.thumb').textContent = '無法讀取圖片';
       }
 
-      // 迷你地圖（可拖曳；只調整照片自己的座標，不會改動椅子座標）
+      // 迷你地圖（可拖曳；只調整照片自己的座標，不會改動地點座標）
       const miniDiv = card.querySelector('.mini');
       const mini = L.map(miniDiv, { attributionControl: false, zoomControl: false, dragging: true })
         .setView([state.loc.lat, state.loc.lon], 16);
@@ -829,7 +838,6 @@ window.MapApp = (() => {
     if (!EMBED) {
       const pick = document.getElementById('pickImages');
       document.getElementById('uploadBtn').onclick = () => { modalContext = null; resetQueue(); openModal(null); };
-      document.getElementById('panelUploadBtn').onclick = () => { resetQueue(); openModal(current); };
       document.getElementById('addMoreBtn').onclick = () => { pick.value = ''; pick.click(); };
       pick.onchange = e => { addFiles(Array.from(e.target.files)); };
       document.getElementById('submitAllBtn').onclick = submitAll;
@@ -1047,7 +1055,10 @@ window.MapApp = (() => {
       const fd = new FormData(); fd.append('action', 'login'); fd.append('json', '1'); fd.append('pin', pinVal); fd.append('project', PROJECT);
       const res = await fetch(APP.base + '?api=admin', { method: 'POST', body: fd });
       const j = await res.json().catch(() => ({}));
-      if (res.ok && j.ok) { closePin(); location.href = APP.base + encodeURIComponent(PROJECT) + '/manager'; return; }
+      if (res.ok && j.ok) {
+        if (j.label) { try { localStorage.setItem('myName', j.label); } catch (e) {} }
+        closePin(); location.href = APP.base + encodeURIComponent(PROJECT) + '/manager'; return;
+      }
     } catch (e) {}
     pinVal = ''; renderPin();
     const box = document.querySelector('.pin-box'); if (box) { box.style.animation = 'none'; void box.offsetWidth; box.style.animation = 'pinshake .3s'; }

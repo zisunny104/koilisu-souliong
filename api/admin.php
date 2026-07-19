@@ -15,17 +15,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'login
   $proj = preg_replace('/[^a-z0-9_-]/', '', $_POST['project'] ?? '');
   $ok = false;
   $go = '?api=admin';
+  $label = '';
   if (check_master_pin($cfg, $pin)) {
     admin_set_cookie($cfg);
     $ok = true;
+    $label = master_pin_label($cfg, $pin);
   } elseif ($proj !== '' && check_project_pin($cfg, $proj, $pin)) {
     padm_set_cookie($cfg, $proj);
     $ok = true;
     $go = '?api=admin&project=' . urlencode($proj);
+    $label = project_pin_label($cfg, $proj, $pin);
   }
   if (isset($_POST['json'])) {
     header('Content-Type: application/json; charset=utf-8');
-    if ($ok) echo json_encode(['ok' => true]);
+    if ($ok) echo json_encode(['ok' => true, 'label' => $label]);
     else {
       http_response_code(403);
       echo json_encode(['error' => 'PIN 不正確']);

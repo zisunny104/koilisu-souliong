@@ -61,6 +61,20 @@ function check_project_pin(array $cfg, string $project, string $pin): bool {
     $d = pins_load($cfg);
     return _pin_in($d['projects'][$project] ?? [], $pin);
 }
+function _label_in(array $list, string $pin): string {
+    foreach ($list as $e) { if (isset($e['pin']) && $pin !== '' && hash_equals((string)$e['pin'], $pin)) return trim((string)($e['label'] ?? '')); }
+    return '';
+}
+/** 登入用的這把 PIN 若有設定暱稱，回傳暱稱；bootstrap 主 PIN 對應 config['admin_pin_label']。供登入後帶入投稿身分。 */
+function master_pin_label(array $cfg, string $pin): string {
+    if (($cfg['admin_pin'] ?? '') !== '' && hash_equals((string)$cfg['admin_pin'], $pin)) {
+        return trim((string)($cfg['admin_pin_label'] ?? ''));
+    }
+    return _label_in(pins_load($cfg)['master'], $pin);
+}
+function project_pin_label(array $cfg, string $project, string $pin): string {
+    return _label_in(pins_load($cfg)['projects'][$project] ?? [], $pin);
+}
 
 /**
  * 產生投稿碼：純數字，方便手機數字鍵盤輸入、避免自動大寫/自動更正把英數碼改壞。

@@ -25,16 +25,22 @@ $meta    = is_file($metaF) ? json_decode(file_get_contents($metaF), true) : null
 $ptsF    = $meta ? __DIR__ . '/../projects/' . $proj . '/' . ($meta['points'] ?? 'points.json') : null;
 $points  = ($ptsF && is_file($ptsF)) ? json_decode(file_get_contents($ptsF), true) : [];
 
-// 是否需要投稿碼（真正的碼在伺服器端 data/<project>.code.txt，前端拿不到）
+// 是否需要投稿碼（真正的碼在伺服器端 projects/<project>/code.txt，前端拿不到）
 $gated = is_array($meta) && !empty($meta['gated']);
 
+// 已用管理 PIN 登入者（主 PIN 或此專案的 PIN）直接視為已解鎖投稿身分，不受投稿碼限制
+require __DIR__ . '/../api/security.php';
+$apiCfg    = require __DIR__ . '/../api/config.php';
+$isManager = admin_can($apiCfg, $proj);
+
 $APP = [
-    'base'    => $base,
-    'project' => $proj,
-    'embed'   => $embed,
-    'gated'   => $gated,
-    'meta'    => $meta,
-    'points'  => $points,
+    'base'      => $base,
+    'project'   => $proj,
+    'embed'     => $embed,
+    'gated'     => $gated,
+    'meta'      => $meta,
+    'points'    => $points,
+    'isManager' => $isManager,
 ];
 $jsonFlags = JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_APOS;
 ?><!DOCTYPE html>
@@ -125,7 +131,6 @@ $jsonFlags = JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JS
     <div class="sub" id="pSub"></div>
   </div>
   <div class="p-body">
-    <button class="btn primary upload-only" id="panelUploadBtn" style="width:100%"><i class="fa-solid fa-plus"></i> 上傳照片到這個點</button>
     <div id="entries"></div>
   </div>
 </div>

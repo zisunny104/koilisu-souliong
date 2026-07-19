@@ -10,6 +10,7 @@ return [
 
     // 管理 PIN（人輸入；驗證後以 httpOnly cookie 保持登入，PIN 不進網址）
     'admin_pin'       => 'CHANGE-ME',
+    'admin_pin_label' => '',   // 用這把主 PIN 登入後要帶入的顯示名稱（留空則顯示「管理者」）
 
     // 韌性 / 資安
     'rate_max'        => 40,
