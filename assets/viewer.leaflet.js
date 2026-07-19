@@ -516,7 +516,7 @@ window.MapApp = (() => {
   function buildLegend() {
     const legend = document.getElementById('legend'); legend.innerHTML = '';
     CATS.forEach(c => {
-      const el = document.createElement('div'); el.className = 'chip';
+      const el = document.createElement('div'); el.className = 'chip' + (active[c.key] === false ? ' off' : '');
       el.innerHTML = '<span class="dot" style="background:' + c.color + '"></span>' + c.label;
       el.onclick = () => { active[c.key] = active[c.key] === false ? true : false; el.classList.toggle('off', active[c.key] === false); renderChairs(); };
       legend.appendChild(el);
@@ -1246,6 +1246,9 @@ window.MapApp = (() => {
     const order = META.categoryOrder || catOrder;
     CATS = order.filter(k => seen[k]).map(k => seen[k]);
     Object.keys(seen).forEach(k => { if (!CATS.find(c => c.key === k)) CATS.push(seen[k]); });
+    // 分享／嵌入可帶 ?cat=key1,key2 只顯示指定主題／分類，其餘分類預設關閉
+    const urlCats = (params.get('cat') || '').split(',').map(s => s.trim()).filter(Boolean);
+    if (urlCats.length) CATS.forEach(c => { if (!urlCats.includes(c.key)) active[c.key] = false; });
 
     map = L.map('map', { zoomControl: false }).setView(META.center || [23.9, 120.7], META.zoom || 14);
     setBaseTile();
@@ -1340,8 +1343,12 @@ window.MapApp = (() => {
     plb.onclick = function () { if (!photoLayerOn) setContribMode(true); };
     const personPrefKey = 'filterPerson_' + PROJECT;
     let savedPerson = ''; try { savedPerson = localStorage.getItem(personPrefKey) || ''; } catch (e) {}
-    if (savedPerson) filterPerson = savedPerson;
-    setContribMode(params.get('contrib') === '1' || !!savedPerson, { silent: true });
+    // ?contributor=<name>（分享／嵌入帶入的指定投稿者）優先於本機記住的篩選，但不落地存到 localStorage，
+    // 避免別人分享的連結覆蓋掉這台裝置本來記住的篩選對象
+    const urlPerson = params.get('contributor') || '';
+    if (urlPerson) filterPerson = urlPerson;
+    else if (savedPerson) filterPerson = savedPerson;
+    setContribMode(params.get('contrib') === '1' || !!filterPerson, { silent: true });
 
     // 下拉選單依模式切換用途：「投稿」模式＝篩選投稿者（看他的觀察地圖，選擇會記住，重新整理不會跑掉）；
     // 「全部」模式＝跳到指定地點標籤（不是持續篩選，選完會自動重置）
@@ -1373,7 +1380,13 @@ window.MapApp = (() => {
       document.getElementById('copyMsg').innerHTML = '<i class="fa-solid fa-check"></i> ' + esc(t('copied'));
       setTimeout(() => document.getElementById('copyMsg').textContent = '', 2000);
     };
-    document.getElementById('embedScope').onchange = buildEmbedCode;
+    document.getElementById('embedWidth').oninput = buildEmbedCode;
+    document.getElementById('embedWidthFillBtn').onclick = function () {
+      this.classList.toggle('on');
+      document.getElementById('embedWidth').disabled = this.classList.contains('on');
+      buildEmbedCode();
+    };
+    document.getElementById('embedHeight').oninput = buildEmbedCode;
 
     // 上傳（精簡模式停用）
     if (!EMBED) {
@@ -1476,22 +1489,39 @@ window.MapApp = (() => {
   setTimeout(hideSkeleton, 9000);   // 保險：即使載入卡住也移除骨架
 
   function buildEmbedCode() {
-    const scope = document.getElementById('embedScope').value;
-    const url = location.origin + APP.base + PROJECT + '?embed=1' + (scope === 'contrib' ? '&contrib=1' : '');
+    // 直接沿用網站目前的顯示狀態（投稿者／分類／是否只顯示投稿），跟分享連結同一套邏輯，不用另外挑選
+    const sp = new URLSearchParams(currentScopeParams());
+    sp.set('embed', '1');
+    if (photoLayerOn) sp.set('contrib', '1');
+    const url = location.origin + APP.base + PROJECT + '?' + sp.toString();
+    const wFill = document.getElementById('embedWidthFillBtn').classList.contains('on');
+    const w = document.getElementById('embedWidth').value || 800;
+    const h = document.getElementById('embedHeight').value || 600;
+    const sizeStyle = 'width:' + (wFill ? '100%' : w + 'px') + ';height:' + h + 'px';
     document.getElementById('embedCode').value =
       '<iframe src="' + url + '" title="' + esc(META.title || 'Souliong') + '" ' +
-      'style="width:100%;height:600px;border:0;border-radius:12px" loading="lazy"></iframe>';
+      'style="' + sizeStyle + ';border:0;border-radius:12px" loading="lazy"></iframe>';
   }
   function openEmbed() {
     feature('embed');
-    document.getElementById('embedScope').value = photoLayerOn ? 'contrib' : 'all';   // 帶入目前畫面的顯示模式
     buildEmbedCode();
     document.getElementById('embedDialog').classList.add('open');
   }
   function closeEmbed() { document.getElementById('embedDialog').classList.remove('open'); }
 
-  // 公開地圖網址（分享用，不含 embed/code）
-  function mapPublicUrl() { return location.origin + APP.base + PROJECT; }
+  // 目前畫面的篩選狀態（投稿者／分類），供分享連結／嵌入碼帶入範圍限制；沒有特別篩選時回傳空字串
+  function currentScopeParams() {
+    const sp = new URLSearchParams();
+    if (photoLayerOn && filterPerson) sp.set('contributor', filterPerson);
+    const visibleCats = CATS.filter(c => active[c.key] !== false).map(c => c.key);
+    if (CATS.length && visibleCats.length < CATS.length) sp.set('cat', visibleCats.join(','));
+    return sp.toString();
+  }
+  // 公開地圖網址（分享用，不含 embed/code；帶目前篩選狀態，讓分享連結只給對方看你指定的投稿者或主題）
+  function mapPublicUrl() {
+    const qs = currentScopeParams();
+    return location.origin + APP.base + PROJECT + (qs ? '?' + qs : '');
+  }
   // 重置地圖回初始視角（左下地圖操作）
   function resetView() {
     if (!map) return;

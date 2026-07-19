@@ -171,11 +171,14 @@ $jsonFlags = JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JS
   <div class="dialog-box">
     <div class="dialog-head"><b><?= $t('embed_this_map_title') ?></b><button class="icon-btn" onclick="MapApp.closeEmbed()" aria-label="<?= $t('close') ?>"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button></div>
     <div class="hint"><?= $t('embed_hint') ?></div>
-    <label class="hint" for="embedScope" style="display:block"><?= $t('default_display') ?></label>
-    <select id="embedScope" class="name-in" style="width:100%">
-      <option value="all"><?= $t('all_points') ?></option>
-      <option value="contrib"><?= $t('only_contrib') ?></option>
-    </select>
+    <div class="embed-size-row">
+      <span class="embed-size-label"><?= $t('embed_size_label') ?></span>
+      <input type="number" id="embedWidth" class="name-in" min="200" step="10" value="800">
+      <span class="hint">×</span>
+      <input type="number" id="embedHeight" class="name-in" min="200" step="10" value="600">
+      <span class="hint">px</span>
+      <button type="button" class="btn small" id="embedWidthFillBtn"><?= $t('embed_fill_container_w') ?></button>
+    </div>
     <textarea id="embedCode" readonly rows="4"></textarea>
     <div class="dialog-actions"><button class="btn primary" id="copyEmbedBtn"><?= $t('copy') ?></button><span id="copyMsg" class="hint"></span></div>
   </div>

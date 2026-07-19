@@ -393,6 +393,29 @@ textarea:focus {
   transition: border-color var(--t)
 }
 
+.embed-size-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px
+}
+
+.embed-size-row .embed-size-label {
+  font-size: 0.75rem;
+  color: var(--muted);
+  width: 32px;
+  flex-shrink: 0
+}
+
+.embed-size-row .name-in {
+  width: 80px
+}
+
+.embed-size-row .btn.small {
+  margin-left: auto;
+  white-space: nowrap
+}
+
 .btn {
   border: 1px solid var(--line);
   border-radius: var(--r-md);
@@ -571,7 +594,8 @@ button i {
   background: var(--bg);
   color: var(--fg);
   resize: vertical;
-  line-height: 1.5
+  line-height: 1.5;
+  margin-top: 12px
 }
 
 .dialog-actions {
