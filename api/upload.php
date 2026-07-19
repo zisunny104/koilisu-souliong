@@ -5,6 +5,7 @@
 require __DIR__ . '/store.php';
 require __DIR__ . '/security.php';
 require __DIR__ . '/stats.php';
+require __DIR__ . '/features.php';
 $cfg = require __DIR__ . '/config.php';
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
@@ -44,7 +45,7 @@ function num_or_null($v) {
     return is_numeric($v) ? (float)$v : null;
 }
 
-$kind       = ($_POST['kind'] ?? 'photo') === 'desc' ? 'desc' : 'photo';
+$kind       = array_key_exists($_POST['kind'] ?? '', souliong_kinds()) ? (string)$_POST['kind'] : 'photo';
 $name       = clean_str($_POST['name'] ?? null, $cfg['name_max']) ?? '匿名';
 $comment    = clean_str($_POST['comment'] ?? null, $cfg['comment_max']);
 $item_num   = (isset($_POST['item_num']) && $_POST['item_num'] !== '') ? (int)$_POST['item_num'] : null;

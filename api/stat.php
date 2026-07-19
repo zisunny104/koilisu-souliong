@@ -5,6 +5,7 @@
 require __DIR__ . '/store.php';
 require __DIR__ . '/security.php';
 require __DIR__ . '/stats.php';
+require __DIR__ . '/features.php';
 $cfg = require __DIR__ . '/config.php';
 
 $project = preg_replace('/[^a-z0-9_-]/', '', $_REQUEST['project'] ?? '');
@@ -20,7 +21,7 @@ rate_limit($cfg, 'stat');
 $type = preg_replace('/[^a-z]/', '', $_REQUEST['type'] ?? '');
 $id   = (string)($_REQUEST['id'] ?? '');
 
-$FEATURES = ['route', 'photos', 'filter', 'embed', 'random', 'upload', 'story', 'theme'];
+$FEATURES = array_keys(souliong_features());
 $h = (int)($_REQUEST['h'] ?? -1);
 $d = (int)($_REQUEST['d'] ?? -1);
 stats_apply($cfg, $project, function (&$s) use ($type, $id, $h, $d, $FEATURES) {
@@ -35,6 +36,9 @@ stats_apply($cfg, $project, function (&$s) use ($type, $id, $h, $d, $FEATURES) {
             break;
         case 'session':
             stats_bump($s, 'sessions');
+            $ub = stats_ua_buckets((string)($_SERVER['HTTP_USER_AGENT'] ?? ''));   // 一個工作階段記一次，只計大類不存 UA
+            stats_bump($s, 'browser', $ub['browser'], 12);
+            stats_bump($s, 'os', $ub['os'], 8);
             break;
         case 'device':
             if ($id === 'mobile' || $id === 'desktop') stats_bump($s, 'device', $id, 4);
