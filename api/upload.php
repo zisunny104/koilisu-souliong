@@ -17,10 +17,10 @@ if (!preg_match('/^[a-z0-9_-]{1,40}$/', $project) || !is_dir($cfg['projects_dir'
     json_out(['error' => 'unknown project'], 400);
 }
 
-// 投稿碼：限特定人上傳（碼存在 meta.json，前端拿不到，這裡才是真正把關）
+// 投稿碼：限特定人上傳（碼存在 meta.json，前端拿不到，這裡才是真正把關）。已用管理 PIN 登入者（主 PIN 或此專案的 PIN）視為已解鎖，不受投稿碼限制。
 $metaU = json_decode((string)@file_get_contents($cfg['projects_dir'] . '/' . $project . '/meta.json'), true);
 $needCode = project_code($cfg, $project, is_array($metaU) ? $metaU : null);
-if ($needCode !== '' && !hash_equals($needCode, preg_replace('/\D/', '', (string)($_POST['code'] ?? '')))) {
+if ($needCode !== '' && !admin_can($cfg, $project) && !hash_equals($needCode, preg_replace('/\D/', '', (string)($_POST['code'] ?? '')))) {
     json_out(['error' => '需要正確的投稿碼才能上傳'], 403);
 }
 
