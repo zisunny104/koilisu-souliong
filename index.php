@@ -48,6 +48,9 @@ switch ($action) {
     case 'redeem':
         require __DIR__ . '/api/redeem.php';
         return;
+    case 'exiffix':
+        require __DIR__ . '/api/exiffix.php';   // 常駐維護工具：修復投稿缺少相機 EXIF 資訊
+        return;
     case 'stat':
         require __DIR__ . '/api/stat.php';
         return;

@@ -77,7 +77,7 @@ try {
         'lat'          => $lat,
         'lon'          => $lon,
         'loc_source'   => $loc_source,
-        'exif'         => null,
+        'exif'         => $orig['exif'] ?? null,  // 相機資訊是拍攝當下的不變事實，跟 photo_time 一樣要沿用原始值，不能因為編輯就清空
         'owner_hash'   => $owner !== '' ? hash('sha256', $owner) : null,
         'src_hash'     => $srcHash,
         'contrib_id'   => $contribId,

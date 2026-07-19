@@ -77,6 +77,40 @@ function store_delete(array $cfg, string $project, string $id): ?array {
     return $removed;
 }
 
+/**
+ * 就地修補單筆記錄的指定欄位（唯一打破 append-only 的例外，僅供資料修復工具（如 exiffix.php）使用，
+ * 例如補救誤存為 null 的欄位；一般編輯一律走 store_append 版本化，不要用這個）。
+ */
+function store_patch(array $cfg, string $project, string $id, array $fields): ?array {
+    $f = store_file($cfg, $project);
+    if (!is_file($f)) return null;
+    $fp = fopen($f, 'c+b');
+    if (!$fp) return null;
+    flock($fp, LOCK_EX);
+    $lines = [];
+    $patched = null;
+    while (($line = fgets($fp)) !== false) {
+        $t = trim($line);
+        if ($t === '') continue;
+        $rec = json_decode($t, true);
+        if (is_array($rec) && (string)($rec['id'] ?? '') === $id) {
+            $rec = array_merge($rec, $fields);
+            $patched = $rec;
+            $t = json_encode($rec, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        }
+        $lines[] = $t;
+    }
+    if ($patched !== null) {
+        ftruncate($fp, 0);
+        rewind($fp);
+        foreach ($lines as $l) fwrite($fp, $l . "\n");
+        fflush($fp);
+    }
+    flock($fp, LOCK_UN);
+    fclose($fp);
+    return $patched;
+}
+
 function store_projects(array $cfg): array {
     $dir = rtrim($cfg['projects_dir'], '/\\');
     $out = [];
