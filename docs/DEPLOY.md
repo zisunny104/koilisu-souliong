@@ -18,7 +18,7 @@ location ~ \.(jsonl|sqlite|code\.txt)$ { deny all; return 404; }
 > 驗證：瀏覽器開 `https://你的網域/koilisu/apps/souliong/projects/100chairs/code.txt` 應該是 403/404，不能看到碼。
 
 ### 2. 改掉預設密鑰（`api/config.php`）
-- `admin_token` → 一組隨機長字串（管理頁用）。
+- `admin_pin` → 一組不易猜的 PIN（管理頁登入用；驗證後種 httpOnly cookie，PIN 不進網址）。
 - `ip_salt` → 一組隨機字串（鑑識 IP 雜湊用）。
 
 ### 3. 反代 IP 設定
@@ -51,10 +51,12 @@ Nginx：`client_max_body_size 15m;`　PHP：`upload_max_filesize=15M`、`post_ma
 
 ## 三、管理 / 審閱 / 分析
 
-- 管理頁：`?api=admin&token=你的admin密碼`
+- 管理頁：`?api=admin`（或 `/<mapid>/manager`），輸入 PIN 登入（POST，httpOnly cookie 保持登入，PIN 不進網址）。
+  - **主 PIN**（`config.admin_pin`）：開所有專案。**專案 PIN**：只開該專案，由主 PIN 在後台新增/移除，可個別授權下列權限旗標（`admin_perm`，預設關閉）：`edit_others`（改別人的投稿）、`edit_points`（改定位點）、`delegate_admin`（可建立「管理PIN」型分享連結）。
+  - 後台可建立「分享編輯連結」：投稿身分（私人PIN／僅限匿名）或管理PIN，皆可設到期時間／使用次數上限（只擋新增投稿或新登入，不影響已投稿內容的編輯/刪除）；連結的秘密只透過網址 fragment（`#redeem=...`）傳遞，不進伺服器紀錄。
   - 看/換投稿碼、看統計摘要、瀏覽與刪除投稿。
   - 每筆顯示 `owner`(同源可群組) 與 `src`(加鹽 IP 雜湊)：**同一 owner 出現多個不同 src ＝ 可能投稿碼外流/冒名**，可據此界定污染範圍後刪除。
-- 統計原始 JSON：`GET ?api=stat&project=<id>&read=1&token=你的admin密碼`
+- 統計原始 JSON：`GET ?api=stat&project=<id>&read=1`（需已用管理 PIN 登入）
 
 ## 四、CSP（若你日後強制執行）
 本站目前依賴的外部來源（report-only 下可用；強制執行需放行）：

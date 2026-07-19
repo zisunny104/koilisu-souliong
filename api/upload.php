@@ -24,6 +24,12 @@ if ($needCode !== '' && !admin_can($cfg, $project) && !hash_equals($needCode, pr
     json_out(['error' => '需要正確的投稿碼才能上傳'], 403);
 }
 
+// 投稿身分到期/次數限制（分享編輯連結可附帶）：只擋「新增投稿」，不影響本人編輯/刪除已投稿過的內容
+$ctokenGate = (string)($_POST['ctoken'] ?? '');
+if ($ctokenGate !== '' && !contrib_check_and_bump($cfg, $project, $ctokenGate)) {
+    json_out(['error' => '此投稿身分已到期或已達使用次數上限，僅能檢視／管理已投稿的內容'], 403);
+}
+
 function clean_str(?string $s, int $max): ?string {
     if ($s === null) return null;
     $s = preg_replace('/[\x00-\x08\x0B\x0C\x0E-\x1F]/u', '', $s); // 去除控制字元

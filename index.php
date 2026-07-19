@@ -45,6 +45,9 @@ switch ($action) {
     case 'unlock':
         require __DIR__ . '/api/unlock.php';
         return;
+    case 'redeem':
+        require __DIR__ . '/api/redeem.php';
+        return;
     case 'stat':
         require __DIR__ . '/api/stat.php';
         return;

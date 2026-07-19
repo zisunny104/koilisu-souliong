@@ -10,9 +10,11 @@
 id, project, item_num, kind, name, comment,
 photo, photo_time, lat, lon, loc_source,
 exif{make,model,lens,f,exp,iso,focal,sw},
-owner_hash, src_hash, created_at
+owner_hash, src_hash, contrib_id, contrib_hash, edit_of, created_at
 ```
-`kind` 目前有：`photo`（照片投稿）、`desc`（地點說明版本）。
+`kind` 目前有：`photo`（照片投稿）、`desc`（地點說明版本）、`point`（定位點版本，見 `editpoint.php`）。
+`edit_of` 指向被編輯的原始投稿 id（版本化：不覆寫，新增一筆版本紀錄，前端取最新版本蓋過原始值）。
+`contrib_id`/`contrib_hash` 是可選的投稿者身分（自選 PIN 才有）：前者對外可見（分組顯示用），後者僅供伺服器驗證「本人編輯/刪除」，不外流。
 
 ## 二、新增一張地圖（完全不用改程式）
 
@@ -44,7 +46,7 @@ owner_hash, src_hash, created_at
 ## 五、統計要「顯示」怎麼做
 
 統計已在記錄（`projects/<project>/stats.json`），只差顯示：
-- 讀取：`GET ?api=stat&project=<id>&read=1&token=admin密碼`
+- 讀取：`GET ?api=stat&project=<id>&read=1`（需已用管理 PIN 登入）
 - 用回傳 JSON 畫圖：`points` 排序＝熱門點、`by_hour`/`by_dow`＝時段、`device`/`features`/`cameras`＝圓餅或數字卡。
 - 可在 `admin.php` 內嵌一段 `<canvas>` 直接畫（已有摘要文字版）。
 

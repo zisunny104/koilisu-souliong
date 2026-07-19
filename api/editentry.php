@@ -47,7 +47,7 @@ try {
     $contribStored = (string)($orig['contrib_hash'] ?? '');
     $ownerOk   = $owner !== '' && $ownerStored !== '' && hash_equals($ownerStored, hash('sha256', $owner));
     $contribOk = $ctoken !== '' && $contribStored !== '' && hash_equals($contribStored, contrib_hash_of($ctoken));
-    if (!$ownerOk && !$contribOk && !admin_can($cfg, $project)) {
+    if (!$ownerOk && !$contribOk && !admin_perm($cfg, $project, 'edit_others')) {
         json_out(['error' => '沒有權限編輯這則（只有原投稿者本人或管理者可以）'], 403);
     }
 

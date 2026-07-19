@@ -162,6 +162,45 @@ window.MapApp = (() => {
   }
   function toast(html) { const t = document.createElement('div'); t.className = 'toast egg'; t.innerHTML = html; document.body.appendChild(t); setTimeout(() => { t.style.opacity = '0'; }, 2200); setTimeout(() => t.remove(), 2800); }
 
+  // 分享編輯連結兌換：秘密只透過網址 fragment（#redeem=...）傳遞，不落地在 query string／伺服器紀錄。
+  // 讀出後立刻用 history.replaceState 清掉，避免重新整理或分享網址時重複兌換／外流。
+  async function handleRedeemFragment() {
+    if (EMBED) return;
+    const raw = location.hash.startsWith('#') ? location.hash.slice(1) : location.hash;
+    if (!/(^|&)redeem=/.test(raw)) return;
+    const hp = new URLSearchParams(raw);
+    const token = hp.get('redeem');
+    const rmode = hp.get('rmode');
+    hp.delete('redeem'); hp.delete('rmode');
+    const rest = hp.toString();
+    try { history.replaceState(null, '', location.pathname + location.search + (rest ? '#' + rest : '')); } catch (e) {}
+    if (!token) return;
+    if (rmode === 'admin') {
+      try {
+        const fd = new FormData(); fd.append('action', 'login'); fd.append('pin', token); fd.append('project', PROJECT); fd.append('json', '1');
+        const res = await fetch(apiUrl('admin'), { method: 'POST', body: fd });
+        const j = await res.json().catch(() => ({}));
+        if (res.ok && j.ok) { toast('<i class="fa-solid fa-user-shield"></i> 已用管理連結登入，重新整理中…'); setTimeout(() => location.reload(), 900); }
+        else toast('<i class="fa-solid fa-triangle-exclamation"></i> ' + esc(j.error || '管理連結已失效'));
+      } catch (e) { toast('<i class="fa-solid fa-triangle-exclamation"></i> 連線失敗，請稍後再試'); }
+      return;
+    }
+    const existing = contribInfo();
+    if (existing && existing.token && existing.token !== token) {
+      const ok = confirm('您目前已有一個投稿身分' + (existing.label ? '（' + existing.label + '）' : '') + '，要切換成這個分享連結給的新身分嗎？\n切換後，之後的投稿會改用新身分；先前投稿過的內容不會受影響。');
+      if (!ok) return;
+    }
+    try {
+      const fd = new FormData(); fd.append('project', PROJECT); fd.append('ctoken', token);
+      const res = await fetch(apiUrl('redeem'), { method: 'POST', body: fd });
+      const j = await res.json().catch(() => ({}));
+      if (res.ok && j.ok && j.contrib) {
+        setContribInfo(j.contrib); await computeContribId(); applyPostState();
+        toast('<i class="fa-solid fa-check"></i> 已取得投稿身分' + (j.contrib.label ? '：' + esc(j.contrib.label) : ''));
+      } else toast('<i class="fa-solid fa-triangle-exclamation"></i> ' + esc(j.error || '連結已失效'));
+    } catch (e) { toast('<i class="fa-solid fa-triangle-exclamation"></i> 連線失敗，請稍後再試'); }
+  }
+
   // 解鎖彈窗 + QR 掃描
   let scanStream = null, scanRAF = null;
   function openUnlock() {
@@ -1336,6 +1375,7 @@ window.MapApp = (() => {
       try { history.replaceState(null, '', location.pathname + (qs ? '?' + qs : '') + location.hash); } catch (e) {}
       doUnlock(c).then(r => { if (r.ok) toast('<i class="fa-solid fa-check"></i> 已用邀請連結解鎖'); });
     }
+    await handleRedeemFragment();
     applyPostState();
 
     // 關閉浮動卡片：×、地圖背景點擊、Esc

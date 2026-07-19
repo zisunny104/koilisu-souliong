@@ -1,7 +1,7 @@
 <?php
-// 編輯定位點（椅子）本身的座標：僅限管理者（此專案 PIN 或主 PIN）。
+// 編輯定位點（椅子）本身的座標：預設僅限主要管理者；主 PIN 可個別開啟特定專案 PIN 的 edit_points 權限。
 // 椅子資料來自靜態 chairs.json（匯入的官方/共享資料，無個別投稿者），因此不比照 editentry.php 驗證 owner/ctoken，
-// 而是單純以 admin_can() 把關。比照「故事」的版本化精神：不覆寫 chairs.json，而是新增一筆版本紀錄，
+// 而是單純以 admin_perm() 把關。比照「故事」的版本化精神：不覆寫 chairs.json，而是新增一筆版本紀錄，
 // 前端讀取時取同一 item_num 底下最新一筆 kind:'point' 紀錄覆蓋原始座標（見 viewer.leaflet.js 的 effectivePoints()）。
 // POST project, item_num（必填，對應 chairs.json 的 num）, lat, lon, name(可留空)。
 require __DIR__ . '/store.php';
@@ -18,8 +18,8 @@ if ($project === '' || !is_dir($cfg['projects_dir'] . '/' . $project)) {
     json_out(['error' => 'bad request'], 400);
 }
 
-if (!admin_can($cfg, $project)) {
-    json_out(['error' => '沒有權限編輯定位點（僅限管理者）'], 403);
+if (!admin_perm($cfg, $project, 'edit_points')) {
+    json_out(['error' => '沒有權限編輯定位點（僅限主要管理者，或已被授權的專案管理者）'], 403);
 }
 
 function clean_str_ep(?string $s, int $max): ?string {

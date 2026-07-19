@@ -12,11 +12,11 @@ We collect as little as possible, keep it de-identified, and use no third-party 
 
 ## 存在你裝置上的資料 / Stored on your device
 
-以瀏覽器 `localStorage` 儲存（僅在你的裝置，可自行清除）：主題偏好、你輸入的暱稱、投稿權限（解鎖後記住的投稿碼）、以及一個**有期限**的「擁有者標記」——用來讓你在原裝置刪除自己的投稿。
+以瀏覽器 `localStorage` 儲存（僅在你的裝置，可自行清除）：主題偏好、你輸入的暱稱、投稿權限（解鎖後記住的投稿碼）、一個**有期限**的「擁有者標記」（用來讓你在原裝置刪除自己的投稿），以及——若你自選了 PIN 建立可跨裝置延續的投稿者身分——一組由該 PIN 衍生的識別權杖（可用來在其他裝置編輯/刪除同一身分投稿過的內容；若此身分是由分享連結建立，管理者可為其設到期時間或使用次數上限，僅影響「新增投稿」，不影響既有內容的編輯/刪除）。
 
 公開地圖頁**不設 Cookie**；只有後台登入使用一個功能性的 `httpOnly` Cookie 維持登入，並非追蹤用途。
 
-> Kept in `localStorage` (your device only): theme, nickname, the contribution code once unlocked, and a time-limited “owner marker” to let you delete your own posts from this device. The public map sets **no cookies**; only admin login uses a functional httpOnly cookie — not for tracking.
+> Kept in `localStorage` (your device only): theme, nickname, the contribution code once unlocked, a time-limited “owner marker” to let you delete your own posts from this device, and — if you chose a PIN to create a portable, cross-device contributor identity — a derived token for that identity (lets you edit/delete that identity's posts from another device; if the identity was created via a share link, an admin may set an expiry or use-count limit on it, which only affects new posts, never editing/deleting existing ones). The public map sets **no cookies**; only admin login uses a functional httpOnly cookie — not for tracking.
 
 ## 伺服器記錄的資料 / Recorded on the server
 
@@ -24,8 +24,8 @@ We collect as little as possible, keep it de-identified, and use no third-party 
 - **匿名統計 / Aggregate stats**：瀏覽、工作階段、裝置類別、功能使用、相機型號等彙總數字，**不含個人身分**。Non-identifying counts only.
 - **防冒名來源標記 / Abuse-forensics marker**：一段**加鹽雜湊**後的來源標記，經去識別、**無法還原成 IP**，僅供管理者鑑識，不對外顯示。A salted, de-identified source hash; never shown, not reversible to an IP.
 
-上傳時照片會轉存為 WebP，過程**移除原始 EXIF**（僅另存我們讀到的時間、座標、相機型號欄位）。
-On upload, photos are re-encoded to WebP and **original EXIF is stripped** (only time, coordinates, and camera model are kept).
+上傳時照片會轉存為 WebP，過程**移除原始 EXIF**（僅另存我們讀到的拍攝時間、座標，以及相機廠牌/型號/鏡頭/軟體、光圈、快門、ISO、焦距等有限的拍攝參數欄位；不含機身序號等可唯一識別裝置的資訊）。
+On upload, photos are re-encoded to WebP and **original EXIF is stripped** (only shot time, coordinates, and a limited set of shooting parameters are kept — camera make/model/lens/software, aperture, shutter speed, ISO, focal length; no device serial number or other uniquely-identifying fields).
 
 ## 刪除與內容處理 / Deletion &amp; takedown
 
