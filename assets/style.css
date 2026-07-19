@@ -411,9 +411,10 @@ textarea:focus {
   width: 80px
 }
 
-.embed-size-row .btn.small {
+.embed-size-row select.embed-size-preset {
   margin-left: auto;
-  white-space: nowrap
+  width: auto;
+  max-width: 150px
 }
 
 .btn {

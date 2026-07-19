@@ -1381,12 +1381,8 @@ window.MapApp = (() => {
       setTimeout(() => document.getElementById('copyMsg').textContent = '', 2000);
     };
     document.getElementById('embedWidth').oninput = buildEmbedCode;
-    document.getElementById('embedWidthFillBtn').onclick = function () {
-      this.classList.toggle('on');
-      document.getElementById('embedWidth').disabled = this.classList.contains('on');
-      buildEmbedCode();
-    };
     document.getElementById('embedHeight').oninput = buildEmbedCode;
+    document.getElementById('embedSizePreset').onchange = buildEmbedCode;
 
     // 上傳（精簡模式停用）
     if (!EMBED) {
@@ -1494,10 +1490,12 @@ window.MapApp = (() => {
     sp.set('embed', '1');
     if (photoLayerOn) sp.set('contrib', '1');
     const url = location.origin + APP.base + PROJECT + '?' + sp.toString();
-    const wFill = document.getElementById('embedWidthFillBtn').classList.contains('on');
+    const preset = document.getElementById('embedSizePreset').value;
     const w = document.getElementById('embedWidth').value || 800;
     const h = document.getElementById('embedHeight').value || 600;
-    const sizeStyle = 'width:' + (wFill ? '100%' : w + 'px') + ';height:' + h + 'px';
+    const wFill = preset === 'fill_w' || preset === 'fill_wh';
+    const hFill = preset === 'fill_h' || preset === 'fill_wh';
+    const sizeStyle = 'width:' + (wFill ? '100%' : w + 'px') + ';height:' + (hFill ? '100%' : h + 'px');
     document.getElementById('embedCode').value =
       '<iframe src="' + url + '" title="' + esc(META.title || 'Souliong') + '" ' +
       'style="' + sizeStyle + ';border:0;border-radius:12px" loading="lazy"></iframe>';

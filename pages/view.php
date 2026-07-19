@@ -177,7 +177,12 @@ $jsonFlags = JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JS
       <span class="hint">×</span>
       <input type="number" id="embedHeight" class="name-in" min="200" step="10" value="600">
       <span class="hint">px</span>
-      <button type="button" class="btn small" id="embedWidthFillBtn"><?= $t('embed_fill_container_w') ?></button>
+      <select id="embedSizePreset" class="name-in embed-size-preset">
+        <option value="custom"><?= $t('embed_size_custom') ?></option>
+        <option value="fill_w"><?= $t('embed_fill_container_w') ?></option>
+        <option value="fill_h"><?= $t('embed_fill_container_h') ?></option>
+        <option value="fill_wh"><?= $t('embed_fill_container_wh') ?></option>
+      </select>
     </div>
     <textarea id="embedCode" readonly rows="4"></textarea>
     <div class="dialog-actions"><button class="btn primary" id="copyEmbedBtn"><?= $t('copy') ?></button><span id="copyMsg" class="hint"></span></div>
