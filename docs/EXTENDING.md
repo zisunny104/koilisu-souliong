@@ -43,7 +43,7 @@ owner_hash, src_hash, created_at
 
 ## 五、統計要「顯示」怎麼做
 
-統計已在記錄（`data/<project>.stats.json`），只差顯示：
+統計已在記錄（`projects/<project>/stats.json`），只差顯示：
 - 讀取：`GET ?api=stat&project=<id>&read=1&token=admin密碼`
 - 用回傳 JSON 畫圖：`points` 排序＝熱門點、`by_hour`/`by_dow`＝時段、`device`/`features`/`cameras`＝圓餅或數字卡。
 - 可在 `admin.php` 內嵌一段 `<canvas>` 直接畫（已有摘要文字版）。

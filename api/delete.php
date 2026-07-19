@@ -29,7 +29,7 @@ try {
         json_out(['error' => '沒有權限刪除這則（可能是別人上傳的，或此裝置/身分的標記已更換）'], 403);
     }
     $removed = store_delete($cfg, $project, $id);
-    if ($removed && !empty($removed['photo'])) { @unlink($cfg['photos_dir'] . '/' . $removed['photo']); }
+    if ($removed && !empty($removed['photo'])) { $pp = photo_abs_path($cfg, $removed['photo']); if ($pp) @unlink($pp); }
     json_out(['ok' => true, 'id' => $id]);
 } catch (Throwable $e) {
     error_log('souliong delete: ' . $e->getMessage());

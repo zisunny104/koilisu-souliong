@@ -65,7 +65,7 @@ if (isset($_FILES['photo']) && $_FILES['photo']['error'] === UPLOAD_ERR_OK) {
         json_out(['error' => 'unsupported type: ' . $mime], 415);
     }
     $ext = $cfg['allowed_mime'][$mime];
-    $destDir = $cfg['photos_dir'] . '/' . $project;
+    $destDir = project_dir($cfg, $project) . '/photos';
     if (!is_dir($destDir)) { @mkdir($destDir, 0775, true); }
     $fname = date('Ymd_His') . '_' . bin2hex(random_bytes(4)) . '.' . $ext;
     $destAbs = $destDir . '/' . $fname;

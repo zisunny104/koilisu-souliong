@@ -4,18 +4,18 @@ Souliong 是 KoiLiSu 框架下的一個 app（`apps/souliong`）。純 PHP + 檔
 
 ## 一、上線前必做（安全關鍵）
 
-### 1. ★ 擋掉 `data/` 與 `photos/` 的直接存取
-`data/` 裡有：投稿內容、**投稿碼**、加鹽 IP 雜湊、統計、限流檔——**絕對不能被直接下載**（否則投稿碼外洩＝門檻失效）。
-`photos/` 由 PHP（`?api=photo`）輸出，也不需要、也不應該被直接列目錄。
+### 1. ★ 擋掉 `projects/` 與 `state/` 的直接存取
+`projects/<id>/` 裡有：投稿內容、**投稿碼**（`code.txt`）、投稿者名冊、統計——**絕對不能被直接下載**（否則投稿碼外洩＝門檻失效）；照片也在裡面，一律由 PHP（`?api=photo`）輸出，不應該被直接列目錄。
+`state/` 裡有 admin PIN 清單與限流檔，同樣不能外流。
 
 在 Nginx server 區塊加入（路徑對應你的實際 web root）：
 ```nginx
-# 擋掉所有 app 的 data/ 與 photos/ 直接存取
-location ~ ^/koilisu/apps/[^/]+/(data|photos)/ { deny all; return 404; }
+# 擋掉所有 app 的 projects/ 與 state/ 直接存取
+location ~ ^/koilisu/apps/[^/]+/(state|projects)/ { deny all; return 404; }
 # 保險：擋掉 .code.txt / .jsonl / .stats.json 這類資料檔
 location ~ \.(jsonl|sqlite|code\.txt)$ { deny all; return 404; }
 ```
-> 驗證：瀏覽器開 `https://你的網域/koilisu/apps/souliong/data/100chairs.code.txt` 應該是 403/404，不能看到碼。
+> 驗證：瀏覽器開 `https://你的網域/koilisu/apps/souliong/projects/100chairs/code.txt` 應該是 403/404，不能看到碼。
 
 ### 2. 改掉預設密鑰（`api/config.php`）
 - `admin_token` → 一組隨機長字串（管理頁用）。
@@ -25,11 +25,11 @@ location ~ \.(jsonl|sqlite|code\.txt)$ { deny all; return 404; }
 - `trust_forwarded => true`（位於 Nginx 反代後**必設**，否則所有訪客共用一個 IP，限流會誤判、統計也會塞住）。
 
 ### 4. 可寫目錄
-`data/`、`photos/` 需 php-fpm 執行者可寫：
+`projects/`、`state/` 需 php-fpm 執行者可寫：
 ```bash
 cd /你的路徑/apps/souliong
-chown -R www-data:www-data data photos      # www-data 換成你的 php-fpm 使用者
-chmod -R 775 data photos
+chown -R www-data:www-data projects state   # www-data 換成你的 php-fpm 使用者
+chmod -R 775 projects state
 ```
 
 ### 5. 上傳大小
@@ -44,9 +44,9 @@ Nginx：`client_max_body_size 15m;`　PHP：`upload_max_filesize=15M`、`post_ma
 ## 二、投稿碼（限特定人上傳）
 
 - 是否需要碼：由各地圖的 `projects/<id>/meta.json` 的 `"gated": true` 決定。
-- 碼本身**自動產生**、存在 `data/<id>.code.txt`（不在 meta、前端拿不到）。
+- 碼本身**自動產生**、存在 `projects/<id>/code.txt`（不在 meta、前端拿不到）。
 - **取得目前碼**：開 `?api=admin&token=...` 管理頁，會顯示碼與「邀請連結」。
-- **換碼**：管理頁按「重新產生」，或直接刪掉 `data/<id>.code.txt`（下次自動產生新碼）。
+- **換碼**：管理頁按「重新產生」，或直接刪掉 `projects/<id>/code.txt`（下次自動產生新碼）。
 - **給組員**：把邀請連結 `.../<id>?code=XXXX` 傳給他們，點一次即在該裝置解鎖。
 
 ## 三、管理 / 審閱 / 分析
@@ -68,7 +68,9 @@ worker-src  blob:;
 ```
 
 ## 五、備份
-只要備份 `apps/souliong/data/` 與 `apps/souliong/photos/` 兩個資料夾即為全部使用者資料。
+只要備份 `apps/souliong/projects/`（每個專案的全部資料與照片）與 `apps/souliong/state/`（admin PIN 清單）兩個資料夾即為全部使用者資料。
+
+> 若你是從舊版（`data/` + `photos/` + `projects/` 三資料夾並存）升級：這是有資料位置破壞性的變動，新舊程式碼與新舊資料夾結構不能混用。升級時需把舊的 `data/<id>.jsonl`／`<id>.code.txt`／`<id>.contrib.json`／`<id>.stats.json` 與 `photos/<id>/` 併入 `projects/<id>/`（分別改名為 `data.jsonl`／`code.txt`／`contrib.json`／`stats.json`／`photos/`），再把只剩 `admin_pins.json`、`.rate/` 的舊 `data/` 改名為 `state/`。
 
 ## 六、韌性說明
 - 無狀態：每個請求獨立，php-fpm worker 崩潰會自動被取代，不需手動「重新上線」。

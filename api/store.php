@@ -1,17 +1,26 @@
 <?php
 /**
  * 純 PHP 檔案儲存（零擴充依賴，取代 SQLite）。
- * 每個項目一個 JSON-Lines 檔：data/<project>.jsonl，一行一筆記錄。
+ * 每個項目一個 JSON-Lines 檔：projects/<project>/data.jsonl，一行一筆記錄。
  * 寫入用 LOCK_EX 附加、讀取用 LOCK_SH，append-only。
  */
 
-function store_dir(array $cfg): string {
-    $d = $cfg['store_dir'];
+function project_dir(array $cfg, string $project): string {
+    return rtrim($cfg['projects_dir'], '/\\') . '/' . $project;
+}
+function state_dir(array $cfg): string {
+    $d = $cfg['state_dir'];
     if (!is_dir($d)) { @mkdir($d, 0775, true); }
     return $d;
 }
 function store_file(array $cfg, string $project): string {
-    return store_dir($cfg) . '/' . $project . '.jsonl';
+    return project_dir($cfg, $project) . '/data.jsonl';
+}
+
+/** 把 jsonl 裡存的 "<project>/<檔名>" 解析成照片實際檔案路徑；格式不符回 null */
+function photo_abs_path(array $cfg, string $photoRel): ?string {
+    if (!preg_match('#^([a-z0-9_-]+)/([A-Za-z0-9_.-]+)$#', $photoRel, $m)) return null;
+    return project_dir($cfg, $m[1]) . '/photos/' . $m[2];
 }
 
 function store_all(array $cfg, string $project): array {
@@ -69,8 +78,12 @@ function store_delete(array $cfg, string $project, string $id): ?array {
 }
 
 function store_projects(array $cfg): array {
+    $dir = rtrim($cfg['projects_dir'], '/\\');
     $out = [];
-    foreach (glob(store_dir($cfg) . '/*.jsonl') as $f) $out[] = basename($f, '.jsonl');
+    foreach ((array)@scandir($dir) as $name) {
+        if ($name === '.' || $name === '..') continue;
+        if (is_dir($dir . '/' . $name)) $out[] = $name;
+    }
     return $out;
 }
 

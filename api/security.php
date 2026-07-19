@@ -40,8 +40,8 @@ function admin_clear_cookie(): void {
     foreach ($_COOKIE as $k => $v) { if (strpos($k, 'souliong_padm_') === 0) setcookie($k, '', ['expires' => time() - 3600, 'path' => '/']); }
 }
 
-// ── PIN 清單（data/admin_pins.json） ──
-function pins_file(array $cfg): string { return rtrim($cfg['store_dir'], '/\\') . '/admin_pins.json'; }
+// ── PIN 清單（state/admin_pins.json） ──
+function pins_file(array $cfg): string { return rtrim($cfg['state_dir'], '/\\') . '/admin_pins.json'; }
 function pins_load(array $cfg): array {
     $d = is_file(pins_file($cfg)) ? json_decode((string)@file_get_contents(pins_file($cfg)), true) : null;
     if (!is_array($d)) $d = [];
@@ -74,12 +74,12 @@ function gen_code(int $len = 6): string {
 
 /**
  * 取得某項目目前的投稿碼（純後端檔案管理）：
- * meta.gated 為真才需碼；碼存 data/<project>.code.txt，不存在則自動產生。
+ * meta.gated 為真才需碼；碼存 projects/<project>/code.txt，不存在則自動產生。
  * 要換碼 → 直接刪掉該檔，下次呼叫會產生新碼。未 gated 回空字串（開放上傳）。
  */
 function project_code(array $cfg, string $project, ?array $meta): string {
     if (empty($meta['gated'])) return '';
-    $f = rtrim($cfg['store_dir'], '/\\') . '/' . $project . '.code.txt';
+    $f = project_dir($cfg, $project) . '/code.txt';
     $c = is_file($f) ? trim((string)@file_get_contents($f)) : '';
     if ($c === '') {
         $c = gen_code();
@@ -101,8 +101,8 @@ function contrib_token(array $cfg, string $project, string $pin): string {
 function contrib_id_of(string $token): string { return substr(hash('sha256', 'cid|' . $token), 0, 12); }
 function contrib_hash_of(string $token): string { return hash('sha256', $token); }
 
-// 投稿者名冊：data/<project>.contrib.json = { <contrib_id>: {label, created, assigned} }
-function contrib_file(array $cfg, string $project): string { return rtrim($cfg['store_dir'], '/\\') . '/' . $project . '.contrib.json'; }
+// 投稿者名冊：projects/<project>/contrib.json = { <contrib_id>: {label, created, assigned} }
+function contrib_file(array $cfg, string $project): string { return project_dir($cfg, $project) . '/contrib.json'; }
 function contrib_load(array $cfg, string $project): array {
     $f = contrib_file($cfg, $project);
     $d = is_file($f) ? json_decode((string)@file_get_contents($f), true) : null;
@@ -124,7 +124,7 @@ function contrib_register(array $cfg, string $project, string $token, ?string $l
 function rate_limit(array $cfg, string $bucket = 'default'): void {
     $max = $cfg['rate_max'] ?? 40;
     $win = $cfg['rate_window'] ?? 60;
-    $dir = rtrim($cfg['store_dir'], '/\\') . '/.rate';
+    $dir = rtrim($cfg['state_dir'], '/\\') . '/.rate';
     if (!is_dir($dir)) { @mkdir($dir, 0775, true); }
     $ip = preg_replace('/[^0-9a-f:.]/i', '', client_ip($cfg));
     $f = $dir . '/' . substr(hash('sha256', $bucket . '|' . $ip), 0, 32) . '.txt';

@@ -1,9 +1,8 @@
 <?php
 // 範本：部署時複製成 config.php 並填入你的機密值（config.php 已被 .gitignore）
 return [
-    'store_dir'       => __DIR__ . '/../data',
-    'photos_dir'      => __DIR__ . '/../photos',
     'projects_dir'    => __DIR__ . '/../projects',
+    'state_dir'       => __DIR__ . '/../state',
     'max_bytes'       => 12 * 1024 * 1024,
     'allowed_mime'    => ['image/webp' => 'webp', 'image/jpeg' => 'jpg', 'image/png' => 'png'],
     'name_max'        => 60,

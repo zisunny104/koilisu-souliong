@@ -1,7 +1,7 @@
 <?php
 /**
  * 聚合統計工具：只累加「計數」，不存個資、不存逐筆事件列。
- * 每個項目一個極小的 <project>.stats.json，例如：
+ * 每個項目一個極小的 projects/<project>/stats.json，例如：
  *   {
  *     "views": 1234, "sessions": 320, "uploads": 88,
  *     "points": {"9": 41, "23": 77},        // 各點位被點開次數（熱門點）
@@ -22,7 +22,7 @@
  */
 
 function stats_file(array $cfg, string $project): string {
-    return rtrim($cfg['store_dir'], '/\\') . '/' . $project . '.stats.json';
+    return project_dir($cfg, $project) . '/stats.json';
 }
 
 function stats_read(array $cfg, string $project): array {

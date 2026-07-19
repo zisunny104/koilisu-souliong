@@ -1,5 +1,6 @@
 <?php
 // 由 PHP 輸出照片（框架不供應靜態檔）。用法：?api=photo&f=<project>/<file>
+require __DIR__ . '/store.php';
 $cfg = require __DIR__ . '/config.php';
 
 $f = $_GET['f'] ?? '';
@@ -8,8 +9,8 @@ if (strpos($f, '..') !== false || !preg_match('#^[a-z0-9_-]+/[A-Za-z0-9_.-]+$#',
     http_response_code(400);
     exit;
 }
-$path = $cfg['photos_dir'] . '/' . $f;
-if (!is_file($path)) {
+$path = photo_abs_path($cfg, $f);
+if ($path === null || !is_file($path)) {
     http_response_code(404);
     exit;
 }
