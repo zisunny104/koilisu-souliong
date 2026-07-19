@@ -134,10 +134,11 @@ function contrib_register(array $cfg, string $project, string $token, ?string $l
     return [$id, $d[$id]['label'] ?? ''];
 }
 
-/** 超過限制時直接以 429 結束請求 */
+/** 超過限制時直接以 429 結束請求。個別 bucket 可在 config['rate_limits'][$bucket] 覆寫 max/window（例如批次投稿量遠高於刪除/換鎖等低頻動作）。 */
 function rate_limit(array $cfg, string $bucket = 'default'): void {
-    $max = $cfg['rate_max'] ?? 40;
-    $win = $cfg['rate_window'] ?? 60;
+    $override = $cfg['rate_limits'][$bucket] ?? [];
+    $max = $override['max']    ?? $cfg['rate_max']    ?? 40;
+    $win = $override['window'] ?? $cfg['rate_window'] ?? 60;
     $dir = rtrim($cfg['state_dir'], '/\\') . '/.rate';
     if (!is_dir($dir)) { @mkdir($dir, 0775, true); }
     $ip = preg_replace('/[^0-9a-f:.]/i', '', client_ip($cfg));

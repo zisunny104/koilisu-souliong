@@ -10,7 +10,7 @@ $cfg = require __DIR__ . '/config.php';
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     json_out(['error' => 'POST only'], 405);
 }
-rate_limit($cfg, 'write');
+rate_limit($cfg, 'upload');
 
 $project = $_POST['project'] ?? '';
 if (!preg_match('/^[a-z0-9_-]{1,40}$/', $project) || !is_dir($cfg['projects_dir'] . '/' . $project)) {
@@ -67,7 +67,9 @@ if (isset($_FILES['photo']) && $_FILES['photo']['error'] === UPLOAD_ERR_OK) {
     $ext = $cfg['allowed_mime'][$mime];
     $destDir = project_dir($cfg, $project) . '/photos';
     if (!is_dir($destDir)) { @mkdir($destDir, 0775, true); }
-    $fname = date('Ymd_His') . '_' . bin2hex(random_bytes(4)) . '.' . $ext;
+    // 檔名用「照片實際拍攝時間」（EXIF／裝置時間），不是伺服器收到上傳的時間，方便直接依檔名辨識拍攝先後
+    $shotTs = $photo_time !== null ? strtotime($photo_time) : false;
+    $fname = date('Ymd_His', $shotTs !== false ? $shotTs : time()) . '_' . bin2hex(random_bytes(4)) . '.' . $ext;
     $destAbs = $destDir . '/' . $fname;
     if (!move_uploaded_file($f['tmp_name'], $destAbs)) {
         json_out(['error' => 'save failed'], 500);

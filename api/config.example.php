@@ -13,8 +13,11 @@ return [
     'admin_pin_label' => '',   // 用這把主 PIN 登入後要帶入的顯示名稱（留空則顯示「管理者」）
 
     // 韌性 / 資安
-    'rate_max'        => 40,
-    'rate_window'     => 60,
+    'rate_max'        => 40,      // 每 IP 於視窗內最多寫入次數（預設；刪除/換鎖等低頻動作用這個）
+    'rate_window'     => 60,      // 視窗秒數
+    'rate_limits'     => [        // 個別動作覆寫預設值；上傳是批次投稿常態，量遠高於刪除/換鎖，需要獨立且更高的上限
+        'upload' => ['max' => 300, 'window' => 60],
+    ],
     'trust_forwarded' => false,   // ★ 位於 Nginx 反代後請設 true
     'debug'           => true,    // ★ 上線穩定後設 false
 
