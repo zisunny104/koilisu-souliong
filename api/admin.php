@@ -3,6 +3,7 @@
 require __DIR__ . '/store.php';
 require __DIR__ . '/security.php';
 require __DIR__ . '/stats.php';
+require __DIR__ . '/features.php';
 require __DIR__ . '/../pages/error.php';
 $cfg = require __DIR__ . '/config.php';
 rate_limit($cfg, 'admin');
@@ -190,9 +191,14 @@ if (!$authed) {
         // 專案清單（供備份/檢視）
         $allProjects = store_projects($cfg);
 
-        // 組公開地圖網址用（分享連結／邀請碼共用）；basePath 取目前 admin 頁網址去除 query string 的部分
+        // 組公開地圖網址用（分享連結／邀請碼共用）；basePath 還原成 app 掛載根目錄本身，
+        // 不能只是「目前網址去掉 query string」──因為 admin 頁可能是用 /<project>/manager 這種路徑式網址進來，
+        // 那樣算出來的 basePath 會多黏 manager、專案代碼等片段，組出的公開網址／分享連結會整個是壞的。
         $origin = ((!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http') . '://' . ($_SERVER['HTTP_HOST'] ?? '');
-        $basePath = preg_replace('#\?.*$#', '', $_SERVER['REQUEST_URI'] ?? '/');
+        $appName = $_APP['name'] ?? basename(dirname(__DIR__));
+        $reqPathOnly = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH);
+        $appMarkerPos = strpos($reqPathOnly, '/' . $appName);
+        $basePath = $appMarkerPos !== false ? rtrim(substr($reqPathOnly, 0, $appMarkerPos + strlen($appName) + 1), '/') . '/' : '/';
         $mapUrl = fn($p) => $origin . $basePath . $p;
 
         // ── 動作 ──
@@ -452,6 +458,9 @@ if (!$authed) {
         }
         usort($rows, fn($a, $b) => strcmp((string)($b['created_at'] ?? ''), (string)($a['created_at'] ?? '')));
         $short = fn($s) => $s ? substr((string)$s, 0, 8) : '—';
+        // 編輯版本的 photo/exif 依設計為 null（沿用原始投稿），顯示時要透過 edit_of 回原始那筆取值
+        $byId = [];
+        foreach ($rows as $r) { $byId[$r['project'] . '/' . (string)($r['id'] ?? '')] = $r; }
 
         header('Content-Type: text/html; charset=utf-8');
           ?>
@@ -769,6 +778,58 @@ if (!$authed) {
       color: var(--fg)
     }
 
+    .statdetail {
+      margin-top: 8px
+    }
+
+    .statdetail>summary {
+      cursor: pointer;
+      font-size: 0.7813rem;
+      font-weight: 600;
+      color: var(--muted);
+      list-style: none
+    }
+
+    .statdetail>summary::-webkit-details-marker {
+      display: none
+    }
+
+    .statdetail>summary:hover {
+      color: var(--fg)
+    }
+
+    .statdetail .cols {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 12px;
+      margin-top: 10px
+    }
+
+    .statdetail .col {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: var(--r-md);
+      padding: 12px 14px;
+      font-size: 0.75rem
+    }
+
+    .statdetail .col h4 {
+      margin: 0 0 6px;
+      font-size: 0.75rem
+    }
+
+    .statdetail .col ol {
+      margin: 0;
+      padding-left: 18px;
+      line-height: 1.8
+    }
+
+    .statdetail .col p {
+      margin: 4px 0;
+      color: var(--muted);
+      line-height: 1.6
+    }
+
     .tablewrap {
       overflow-x: auto;
       border: 1px solid var(--line);
@@ -920,6 +981,129 @@ if (!$authed) {
       border-top: 1px solid var(--line);
       padding-top: 10px
     }
+
+    /* ── 專案總覽（scope=全部）：一張地圖一張精簡卡，細節請點進去 ── */
+    .ov-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+      gap: 12px
+    }
+
+    .ovcard {
+      padding: 14px 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      text-decoration: none;
+      color: inherit
+    }
+
+    .ovcard:hover {
+      border-color: var(--fg)
+    }
+
+    .ovcard .t {
+      font-weight: 700;
+      font-size: 0.9375rem
+    }
+
+    .ovcard .n {
+      font-size: 0.75rem;
+      color: var(--muted)
+    }
+
+    .ovcard .stat-row {
+      display: flex;
+      gap: 12px;
+      font-size: 0.75rem;
+      color: var(--muted)
+    }
+
+    .ovcard .stat-row b {
+      color: var(--fg);
+      font-size: 0.9375rem;
+      display: block
+    }
+
+    /* ── 單一專案工作區：頂端子導覽（分頁），一次只顯示一塊，減少「散落」感 ── */
+    .subnav {
+      display: flex;
+      gap: 4px;
+      flex-wrap: wrap;
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 4px;
+      margin: 16px 0
+    }
+
+    .subtab {
+      border: none;
+      background: none;
+      color: var(--muted);
+      font-size: 0.8125rem;
+      font-weight: 600;
+      padding: 7px 14px;
+      border-radius: 999px;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      white-space: nowrap
+    }
+
+    .subtab.on {
+      background: var(--accent);
+      color: var(--accent-fg)
+    }
+
+    .pane {
+      display: none
+    }
+
+    .pane.on {
+      display: block
+    }
+
+    .section-card {
+      padding: 18px 20px
+    }
+
+    .section-card+.section-card {
+      margin-top: 12px
+    }
+
+    .danger-zone {
+      border-color: var(--danger)
+    }
+
+    .searchbar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 8px 14px;
+      margin-bottom: 12px;
+      color: var(--muted)
+    }
+
+    .searchbar input {
+      border: none;
+      background: none;
+      color: var(--fg);
+      font-size: 0.8125rem;
+      outline: none;
+      flex: 1
+    }
+
+    .emptystate {
+      padding: 32px 20px;
+      text-align: center;
+      color: var(--muted);
+      font-size: 0.8125rem
+    }
   </style>
 </head>
 
@@ -927,7 +1111,6 @@ if (!$authed) {
   <div class="wrap">
     <div class="top">
       <h1><i class="fa-solid fa-gauge-high"></i> Souliong 循跡 <span class="sub"><?= $master ? '主要管理' : $esc($reqProject) . ' 專案管理' ?> · <?= count($rows) ?> 筆</span></h1>
-      <?php if ($master): ?><a class="btn solid" href="?api=admin&backup=all"><i class="fa-solid fa-download"></i> 備份全部</a><?php endif; ?>
       <a class="btn" href="?api=admin&logout=1"><i class="fa-solid fa-right-from-bracket"></i> 登出</a>
     </div>
 
@@ -939,24 +1122,25 @@ if (!$authed) {
     <?php endif; ?>
 
     <?php if ($master): ?>
-      <form class="card" method="post" enctype="multipart/form-data" style="padding:12px 16px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:12px">
-        <input type="hidden" name="csrf" value="<?= $esc_csrf ?>"><input type="hidden" name="action" value="import">
-        <span class="badge"><i class="fa-solid fa-upload"></i> 匯入備份 ZIP</span>
-        <label class="btn" style="cursor:pointer"><i class="fa-solid fa-folder-open"></i> <span data-file>選擇 ZIP 檔</span>
-          <input type="file" name="backup" accept=".zip" required hidden onchange="this.parentNode.querySelector('[data-file]').textContent=this.files[0]?this.files[0].name:'選擇 ZIP 檔'"></label>
-        <select name="mode" style="border:1px solid var(--line);border-radius:10px;background:var(--bg);color:var(--fg);padding:7px 10px;font-size:0.8125rem">
-          <option value="merge">合併（依 id 聯集，不重複）</option>
-          <option value="replace">覆蓋</option>
-        </select>
-        <button class="btn">還原</button>
-      </form>
-
       <div class="tabs">
         <a class="tab<?= $scopeProject === '' ? ' on' : '' ?>" href="?api=admin">全部（<?= count($allProjects) ?>）</a>
         <?php foreach ($allProjects as $tp): ?><a class="tab<?= $scopeProject === $tp ? ' on' : '' ?>" href="?api=admin&project=<?= $esc($tp) ?>"><?= $esc($tp) ?></a><?php endforeach; ?>
       </div>
     <?php endif; ?>
 
+    <?php
+      // 表單送出後回到對應分頁，避免每次都跳回總覽
+      $paneOfAction = ['sharelink' => 'access', 'addpin' => 'access', 'delpin' => 'access', 'setperm' => 'access', 'delcontrib' => 'access', 'meta' => 'access', 'rotate' => 'access', 'delete' => 'records', 'import' => 'tools'];
+      $forcePane = $paneOfAction[$_POST['action'] ?? ''] ?? '';
+    ?>
+    <div class="subnav">
+      <button type="button" class="subtab on" data-pane="overview"><i class="fa-solid fa-chart-simple"></i> 總覽</button>
+      <button type="button" class="subtab" data-pane="records"><i class="fa-solid fa-table-list"></i> 投稿紀錄（<?= count($rows) ?>）</button>
+      <button type="button" class="subtab" data-pane="access"><i class="fa-solid fa-key"></i> 專案與權限</button>
+      <?php if ($master): ?><button type="button" class="subtab" data-pane="tools"><i class="fa-solid fa-screwdriver-wrench"></i> 工具</button><?php endif; ?>
+    </div>
+
+    <div class="pane" id="pane-access">
     <?php if ($master && $scopeProject === ''): $mpins = pins_load($cfg)['master']; ?>
       <h2>主要管理 PIN（可進入所有專案）</h2>
       <div class="hint" style="margin:-6px 0 12px">主要管理層級：僅在此「全部」頁管理；進入單一專案後不會顯示。</div>
@@ -1093,7 +1277,9 @@ if (!$authed) {
         </div>
       </div>
     <?php endforeach; ?>
+    </div><!-- /pane-access -->
 
+    <div class="pane on" id="pane-overview">
     <h2>統計摘要</h2>
     <?php foreach ($viewProjects as $p): $s = stats_read($cfg, $p);
       if (!$s) continue;
@@ -1106,6 +1292,20 @@ if (!$authed) {
         foreach (array_slice($arr, 0, $n, true) as $k => $v) $o[] = $k . '·' . $v;
         return $o ? implode('、', $o) : '—';
       };
+      $featLabels = souliong_features();
+      $feats = $s['features'] ?? [];
+      arsort($feats);
+      $byHour = $s['by_hour'] ?? [];
+      arsort($byHour);
+      $byDow = $s['by_dow'] ?? [];
+      arsort($byDow);
+      $dowNames = ['日', '一', '二', '三', '四', '五', '六'];
+      $browsers = $s['browser'] ?? [];
+      arsort($browsers);
+      $oses = $s['os'] ?? [];
+      arsort($oses);
+      $bLabels = ['chrome' => 'Chrome', 'safari' => 'Safari', 'edge' => 'Edge', 'firefox' => 'Firefox', 'samsung' => 'Samsung Internet', 'opera' => 'Opera', 'line' => 'LINE 內建', 'facebook' => 'FB/Messenger 內建', 'instagram' => 'IG/Threads 內建', 'wechat' => 'WeChat 內建', 'duckduckgo' => 'DuckDuckGo', 'other' => '其他'];
+      $oLabels = ['ios' => 'iOS', 'android' => 'Android', 'windows' => 'Windows', 'macos' => 'macOS', 'linux' => 'Linux', 'other' => '其他'];
     ?>
       <div style="margin-bottom:14px">
         <div style="font-size:0.8125rem;font-weight:700;margin-bottom:8px"><?= $esc($p) ?></div>
@@ -1127,14 +1327,51 @@ if (!$authed) {
             <div class="l">手機/桌機</div>
           </div>
         </div>
-        <div class="break">熱門點位：<b><?= $esc($top($s['points'])) ?></b><br>相機：<b><?= $esc($top($s['cameras'])) ?></b>　功能：<b><?= $esc(json_encode($s['features'] ?? [], JSON_UNESCAPED_UNICODE)) ?></b></div>
+        <div class="break">熱門點位：<b><?= $esc($top($s['points'])) ?></b><br>相機：<b><?= $esc($top($s['cameras'])) ?></b></div>
+        <details class="statdetail">
+          <summary><i class="fa-solid fa-chart-simple"></i> 展開完整排行與數字說明</summary>
+          <div class="cols">
+            <div class="col">
+              <h4>這些數字的意思</h4>
+              <p>瀏覽＝地圖頁被載入的次數。<br>工作階段＝不重複的造訪（同一次開啟頁面只算一次）。<br>上傳＝成功送出的投稿數。<br>手機/桌機＝造訪裝置的類型分佈。<br>排行的數字＝該項被使用/點開的累計次數。</p>
+            </div>
+            <div class="col">
+              <h4>點位排行（被點開次數）</h4>
+              <?php if ($s['points']): ?><ol><?php foreach (array_slice($s['points'], 0, 20, true) as $k => $v): ?><li>點 <?= $esc($k) ?>：<?= (int)$v ?> 次</li><?php endforeach; ?></ol><?php else: ?><p>尚無資料</p><?php endif; ?>
+            </div>
+            <div class="col">
+              <h4>相機排行（投稿使用機型）</h4>
+              <?php if ($s['cameras']): ?><ol><?php foreach (array_slice($s['cameras'], 0, 20, true) as $k => $v): ?><li><?= $esc($k) ?>：<?= (int)$v ?> 次</li><?php endforeach; ?></ol><?php else: ?><p>尚無資料</p><?php endif; ?>
+            </div>
+            <div class="col">
+              <h4>功能使用次數</h4>
+              <?php if ($feats): ?><ol><?php foreach ($feats as $k => $v): ?><li><?= $esc($featLabels[$k] ?? $k) ?>：<?= (int)$v ?> 次</li><?php endforeach; ?></ol><?php else: ?><p>尚無資料</p><?php endif; ?>
+            </div>
+            <div class="col">
+              <h4>瀏覽器／作業系統</h4>
+              <?php if ($browsers || $oses): ?>
+                <p>瀏覽器：<?php $bb = []; foreach ($browsers as $k => $v) $bb[] = ($bLabels[$k] ?? $k) . '（' . (int)$v . '）'; echo $esc(implode('、', $bb)); ?><br>
+                  系統：<?php $oo = []; foreach ($oses as $k => $v) $oo[] = ($oLabels[$k] ?? $k) . '（' . (int)$v . '）'; echo $esc(implode('、', $oo)); ?></p>
+              <?php else: ?><p>尚無資料（此統計上線後的新造訪才會開始累計）</p><?php endif; ?>
+            </div>
+            <div class="col">
+              <h4>造訪時段</h4>
+              <p>熱門時段（當地時間）：<?php $hh = []; foreach (array_slice($byHour, 0, 3, true) as $k => $v) $hh[] = (int)$k . ' 點（' . (int)$v . '）'; echo $esc($hh ? implode('、', $hh) : '尚無資料'); ?><br>
+                熱門星期：<?php $dd = []; foreach (array_slice($byDow, 0, 3, true) as $k => $v) $dd[] = '週' . ($dowNames[(int)$k] ?? $k) . '（' . (int)$v . '）'; echo $esc($dd ? implode('、', $dd) : '尚無資料'); ?></p>
+            </div>
+          </div>
+        </details>
       </div>
     <?php endforeach; ?>
+    </div><!-- /pane-overview -->
 
+    <div class="pane" id="pane-records">
     <h2>投稿紀錄</h2>
+    <div class="searchbar"><i class="fa-solid fa-magnifying-glass"></i><input id="recsearch" type="search" placeholder="搜尋投稿（專案、點位、暱稱、內容、相機、時間…）" autocomplete="off"></div>
     <div class="tablewrap">
-      <table>
+      <table id="rectable">
         <tr>
+          <th>#</th>
           <th>項目</th>
           <th>點</th>
           <th>類型</th>
@@ -1147,15 +1384,22 @@ if (!$authed) {
           <th>o/s</th>
           <th></th>
         </tr>
-        <?php foreach ($rows as $r): ?>
-          <tr>
+        <?php $idx = count($rows);
+        foreach ($rows as $r):
+          $refOrig = !empty($r['edit_of']) ? ($byId[$r['project'] . '/' . $r['edit_of']] ?? null) : null;
+          $dispPhoto = !empty($r['photo']) ? $r['photo'] : ($refOrig['photo'] ?? null);
+          $dispExif  = is_array($r['exif'] ?? null) ? $r['exif'] : (is_array($refOrig['exif'] ?? null) ? $refOrig['exif'] : null);
+          $photoUrl  = $dispPhoto ? $basePath . '?api=photo&f=' . rawurlencode($dispPhoto) : null;
+        ?>
+          <tr data-row>
+            <td class="mono"><?= $idx-- ?></td>
             <td><?= $esc($r['project']) ?></td>
             <td><?= $esc($r['item_num'] ?? '') ?></td>
-            <td><span class="tag"><?= $esc($r['kind'] ?? 'photo') ?></span></td>
-            <td><?= !empty($r['photo']) ? '<a href="?api=photo&f=' . $esc($r['photo']) . '" target="_blank"><img src="?api=photo&f=' . $esc($r['photo']) . '" alt=""></a>' : '' ?></td>
+            <td><span class="tag"><?= $esc(souliong_kind_label($r['kind'] ?? 'photo')) ?></span><?= !empty($r['edit_of']) ? '<br><span class="tag">編修</span>' : '' ?></td>
+            <td><?= $photoUrl ? '<a href="' . $esc($photoUrl) . '" target="_blank"><img loading="lazy" src="' . $esc($photoUrl) . '" alt=""></a>' : '' ?></td>
             <td><?= $esc($r['name'] ?? '') ?></td>
             <td><?= nl2br($esc($r['comment'] ?? '')) ?></td>
-            <td class="mono"><?= $esc(is_array($r['exif'] ?? null) ? implode(' ', $r['exif']) : '') ?></td>
+            <td class="mono"><?= $esc($dispExif ? implode(' ', $dispExif) : '') ?></td>
             <td class="mono"><?= $esc(substr((string)($r['photo_time'] ?? $r['created_at'] ?? ''), 0, 16)) ?></td>
             <td class="mono"><?= $esc(round((float)($r['lat'] ?? 0), 4)) ?>,<?= $esc(round((float)($r['lon'] ?? 0), 4)) ?><br><?= $esc($r['loc_source'] ?? '') ?></td>
             <td class="mono"><?= $esc($short($r['owner_hash'] ?? '')) ?><br><?= $esc($short($r['src_hash'] ?? '')) ?></td>
@@ -1170,6 +1414,30 @@ if (!$authed) {
       </table>
     </div>
     <div class="hint">o＝owner（同源可群組追蹤）、s＝加鹽 IP 雜湊；同一 owner 出現多個不同 s 可能是投稿碼外流／冒名。<?= $master ? '　主 PIN 可管理所有專案並設定各專案 PIN；專案 PIN 僅能管理該專案。' : '' ?></div>
+    </div><!-- /pane-records -->
+
+    <?php if ($master): ?>
+    <div class="pane" id="pane-tools">
+      <h2>工具</h2>
+      <form class="card section-card" method="post" enctype="multipart/form-data" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+        <input type="hidden" name="csrf" value="<?= $esc_csrf ?>"><input type="hidden" name="action" value="import">
+        <span class="badge"><i class="fa-solid fa-upload"></i> 匯入備份 ZIP</span>
+        <label class="btn" style="cursor:pointer"><i class="fa-solid fa-folder-open"></i> <span data-file>選擇 ZIP 檔</span>
+          <input type="file" name="backup" accept=".zip" required hidden onchange="this.parentNode.querySelector('[data-file]').textContent=this.files[0]?this.files[0].name:'選擇 ZIP 檔'"></label>
+        <select name="mode" style="border:1px solid var(--line);border-radius:10px;background:var(--bg);color:var(--fg);padding:7px 10px;font-size:0.8125rem">
+          <option value="merge">合併（依 id 聯集，不重複）</option>
+          <option value="replace">覆蓋</option>
+        </select>
+        <button class="btn">還原</button>
+      </form>
+      <div class="card section-card">
+        <div class="badge"><i class="fa-solid fa-kit-medical"></i> 資料修復</div>
+        <div class="hint" style="margin-top:6px">投稿的相機資訊（EXIF）缺漏時，用「修復相機資訊」工具補齊：方式一直接由原始版本繼承，方式二上傳原始檔比對。</div>
+        <div class="row" style="margin-top:8px"><a class="btn" href="<?= $esc($origin . $basePath . 'exiffix') ?>"><i class="fa-solid fa-kit-medical"></i> 開啟修復相機資訊</a>
+          <a class="btn" href="?api=admin&backup=all"><i class="fa-solid fa-download"></i> 備份全部</a></div>
+      </div>
+    </div><!-- /pane-tools -->
+    <?php endif; ?>
   </div>
   <script>
     <?php readfile(__DIR__ . '/../assets/vendor/qrcode-generator.js'); ?>
@@ -1197,6 +1465,33 @@ if (!$authed) {
           btn.innerHTML = '<i class="fa-solid fa-check"></i> 已複製';
           setTimeout(function() { btn.innerHTML = t; }, 1500);
         }).catch(function() { alert(v); });
+      });
+    });
+
+    // ── 分頁切換：hash > 表單送出後指定 > 上次停留，重新整理不迷路 ──
+    function showPane(name) {
+      if (!document.getElementById('pane-' + name)) return;
+      document.querySelectorAll('.subtab').forEach(function(b) { b.classList.toggle('on', b.dataset.pane === name); });
+      document.querySelectorAll('.pane').forEach(function(p) { p.classList.toggle('on', p.id === 'pane-' + name); });
+      try { sessionStorage.setItem('adminTab', name); } catch (e) {}
+      try { history.replaceState(null, '', '#' + name); } catch (e) {}
+    }
+    document.querySelectorAll('.subtab').forEach(function(b) {
+      b.addEventListener('click', function() { showPane(b.dataset.pane); });
+    });
+    var forcePane = <?= json_encode($forcePane) ?>;
+    var initPane = forcePane || (location.hash || '').replace('#', '');
+    if (!document.getElementById('pane-' + initPane)) {
+      try { initPane = sessionStorage.getItem('adminTab') || ''; } catch (e) { initPane = ''; }
+    }
+    if (initPane) showPane(initPane);
+
+    // ── 投稿紀錄即時搜尋 ──
+    var recSearch = document.getElementById('recsearch');
+    if (recSearch) recSearch.addEventListener('input', function() {
+      var v = recSearch.value.trim().toLowerCase();
+      document.querySelectorAll('#rectable tr[data-row]').forEach(function(tr) {
+        tr.style.display = !v || tr.textContent.toLowerCase().indexOf(v) !== -1 ? '' : 'none';
       });
     });
   </script>
