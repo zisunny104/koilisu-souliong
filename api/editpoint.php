@@ -1,0 +1,60 @@
+<?php
+// 編輯定位點（椅子）本身的座標：僅限管理者（此專案 PIN 或主 PIN）。
+// 椅子資料來自靜態 chairs.json（匯入的官方/共享資料，無個別投稿者），因此不比照 editentry.php 驗證 owner/ctoken，
+// 而是單純以 admin_can() 把關。比照「故事」的版本化精神：不覆寫 chairs.json，而是新增一筆版本紀錄，
+// 前端讀取時取同一 item_num 底下最新一筆 kind:'point' 紀錄覆蓋原始座標（見 viewer.leaflet.js 的 effectivePoints()）。
+// POST project, item_num（必填，對應 chairs.json 的 num）, lat, lon, name(可留空)。
+require __DIR__ . '/store.php';
+require __DIR__ . '/security.php';
+$cfg = require __DIR__ . '/config.php';
+
+if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+    json_out(['error' => 'POST only'], 405);
+}
+rate_limit($cfg, 'write');
+
+$project = preg_replace('/[^a-z0-9_-]/', '', $_POST['project'] ?? '');
+if ($project === '' || !is_dir($cfg['projects_dir'] . '/' . $project)) {
+    json_out(['error' => 'bad request'], 400);
+}
+
+if (!admin_can($cfg, $project)) {
+    json_out(['error' => '沒有權限編輯定位點（僅限管理者）'], 403);
+}
+
+function clean_str_ep(?string $s, int $max): ?string {
+    if ($s === null) return null;
+    $s = preg_replace('/[\x00-\x08\x0B\x0C\x0E-\x1F]/u', '', $s);
+    $s = trim($s);
+    if ($s === '') return null;
+    if (preg_match('/^.{0,' . $max . '}/us', $s, $m)) $s = $m[0];
+    return $s;
+}
+
+$item_num = (isset($_POST['item_num']) && $_POST['item_num'] !== '') ? (int)$_POST['item_num'] : null;
+$lat      = is_numeric($_POST['lat'] ?? null) ? (float)$_POST['lat'] : null;
+$lon      = is_numeric($_POST['lon'] ?? null) ? (float)$_POST['lon'] : null;
+if ($item_num === null || $lat === null || $lon === null || $lat < -90 || $lat > 90 || $lon < -180 || $lon > 180) {
+    json_out(['error' => 'bad request'], 400);
+}
+
+try {
+    $editorName = clean_str_ep($_POST['name'] ?? null, $cfg['name_max']) ?? '管理者';
+
+    $record = [
+        'id'         => bin2hex(random_bytes(8)),
+        'project'    => $project,
+        'kind'       => 'point',
+        'item_num'   => $item_num,
+        'name'       => $editorName,
+        'lat'        => $lat,
+        'lon'        => $lon,
+        'created_at' => gmdate('c'),
+    ];
+    store_append($cfg, $project, $record);
+
+    json_out(['ok' => true, 'item' => $record]);
+} catch (Throwable $e) {
+    error_log('souliong editpoint: ' . $e->getMessage());
+    json_out(['error' => 'server'] + (!empty($cfg['debug']) ? ['detail' => $e->getMessage()] : []), 500);
+}

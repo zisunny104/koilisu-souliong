@@ -36,6 +36,12 @@ switch ($action) {
     case 'delete':
         require __DIR__ . '/api/delete.php';
         return;
+    case 'editentry':
+        require __DIR__ . '/api/editentry.php';
+        return;
+    case 'editpoint':
+        require __DIR__ . '/api/editpoint.php';
+        return;
     case 'unlock':
         require __DIR__ . '/api/unlock.php';
         return;

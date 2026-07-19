@@ -792,6 +792,22 @@ button i {
   line-height: 1.5
 }
 
+.p-head #pointEditBtn {
+  margin-top: 10px
+}
+
+.p-head .point-editor {
+  margin: 12px -18px 0;
+}
+
+.p-head .point-editor .pt-mini {
+  height: 160px;
+  border-radius: var(--r-sm);
+  overflow: hidden;
+  margin-bottom: 8px;
+  border: 3px solid var(--line)
+}
+
 .p-close {
   position: absolute;
   top: 12px;
@@ -976,6 +992,99 @@ button i {
   line-height: 1.55;
   white-space: pre-wrap;
   margin-top: 3px
+}
+
+/* ---------- 照片投稿卡片：編輯 / 歷史版本 ---------- */
+.entry-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-top: 6px
+}
+
+.entry-actions .btn.small {
+  padding: 4px 10px;
+  font-size: 0.6875rem
+}
+
+.edited-tag {
+  font-size: 0.625rem;
+  font-weight: 600;
+  color: var(--muted);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 1px 7px;
+  margin-left: 4px
+}
+
+.photo-editor,
+.photo-history {
+  border-top: 1px solid var(--line);
+  padding: 12px;
+  background: var(--bg)
+}
+
+.photo-editor textarea.pe-cmt {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  padding: 10px;
+  font-size: 0.875rem;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: inherit;
+  min-height: 64px;
+  resize: vertical;
+  line-height: 1.6
+}
+
+.photo-editor .c-lab {
+  font-size: 0.6875rem;
+  color: var(--muted);
+  margin: 8px 0 4px;
+  display: block;
+  font-weight: 600
+}
+
+.photo-editor .pe-chair {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  padding: 8px 10px;
+  font-size: 0.8125rem;
+  background: var(--bg);
+  color: var(--fg);
+  margin-bottom: 8px
+}
+
+/* 迷你地圖外框顏色跟著目前選定的關聯地點分類走，方便一眼確認位置合不合理 */
+.photo-editor .pe-mini {
+  height: 140px;
+  border-radius: var(--r-sm);
+  overflow: hidden;
+  margin-bottom: 8px;
+  border: 3px solid var(--line);
+  transition: border-color var(--t)
+}
+
+.photo-editor .pe-loc {
+  font-size: 0.6875rem;
+  color: var(--muted);
+  margin-bottom: 10px;
+  line-height: 1.6
+}
+
+.photo-editor .row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap
+}
+
+.pe-status {
+  font-size: 0.6875rem;
+  color: var(--muted)
 }
 
 /* ---------- 批次上傳視窗 ---------- */
@@ -1236,6 +1345,10 @@ button i {
   color: #c0392b
 }
 
+.card .status.warn {
+  color: #b7791f
+}
+
 /* ---------- Leaflet 控制項（配合設計語彙） ---------- */
 .leaflet-control-zoom.leaflet-bar {
   border: 1px solid var(--line);
@@ -1373,12 +1486,76 @@ button i {
 #lb .cap {
   position: absolute;
   bottom: 20px;
-  left: 0;
-  right: 0;
-  text-align: center;
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: min(94vw, 480px);
+  max-height: 30vh;
+  overflow-y: auto;
+  text-align: left;
   color: #fff;
   font-size: 0.8125rem;
-  opacity: .9
+  background: rgba(20, 20, 20, .72);
+  border-radius: var(--r-md);
+  padding: 10px 14px;
+}
+
+#lb .cap:empty {
+  display: none
+}
+
+#lb .cap .lb-who {
+  opacity: .8;
+  margin-bottom: 4px
+}
+
+#lb .cap .lb-txt {
+  white-space: pre-wrap;
+  line-height: 1.5
+}
+
+#lb .cap .lb-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 8px
+}
+
+#lb .cap .lb-actions .btn {
+  background: rgba(255, 255, 255, .14);
+  border-color: rgba(255, 255, 255, .3);
+  color: #fff
+}
+
+#lb .cap .lb-actions .btn:hover {
+  background: rgba(255, 255, 255, .24)
+}
+
+#lb .cap .lb-actions .del-btn {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: #ff8080;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px 0
+}
+
+#lb .cap .lb-actions .del-btn:hover {
+  text-decoration: underline
+}
+
+#lb .photo-editor {
+  position: absolute;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(94vw, 480px);
+  max-height: 70vh;
+  overflow-y: auto;
+  border-top: none;
+  border-radius: var(--r-md);
+  box-shadow: var(--sh-3);
+  cursor: default
 }
 
 /* ── 右上：網頁資訊群組 ── */

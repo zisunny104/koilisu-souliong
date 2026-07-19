@@ -129,6 +129,8 @@ $jsonFlags = JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JS
     <div class="cat" id="pCat"></div>
     <h2 id="pTitle"></h2>
     <div class="sub" id="pSub"></div>
+    <button class="btn small" id="pointEditBtn" type="button" style="display:none"><i class="fa-solid fa-location-dot"></i> 調整定位</button>
+    <div class="photo-editor point-editor" id="pointEditor" style="display:none"></div>
   </div>
   <div class="p-body">
     <div id="entries"></div>
@@ -146,6 +148,7 @@ $jsonFlags = JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JS
     <div class="modal-foot">
       <button class="btn" id="addMoreBtn"><i class="fa-solid fa-plus"></i> 再加照片</button>
       <span class="spacer"></span>
+      <span class="hint" id="batchProgress"></span>
       <button class="btn primary" id="submitAllBtn">全部送出</button>
     </div>
   </div>
@@ -155,6 +158,11 @@ $jsonFlags = JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JS
   <div class="dialog-box">
     <div class="dialog-head"><b>嵌入這張地圖</b><button class="icon-btn" onclick="MapApp.closeEmbed()" aria-label="關閉"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button></div>
     <div class="hint">貼進你的頁面即可。嵌入為「精簡檢視模式」僅供瀏覽（無上傳/編輯）；可自行調整 iframe 的高度。</div>
+    <label class="hint" for="embedScope" style="display:block">預設顯示</label>
+    <select id="embedScope" class="name-in" style="width:100%">
+      <option value="all">全部點位</option>
+      <option value="contrib">只顯示投稿</option>
+    </select>
     <textarea id="embedCode" readonly rows="4"></textarea>
     <div class="dialog-actions"><button class="btn primary" id="copyEmbedBtn">複製</button><span id="copyMsg" class="hint"></span></div>
   </div>
@@ -191,7 +199,7 @@ $jsonFlags = JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JS
   </div>
 </div>
 
-<div id="lb" onclick="this.style.display='none'"><img id="lbImg" alt=""><div class="cap" id="lbCap"></div></div>
+<div id="lb" onclick="MapApp.closeLightbox()"><img id="lbImg" alt=""><div class="cap" id="lbCap"></div><div class="photo-editor" id="lbEditor" style="display:none" onclick="event.stopPropagation()"></div></div>
 
 <script>window.APP = <?= json_encode($APP, $jsonFlags) ?>;</script>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
