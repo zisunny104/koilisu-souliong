@@ -13,11 +13,16 @@ window.MapApp = (() => {
   const SITE_URL = (APP.base || '/');          // Souliong 平台首頁
   const ORG_URL = 'https://toka.dev';          // prjToka
   const CREDIT_HTML =
-    '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> 貢獻者 &middot; ' +
-    '<a href="https://carto.com/attributions" target="_blank" rel="noopener">CARTO</a> &middot; ' +
-    '<a href="https://leafletjs.com" target="_blank" rel="noopener">Leaflet</a> | ' +
-    '<a href="' + REPO_URL + '" target="_blank" rel="noopener" aria-label="GitHub 原始碼"><i class="fa-brands fa-github"></i></a> &middot; ' +
-    '<a href="' + SITE_URL + '">Souliong</a> &middot; <a href="' + ORG_URL + '" target="_blank" rel="noopener">prjToka</a>';
+    '<span class="cr-ext">' +
+      '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> 貢獻者 &middot; ' +
+      '<a href="https://carto.com/attributions" target="_blank" rel="noopener">CARTO</a> &middot; ' +
+      '<a href="https://leafletjs.com" target="_blank" rel="noopener">Leaflet</a>' +
+    '</span>' +
+    '<span class="cr-sep" aria-hidden="true"></span>' +
+    '<span class="cr-own">' +
+      '<a href="' + REPO_URL + '" target="_blank" rel="noopener" aria-label="GitHub 原始碼"><i class="fa-brands fa-github"></i></a> &middot; ' +
+      '<a href="' + SITE_URL + '">Souliong</a> &middot; <a href="' + ORG_URL + '" target="_blank" rel="noopener">prjToka</a>' +
+    '</span>';
   // 主題：system / light / dark（手動可覆蓋系統偏好）
   const TILE_OPTS = { maxZoom: 20, subdomains: 'abcd', detectRetina: true, attribution: CREDIT_HTML };
   const systemDark = () => !!(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
@@ -27,10 +32,20 @@ window.MapApp = (() => {
   let themeMode = localStorage.getItem('theme') || 'system';
   if (themeMode !== 'system') document.documentElement.dataset.theme = themeMode;
 
-  // 未填暱稱時給一個可愛的隨機匿名名（同一裝置維持一致）
+  // 未填暱稱時給一個可愛的隨機匿名名（存在本機，重新整理不會換；長按身分可換新的）
   const ANON_NOUNS = ['松鼠', '月亮', '石虎', '藍鵲', '貓頭鷹', '山羌', '螢火蟲', '白鷺', '穿山甲', '樹蛙', '蒲公英', '晚風', '溪流', '苔蘚', '雲豹', '燕子', '麻雀', '銀杏'];
-  // 本次造訪的匿名名（重新整理會換一個）；顯示為暱稱欄 placeholder，未填即用它
-  const SESSION_ANON = '匿名' + ANON_NOUNS[Math.floor(Math.random() * ANON_NOUNS.length)];
+  function newAnonName() { return '匿名' + ANON_NOUNS[Math.floor(Math.random() * ANON_NOUNS.length)]; }
+  let SESSION_ANON = newAnonName();
+  try { SESSION_ANON = localStorage.getItem('anonName') || SESSION_ANON; localStorage.setItem('anonName', SESSION_ANON); } catch (e) {}
+  function rerollAnon() {
+    SESSION_ANON = newAnonName();
+    try { localStorage.setItem('anonName', SESSION_ANON); localStorage.removeItem('myName'); } catch (e) {}
+    const myName = document.getElementById('myName'); if (myName) myName.value = '';
+    const modalName = document.getElementById('modalName');
+    if (modalName) { modalName.value = ''; modalName.setAttribute('placeholder', SESSION_ANON); }
+    updateIdentity();
+    toast('已換一個新的匿名稱呼：' + SESSION_ANON);
+  }
   function displayName() {
     const n = (document.getElementById('myName').value || '').trim();
     return n || SESSION_ANON;
@@ -111,7 +126,7 @@ window.MapApp = (() => {
     const shown = name || SESSION_ANON;
     const unlocked = !APP.gated || !!storedCode();
     el.innerHTML = '<i class="fa-solid ' + (unlocked ? 'fa-user-check' : 'fa-user') + '"></i> ' + esc(shown);
-    el.title = '投稿者身分：' + shown + (name ? '' : '（尚未命名，送出前可改）');
+    el.title = '投稿者身分：' + shown + (name ? '' : '（尚未命名，送出前可改；長按可換一個新的匿名稱呼）');
   }
   async function doUnlock(code) {
     code = (code || '').trim();
@@ -804,7 +819,16 @@ window.MapApp = (() => {
     const resetBtn = document.getElementById('resetBtn'); if (resetBtn) resetBtn.onclick = resetView;
     const idEl = document.getElementById('identity');
     const idAction = () => { if (canPost()) { resetQueue(); openModal(null); setTimeout(() => { const n = document.getElementById('modalName'); if (n) n.focus(); }, 60); } else if (APP.gated) { openUnlock(); } };
-    if (idEl) { idEl.onclick = idAction; idEl.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); idAction(); } }; }
+    if (idEl) {
+      let idLpTimer = null, idLpFired = false;
+      idEl.addEventListener('pointerdown', () => { idLpFired = false; idLpTimer = setTimeout(() => { idLpFired = true; rerollAnon(); }, 600); });
+      const idLpCancel = () => { if (idLpTimer) { clearTimeout(idLpTimer); idLpTimer = null; } };
+      idEl.addEventListener('pointerup', idLpCancel);
+      idEl.addEventListener('pointerleave', idLpCancel);
+      idEl.addEventListener('pointercancel', idLpCancel);
+      idEl.onclick = () => { if (idLpFired) { idLpFired = false; return; } idAction(); };
+      idEl.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); idAction(); } };
+    }
 
     // 上傳權限：解鎖 FAB（右下）+ 彈窗（含 QR 掃描）+ 邀請連結 ?code=
     const ub = document.getElementById('unlockFab');

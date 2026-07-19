@@ -62,6 +62,12 @@ header .tag{color:var(--muted);font-size:0.875rem;margin-top:10px;line-height:1.
 .empty{text-align:center;color:var(--muted);padding:50px;font-size:0.875rem}
 footer{text-align:center;color:var(--muted);font-size:0.75rem;padding:22px;line-height:1.8}
 footer a{color:inherit}
+.cr-line{display:flex;align-items:center;justify-content:center;flex-wrap:wrap}
+.cr-sep{width:1px;align-self:stretch;background:var(--line);margin:0 .5em}
+@media (max-width:560px){
+  .cr-line{flex-direction:column}
+  .cr-sep{width:60%;height:1px;align-self:center;margin:.3em 0}
+}
 </style>
 </head>
 <body>
@@ -91,12 +97,19 @@ footer a{color:inherit}
   <?php endif; ?>
 </div>
 <footer>
-  &copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> 貢獻者
-  ・ <a href="https://carto.com/attributions" target="_blank" rel="noopener">CARTO</a>
-  ・ <a href="https://leafletjs.com" target="_blank" rel="noopener">Leaflet</a>
-  | <a href="https://github.com/zisunny104/koilisu-souliong" target="_blank" rel="noopener"><i class="fa-brands fa-github"></i> GitHub</a>
-  ・ <a href="<?= $b ?>">Souliong</a>
-  ・ <a href="https://toka.dev" target="_blank" rel="noopener">prjToka</a><br>
+  <div class="cr-line">
+    <span class="cr-ext">
+      &copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> 貢獻者
+      ・ <a href="https://carto.com/attributions" target="_blank" rel="noopener">CARTO</a>
+      ・ <a href="https://leafletjs.com" target="_blank" rel="noopener">Leaflet</a>
+    </span>
+    <span class="cr-sep" aria-hidden="true"></span>
+    <span class="cr-own">
+      <a href="https://github.com/zisunny104/koilisu-souliong" target="_blank" rel="noopener"><i class="fa-brands fa-github"></i> GitHub</a>
+      ・ <a href="<?= $b ?>">Souliong</a>
+      ・ <a href="https://toka.dev" target="_blank" rel="noopener">prjToka</a>
+    </span>
+  </div>
   開放的地方探索地圖平台 ・ <a href="<?= $b ?>privacy">隱私與資料說明</a>
 </footer>
 </div>
