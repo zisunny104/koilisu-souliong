@@ -465,7 +465,7 @@ window.MapApp = (() => {
       const m = await exifr.parse(file, ['DateTimeOriginal', 'CreateDate', 'Make', 'Model', 'LensModel', 'FNumber', 'ExposureTime', 'ISO', 'FocalLength', 'Software']);
       if (m) {
         const dt = m.DateTimeOriginal || m.CreateDate; if (dt) out.time = new Date(dt).getTime();
-        const s = (v, n) => String(v).replace(/ /g, '').trim().slice(0, n);
+        const s = (v, n) => String(v).replace(/\x00/g, '').trim().slice(0, n);
         const cam = {};
         if (m.Make) cam.make = s(m.Make, 40);
         if (m.Model) cam.model = s(m.Model, 60);

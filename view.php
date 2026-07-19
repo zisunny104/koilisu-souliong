@@ -185,6 +185,6 @@ $jsonFlags = JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JS
 <script src="https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
 <script><?php readfile(__DIR__ . '/assets/vendor/qrcode-generator.js'); ?></script>
-<script><?php readfile(__DIR__ . '/assets/viewer.js'); ?></script>
+<script><?php readfile(__DIR__ . '/assets/viewer.leaflet.js'); ?></script>
 </body>
 </html>
