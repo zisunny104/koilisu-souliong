@@ -26,6 +26,7 @@
     .pexp-pos { flex: 1; min-width: 0; font-size: 0.8125rem; font-weight: 500; text-align: center; overflow: hidden; white-space: nowrap }
     .pexp-pos.has-overflow {
       text-align: left;
+      cursor: pointer;
       mask-image: linear-gradient(to right, #000 calc(100% - 20px), transparent 100%);
       -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 20px), transparent 100%)
     }
@@ -65,10 +66,11 @@
     return esc(cmt ? (cmt.length > 24 ? cmt.slice(0, 24) + '…' : cmt) : t('explore_loose_photo'));
   }
 
-  // 文字跑一次馬燈：只在「換站」（切下一站/上一站）才觸發，資料靜默重整或篩選人時不會自己跑起來，
+  // 文字跑一次馬燈：滑鼠移入（桌面）或點一下（觸控）才觸發，不會自己跑起來；
   // 跑到底、停一下、再跑回開頭就停住（不循環），尊重 prefers-reduced-motion。
   function playMarquee(inner, dist) {
     if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    if (inner.getAnimations().length) return;   // 正在跑就不重疊觸發
     const dur = Math.min(7000, Math.max(2200, dist * 22));
     inner.animate([
       { transform: 'translateX(0)', offset: 0 },
@@ -79,15 +81,23 @@
     ], { duration: dur, easing: 'ease-in-out' });
   }
 
-  function renderUI(animate) {
+  const posOuter = row.querySelector('#pexpPos');
+  const posInner = row.querySelector('#pexpPosInner');
+  function tryPlayMarquee() {
+    if (!posOuter.classList.contains('has-overflow')) return;
+    const overflow = posInner.scrollWidth - posOuter.clientWidth;
+    if (overflow > 4) playMarquee(posInner, overflow + 6);
+  }
+  posOuter.addEventListener('mouseenter', tryPlayMarquee);
+  posOuter.addEventListener('click', tryPlayMarquee);
+
+  function renderUI() {
     const on = App.isPhotoLayerOn() && !!App.getFilterPerson() && stops.length > 0;
     row.style.display = on ? '' : 'none';
     if (!on) return;
     const nPoint = stops.filter(s => s.type === 'point').length;
     const nLoose = stops.length - nPoint;
     document.getElementById('pexpSummary').textContent = t('explore_summary', { points: nPoint, loose: nLoose });
-    const posOuter = document.getElementById('pexpPos');
-    const posInner = document.getElementById('pexpPosInner');
     posInner.getAnimations().forEach(a => a.cancel());
     posInner.style.transform = 'translateX(0)';
     posInner.textContent = t('explore_pos', { i: idx + 1, n: stops.length }) + '｜' + stopLabel(stops[idx]);
@@ -95,7 +105,6 @@
     requestAnimationFrame(() => {
       const overflow = posInner.scrollWidth - posOuter.clientWidth;
       posOuter.classList.toggle('has-overflow', overflow > 4);
-      if (animate && overflow > 4) playMarquee(posInner, overflow + 6);
     });
   }
 
@@ -126,7 +135,7 @@
     if (!stops.length) return;
     idx = (idx + delta + stops.length) % stops.length;
     jumpToStop(stops[idx]);
-    renderUI(true);
+    renderUI();
   }
 
   document.getElementById('pexpPrevBtn').onclick = () => go(-1);
