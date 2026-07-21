@@ -137,6 +137,7 @@ $jsonFlags = JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JS
 <div id="cloudWarn" class="toast" style="display:none"></div>
 
 <div id="panel">
+  <button class="p-expand" onclick="MapApp.togglePanelSize()" aria-label="<?= $t('expand_panel') ?>" title="<?= $t('expand_panel') ?>"><i class="fa-solid fa-up-right-and-down-left-from-center" aria-hidden="true"></i></button>
   <button class="p-close" onclick="MapApp.closePanel()" aria-label="<?= $t('close') ?>"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>
   <div class="p-head">
     <div class="cat" id="pCat"></div>
@@ -176,7 +177,10 @@ $jsonFlags = JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JS
       <input type="number" id="embedWidth" class="name-in" min="200" step="10" value="800">
       <span class="hint">×</span>
       <input type="number" id="embedHeight" class="name-in" min="200" step="10" value="600">
-      <span class="hint">px</span>
+      <select id="embedSizeUnit" class="name-in embed-size-unit" aria-label="<?= $t('embed_size_unit') ?>">
+        <option value="px">px</option>
+        <option value="pct">%</option>
+      </select>
       <select id="embedSizePreset" class="name-in embed-size-preset">
         <option value="custom"><?= $t('embed_size_custom') ?></option>
         <option value="fill_w"><?= $t('embed_fill_container_w') ?></option>
@@ -212,6 +216,20 @@ $jsonFlags = JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JS
   </div>
 </div>
 
+<div id="adminRedeemDialog" class="dialog">
+  <div class="dialog-box">
+    <div class="dialog-head"><b><?= $t('admin_redeem_title') ?></b><button class="icon-btn" onclick="MapApp.closeAdminRedeem()" aria-label="<?= $t('close') ?>"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button></div>
+    <div class="hint"><?= $t('admin_redeem_hint') ?></div>
+    <input id="adminRedeemPinInput" class="name-in" style="width:100%;margin-top:6px" placeholder="<?= $t('admin_set_pin') ?>" autocomplete="off" inputmode="numeric" aria-label="<?= $t('admin_set_pin') ?>">
+    <input id="adminRedeemNameInput" class="name-in" style="width:100%;margin-top:6px" placeholder="<?= $t('admin_nickname') ?>" autocomplete="off" maxlength="40" aria-label="<?= $t('admin_nickname') ?>">
+    <div id="adminRedeemMsg" class="hint" role="status"></div>
+    <div class="dialog-actions">
+      <span class="spacer"></span>
+      <button class="btn primary" id="adminRedeemSubmit"><?= $t('admin_redeem_submit') ?></button>
+    </div>
+  </div>
+</div>
+
 <div id="pinDialog" class="dialog">
   <div class="dialog-box pin-box">
     <div class="dialog-head"><b><?= $t('admin_login') ?></b><button class="icon-btn" onclick="MapApp.closePin()" aria-label="<?= $t('close') ?>"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button></div>
@@ -229,5 +247,8 @@ $jsonFlags = JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JS
 <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
 <script><?php readfile(__DIR__ . '/../assets/vendor/qrcode-generator.js'); ?></script>
 <script><?php readfile(__DIR__ . '/../assets/viewer.leaflet.js'); ?></script>
+<?php if (!empty($meta['personExplore'])): ?>
+<script><?php readfile(__DIR__ . '/../assets/plugins/person-explore.js'); ?></script>
+<?php endif; ?>
 </body>
 </html>

@@ -50,7 +50,20 @@ owner_hash, src_hash, contrib_id, contrib_hash, edit_of, created_at
 - 用回傳 JSON 畫圖：`points` 排序＝熱門點、`by_hour`/`by_dow`＝時段、`device`/`features`/`cameras`＝圓餅或數字卡。
 - 可在 `admin.php` 內嵌一段 `<canvas>` 直接畫（已有摘要文字版）。
 
-## 六、命名與品牌
+## 七、選用前端插件（optional plugin）
+
+有些功能不是每個專案都需要，做成「選用插件」比寫死在核心程式裡更乾淨：核心不認識任何特定插件，只提供一組掛勾點；插件是 `assets/plugins/` 底下**獨立的檔案**，自己管理自己的 state、DOM、CSS，只在對應 `meta.json` 旗標開啟時才由 `view.php` 用 `<?php if (!empty($meta['xxx'])): ?>` 條件載入（讀完核心 `viewer.leaflet.js` 之後）。
+
+`window.MapApp`（核心）目前對插件公開：
+
+- **事件**：`MapApp.onHook(name, fn)` 訂閱、核心內部用 `emitHook(name, ...)` 發送。目前有 `'stateChange'`（投稿者篩選／全部-投稿模式／資料重新整理時發送）、`'panelReset'`（有其他管道直接開/關地點面板時發送，插件若有自己的「聚焦」狀態應在這裡清掉）。
+- **延伸點（有回傳值）**：`MapApp.registerPhotoFilter(fn)`（`fn(photoEntry, currentPoint) => bool`，篩掉不想顯示的照片，AND 疊加）、`MapApp.registerEntriesHint(fn)`（`fn(currentPoint) => HTMLElement|null`，插進地點卡片內容裡的提示區塊，插件自己建節點、自己綁事件）。
+- **資料／動作**：`MapApp.personTimeline(name)`、`MapApp.pointTitle(p)`、`MapApp.photoFullUrl(item)`、`MapApp.openPanel(point)`、`MapApp.openLightbox(entry, url)`、`MapApp.refreshEntries()`（＝目前地點卡片重繪一次，通常在插件自己改了篩選狀態之後呼叫）。
+- **唯讀狀態**：`MapApp.getMap()`、`MapApp.getFilterPerson()`、`MapApp.isPhotoLayerOn()`。
+
+參考實作：`assets/plugins/person-explore.js`（`personExplore` 旗標——選了投稿者後可依序探索他的地標／零散照片時間軸），照抄這個檔案的結構（讀 `window.APP.meta` 自我檢查旗標、`<style>` 自己注入、DOM 自己插入 `#ctlBody`）就能再加一個新插件。
+
+## 八、命名與品牌
 
 - 平台：**Souliong｜循跡**（原創詞，靈感取自客語拼音音韻與 Soul＝地方精神；非客語單字）。
 - Slogan：Every place leaves traces. Every trace tells a story.（每個地方都留下痕跡，每一道痕跡都有故事。）

@@ -169,8 +169,9 @@ window.MapApp = (() => {
   }
   function toast(html) { const t = document.createElement('div'); t.className = 'toast egg'; t.innerHTML = html; document.body.appendChild(t); setTimeout(() => { t.style.opacity = '0'; }, 2200); setTimeout(() => t.remove(), 2800); }
 
-  // 分享編輯連結兌換：秘密只透過網址 fragment（#redeem=...）傳遞，不落地在 query string／伺服器紀錄。
+  // 管理 PIN 連結兌換：秘密只透過網址 fragment（#redeem=...&rmode=admin）傳遞，不落地在 query string／伺服器紀錄。
   // 讀出後立刻用 history.replaceState 清掉，避免重新整理或分享網址時重複兌換／外流。
+  let pendingRedeem = null; // {project, token}，等待使用者在 #adminRedeemDialog 自己輸入 PIN／暱稱後才送出
   async function handleRedeemFragment() {
     if (EMBED) return;
     const raw = location.hash.startsWith('#') ? location.hash.slice(1) : location.hash;
@@ -181,31 +182,42 @@ window.MapApp = (() => {
     hp.delete('redeem'); hp.delete('rmode');
     const rest = hp.toString();
     try { history.replaceState(null, '', location.pathname + location.search + (rest ? '#' + rest : '')); } catch (e) {}
-    if (!token) return;
-    if (rmode === 'admin') {
-      try {
-        const fd = new FormData(); fd.append('action', 'login'); fd.append('pin', token); fd.append('project', PROJECT); fd.append('json', '1');
-        const res = await fetch(apiUrl('admin'), { method: 'POST', body: fd });
-        const j = await res.json().catch(() => ({}));
-        if (res.ok && j.ok) { toast('<i class="fa-solid fa-user-shield"></i> ' + esc(t('redeem_admin_ok'))); setTimeout(() => location.reload(), 900); }
-        else toast('<i class="fa-solid fa-triangle-exclamation"></i> ' + esc(j.error || t('redeem_admin_link_invalid')));
-      } catch (e) { toast('<i class="fa-solid fa-triangle-exclamation"></i> ' + esc(t('connection_failed'))); }
-      return;
-    }
-    const existing = contribInfo();
-    if (existing && existing.token && existing.token !== token) {
-      const ok = confirm(t('confirm_switch_identity', { label: existing.label ? ('(' + existing.label + ')') : '' }));
-      if (!ok) return;
-    }
+    if (!token || rmode !== 'admin') return;
+    pendingRedeem = { project: PROJECT, token };
+    openAdminRedeem();
+  }
+
+  // 管理 PIN 邀請兌換彈窗：PIN／暱稱由收到連結的人自己輸入，不做自動登入
+  function openAdminRedeem() {
+    const msg = document.getElementById('adminRedeemMsg'); if (msg) { msg.textContent = ''; msg.style.color = ''; }
+    const pinEl = document.getElementById('adminRedeemPinInput'), nameEl = document.getElementById('adminRedeemNameInput');
+    if (pinEl) pinEl.value = ''; if (nameEl) nameEl.value = '';
+    const dlg = document.getElementById('adminRedeemDialog'); if (dlg) dlg.classList.add('open');
+    setTimeout(() => { if (pinEl) pinEl.focus(); }, 60);
+  }
+  function closeAdminRedeem() { const dlg = document.getElementById('adminRedeemDialog'); if (dlg) dlg.classList.remove('open'); }
+  async function trySubmitAdminRedeem() {
+    if (!pendingRedeem) { closeAdminRedeem(); return; }
+    const msg = document.getElementById('adminRedeemMsg');
+    const pinEl = document.getElementById('adminRedeemPinInput'), nameEl = document.getElementById('adminRedeemNameInput');
+    const pin = pinEl ? pinEl.value.trim() : '', label = nameEl ? nameEl.value.trim() : '';
+    if (msg) { msg.style.color = ''; msg.textContent = t('unlocking_verifying'); }
     try {
-      const fd = new FormData(); fd.append('project', PROJECT); fd.append('ctoken', token);
-      const res = await fetch(apiUrl('redeem'), { method: 'POST', body: fd });
+      const fd = new FormData();
+      fd.append('action', 'admin_redeem'); fd.append('project', pendingRedeem.project);
+      fd.append('token', pendingRedeem.token); fd.append('pin', pin); fd.append('label', label);
+      const res = await fetch(apiUrl('admin'), { method: 'POST', body: fd });
       const j = await res.json().catch(() => ({}));
-      if (res.ok && j.ok && j.contrib) {
-        setContribInfo(j.contrib); await computeContribId(); applyPostState();
-        toast('<i class="fa-solid fa-check"></i> ' + esc(t('got_identity', { label: j.contrib.label ? (': ' + j.contrib.label) : '' })));
-      } else toast('<i class="fa-solid fa-triangle-exclamation"></i> ' + esc(j.error || t('link_expired')));
-    } catch (e) { toast('<i class="fa-solid fa-triangle-exclamation"></i> ' + esc(t('connection_failed'))); }
+      if (res.ok && j.ok) {
+        pendingRedeem = null;
+        closeAdminRedeem();
+        toast('<i class="fa-solid fa-user-shield"></i> ' + esc(t('redeem_admin_ok')));
+        setTimeout(() => location.reload(), 900);
+      } else if (msg) {
+        msg.style.color = '#c0392b';
+        msg.textContent = j.error === 'pin_taken' ? t('redeem_admin_pin_taken') : (j.error || t('redeem_admin_link_invalid'));
+      }
+    } catch (e) { if (msg) { msg.style.color = '#c0392b'; msg.textContent = t('connection_failed'); } }
   }
 
   // 解鎖彈窗 + QR 掃描
@@ -284,6 +296,17 @@ window.MapApp = (() => {
   const chairMarkers = {};
   let deviceLocCache = null;
 
+  /* ---------- 選用插件掛勾點（見 souliong/docs/EXTENDING.md）----------
+     核心只負責「發生了什麼事」（onHook/emitHook）與「讓插件參與渲染結果」（registerPhotoFilter/registerEntriesHint），
+     不認得任何特定插件；插件自己的邏輯、DOM、CSS 都放在 assets/plugins/ 底下獨立檔案。 */
+  const hookListeners = {};
+  function onHook(name, fn) { (hookListeners[name] = hookListeners[name] || []).push(fn); }
+  function emitHook(name, ...args) { (hookListeners[name] || []).forEach(fn => { try { fn(...args); } catch (err) { console.error('[hook:' + name + ']', err); } }); }
+  const photoFilters = [];     // fn(photoEntry, currentPoint) => bool；renderEntries() 的照片清單要 AND 全部通過
+  const entriesHintFns = [];   // fn(currentPoint) => HTMLElement|null；renderEntries() 會把回傳的節點插進卡片內容
+  function registerPhotoFilter(fn) { photoFilters.push(fn); }
+  function registerEntriesHint(fn) { entriesHintFns.push(fn); }
+
   /* ---------- helpers ---------- */
   const esc = (s) => String(s).replace(/[&<>"]/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[m]));
   const pad2 = (n) => String(n).padStart(2, '0');
@@ -327,6 +350,8 @@ window.MapApp = (() => {
     return best;
   }
   function photoFullUrl(item) { return item.photo ? apiUrl('photo') + '&f=' + encodeURIComponent(item.photo) : null; }
+  // 標記與照片牆用縮圖、燈箱用原圖；舊投稿沒 thumb 欄位就帶 th=1 讓伺服器自動產縮圖（失敗時回原圖）
+  function photoThumbUrl(item) { return item.thumb ? apiUrl('photo') + '&f=' + encodeURIComponent(item.thumb) : (item.photo ? photoFullUrl(item) + '&th=1' : null); }
 
   // 合併「原始照片投稿」與其 edit_of 編輯紀錄，算出目前應顯示的內容：
   // 留言/關聯地點/定位取最新一筆編輯，但照片檔案與原始拍攝時間永遠沿用原始那筆（編輯不能換照片本身）。
@@ -396,7 +421,7 @@ window.MapApp = (() => {
       if (active[c.cat] === false) return;
       const count = personCounts ? (personCounts[c.num] || 0) : (counts[c.num] || 0);
       const m = L.marker([c.lat, c.lon], { icon: chairIcon(c, count, badgeColor) }).addTo(map);
-      m.on('click', () => openPanel(c));
+      m.on('click', () => { emitHook('panelReset'); openPanel(c); });
       chairMarkers[c.num] = m;
     });
     drawRoute();
@@ -452,20 +477,23 @@ window.MapApp = (() => {
       className: '', iconSize: [30, 30], iconAnchor: [15, 15], popupAnchor: [0, -16],
       html: '<div class="photo-sq" style="background-image:url(' + url + ')"></div>'
     });
+    // 遠距離的小方塊也用縮圖當底（載入前／載不到時由 background-color 墊色），不再是純色
     return L.divIcon({
       className: '', iconSize: [14, 14], iconAnchor: [7, 7], popupAnchor: [0, -8],
-      html: '<div class="photo-sq plain"></div>'
+      html: '<div class="photo-sq plain" style="background-image:url(' + url + ')"></div>'
     });
   }
+  let photoLayerThumbState = null;   // 上次 render 時是否在縮圖模式，zoomend 只在跨越門檻時才需要重建
   function renderPhotoLayer() {
     photoLayer.clearLayers();
     if (!photoLayerOn) return;
     const thumb = map.getZoom() >= THUMB_ZOOM;
+    photoLayerThumbState = thumb;
     effectivePhotos().forEach(e => {
       if (filterPerson && e.name !== filterPerson) return;
       const url = photoFullUrl(e);
       if (typeof e.lat !== 'number' || typeof e.lon !== 'number' || !url) return;
-      const m = L.marker([e.lat, e.lon], { icon: photoIcon(url, thumb) });
+      const m = L.marker([e.lat, e.lon], { icon: photoIcon(photoThumbUrl(e), thumb) });
       m.on('click', () => openLightbox(e, url));
       photoLayer.addLayer(m);
     });
@@ -476,6 +504,25 @@ window.MapApp = (() => {
   function personPoints(name) {
     return effectivePhotos().filter(e => e.name === name && typeof e.lat === 'number' && typeof e.lon === 'number')
       .sort((a, b) => tv(a) - tv(b));
+  }
+
+  /* ---------- 依序探索（選用功能，見 META.personExplore） ----------
+     把某人的所有照片依「有沒有綁地標」分兩種：綁地標的（item_num 有值）同一地標合併成一站，
+     用該站最早一張照片的時間排序；沒綁地標的零散照片各自一站，用自己的拍攝時間排序。
+     兩種站合併後依時間排成一條時間軸，供左上卡片的兩個箭頭逐站切換。 */
+  function personTimeline(name) {
+    const groups = {}, loose = [];
+    effectivePhotos().filter(e => e.name === name).forEach(e => {
+      if (e.item_num != null) (groups[e.item_num] = groups[e.item_num] || []).push(e);
+      else loose.push(e);
+    });
+    const stops = Object.keys(groups).map(numStr => {
+      const num = +numStr;
+      const photos = groups[numStr].sort((a, b) => tv(a) - tv(b));
+      return { type: 'point', num: num, point: effectivePoints().find(p => p.num === num), photos: photos, time: tv(photos[0]) };
+    });
+    loose.forEach(e => stops.push({ type: 'loose', entry: e, time: tv(e) }));
+    return stops.sort((a, b) => a.time - b.time);
   }
   // 隨機配色（不用姓名雜湊固定推算）：同一人第一次出現時抽色，之後這個分頁內都沿用同一色，
   // 讓路徑、篩選時的角標...等所有地方顯示的顏色能保持一致。
@@ -539,7 +586,20 @@ window.MapApp = (() => {
     renderEntries();
     statSend('point', c.num);
   }
-  function closePanel() { document.getElementById('panel').classList.remove('open'); resetPointEditor(); current = null; }
+  function closePanel() { document.getElementById('panel').classList.remove('open'); resetPointEditor(); current = null; emitHook('panelReset'); }
+  // 電腦版：地點卡片在「預設寬度」與「接近全螢幕的大卡片」之間切換（狀態保留到下次開啟）
+  function togglePanelSize() {
+    const p = document.getElementById('panel');
+    const wide = p.classList.toggle('wide');
+    const btn = p.querySelector('.p-expand');
+    if (btn) {
+      btn.title = t(wide ? 'collapse_panel' : 'expand_panel');
+      btn.setAttribute('aria-label', btn.title);
+      btn.innerHTML = '<i class="fa-solid ' + (wide ? 'fa-down-left-and-up-right-to-center' : 'fa-up-right-and-down-left-from-center') + '" aria-hidden="true"></i>';
+    }
+    // 寬度動畫結束後觸發 resize，讓卡片內的迷你地圖（Leaflet trackResize）重算尺寸
+    setTimeout(() => window.dispatchEvent(new Event('resize')), 320);
+  }
   function resetPointEditor() {
     const el = document.getElementById('pointEditor');
     if (!el) return;
@@ -612,7 +672,7 @@ window.MapApp = (() => {
   function renderEntries() {
     const box = document.getElementById('entries'); box.innerHTML = '';
     const descs = CONTRIB.filter(e => e.item_num === current.num && e.kind === 'desc' && e.comment).sort((a, b) => tv(a) - tv(b));
-    const photos = effectivePhotos().filter(e => e.item_num === current.num).sort((a, b) => tv(a) - tv(b));
+    const photos = effectivePhotos().filter(e => e.item_num === current.num && photoFilters.every(f => f(e, current))).sort((a, b) => tv(a) - tv(b));
     // 版本序列：原始（資料來源為專案自訂的 META.source，例如 StoryMaps）在最舊，之後接使用者編輯版本
     const versions = [];
     if (current.story) versions.push({ name: t('original_source_tag'), comment: current.story, created_at: null, baseline: true });
@@ -643,15 +703,19 @@ window.MapApp = (() => {
     upBtn.onclick = () => { resetQueue(); openModal(current); };
     box.appendChild(upBtn);
 
+    // 插件掛勾點：讓插件（例如依序探索）在照片牆前面插入自己的提示區塊（如「僅顯示 X 的照片・顯示全部」）
+    entriesHintFns.forEach(fn => { const el = fn(current); if (el) box.appendChild(el); });
+
     // 照片牆
     const gwrap = document.createElement('div');
+    gwrap.className = 'gallery';   // 大卡片模式時靠這個 class 排成多欄
     if (!photos.length) gwrap.innerHTML = '<div class="empty" style="margin-top:12px">' + esc(t('photos_empty')) + '</div>';
     photos.forEach(e => {
       const url = photoFullUrl(e);
       const d = document.createElement('div'); d.className = 'entry'; d.dataset.entryId = e.id;
       const alt = esc(e.comment || (current.chair || current.theme || t('contrib_photo_alt')));
       const canEdit = canPost() && (isMine(e) || APP.isManager);
-      d.innerHTML = '<img src="' + url + '" alt="' + alt + '" tabindex="0">' + '<div class="meta"><div class="who">' + esc(e.name || t('anon_fallback')) +
+      d.innerHTML = '<img src="' + photoThumbUrl(e) + '" loading="lazy" decoding="async" alt="' + alt + '" tabindex="0">' + '<div class="meta"><div class="who">' + esc(e.name || t('anon_fallback')) +
         (e.edited ? ' <span class="edited-tag">' + esc(t('edited_tag')) + '</span>' : '') + '</div>' +
         '<div class="time">' + fmtTime(e.photo_time || e.created_at) + '</div>' +
         (e.comment ? '<div class="txt">' + esc(e.comment) + '</div>' : '') +
@@ -867,15 +931,17 @@ window.MapApp = (() => {
   // 傳整筆投稿資料進來，才能連留言／說明文字一起顯示成卡片（不只圖片+姓名時間）
   function openLightbox(e, url) {
     document.getElementById('lbImg').src = url || photoFullUrl(e);
-    const who = esc(e.name || t('anon_fallback')) + ' ・ ' + fmtTime(e.photo_time || e.created_at);
+    // 照片資訊改成「時間後面的 i 小圖示」，不佔一顆獨立按鈕（id 不變，沿用原本的展開邏輯）
+    const who = esc(e.name || t('anon_fallback')) + ' ・ ' + fmtTime(e.photo_time || e.created_at) +
+      ' <button class="lb-info-i" type="button" id="lbInfoBtn" title="' + esc(t('photo_info_title')) + '" aria-label="' + esc(t('photo_info_title')) + '"><i class="fa-solid fa-circle-info" aria-hidden="true"></i></button>';
     const txt = e.comment ? '<div class="lb-txt">' + esc(e.comment) + '</div>' : '';
     const canEdit = canPost() && (isMine(e) || APP.isManager);
-    const actions = '<button class="btn small" type="button" id="lbInfoBtn" title="' + esc(t('photo_info_title')) + '"><i class="fa-solid fa-circle-info"></i> ' + esc(t('info_btn_label')) + '</button>' +
+    const actions =
       (canEdit ? '<button class="btn small" type="button" id="lbEditBtn"><i class="fa-solid fa-pen"></i> ' + esc(t('edit')) + '</button>' : '') +
       (!EMBED && isMine(e) ? '<button class="btn small danger" type="button" id="lbDelBtn"><i class="fa-solid fa-trash"></i> ' + esc(t('delete')) + '</button>' : '');
     const cap = document.getElementById('lbCap');
     cap.style.display = '';
-    cap.innerHTML = '<div class="lb-who">' + who + '</div>' + txt + '<div class="lb-actions">' + actions + '</div>' +
+    cap.innerHTML = '<div class="lb-who">' + who + '</div>' + txt + (actions ? '<div class="lb-actions">' + actions + '</div>' : '') +
       '<div class="lb-info" id="lbInfo" style="display:none"></div>';
     const ib = cap.querySelector('#lbInfoBtn');
     if (ib) ib.onclick = (ev) => {
@@ -989,7 +1055,7 @@ window.MapApp = (() => {
         '</div>';
       document.getElementById('queue').appendChild(card);
       card.querySelector('.c-name').value = document.getElementById('modalName').value || '';
-      const state = { id, file, exif: null, webp: null, loc: null, origLoc: null, source: null, done: false, mini: null, marker: null };
+      const state = { id, file, exif: null, webp: null, thumb: null, loc: null, origLoc: null, source: null, done: false, mini: null, marker: null };
       cards[id] = state;
       card.querySelector('.c-cancel').onclick = () => cancelCard(id);
 
@@ -1016,6 +1082,8 @@ window.MapApp = (() => {
         state.webp = await toWebp(file);
         card.querySelector('.thumb').style.backgroundImage = 'url(' + URL.createObjectURL(state.webp) + ')';
         card.querySelector('.thumb').textContent = '';
+        // 顯示用小縮圖（從已轉好的主圖再縮一次，避免重讀 HEIC）；失敗不擋上傳，顯示端會 fallback 用原圖
+        try { state.thumb = await toWebp(state.webp, 640, 0.78); } catch (e) { state.thumb = null; }
       } catch (e) {
         card.querySelector('.thumb').textContent = t('image_read_failed');
       }
@@ -1127,6 +1195,7 @@ window.MapApp = (() => {
         const ct2 = contribToken(); if (ct2) fd.append('ctoken', ct2);
         if (state.exif && state.exif.cam) fd.append('exif', JSON.stringify(state.exif.cam));
         if (state.webp) fd.append('photo', state.webp, 'photo.webp');
+        if (state.webp && state.thumb) fd.append('thumb', state.thumb, 'thumb.webp');
         const res = await fetch(apiUrl('upload'), { method: 'POST', body: fd });
         if (res.status === 429 && attempt < MAX_RATE_RETRY) {
           const wait = parseInt(res.headers.get('Retry-After') || '10', 10) || 10;
@@ -1210,7 +1279,7 @@ window.MapApp = (() => {
       const j = await res.json();
       if (j.error) throw new Error(j.error + (j.detail ? '：' + j.detail : ''));
       CONTRIB = (j.items || []).map(x => ({ ...x, lat: x.lat != null ? +x.lat : null, lon: x.lon != null ? +x.lon : null }));
-      recount(); renderChairs(); renderPhotoLayer(); rebuildPersonFilter(); drawPersonRoute();
+      recount(); renderChairs(); renderPhotoLayer(); rebuildPersonFilter(); drawPersonRoute(); emitHook('stateChange');
       if (filterPerson) {   // 重新整理後恢復先前記住的投稿者篩選，順便把地圖對焦回他的觀察地圖
         const pts = personPoints(filterPerson).map(e => [e.lat, e.lon]);
         if (pts.length) map.fitBounds(L.latLngBounds(pts).pad(0.25));
@@ -1256,7 +1325,7 @@ window.MapApp = (() => {
     map.attributionControl.setPosition('bottomright');   // CSS 置中於下方
     map.attributionControl.setPrefix(false);
     photoLayer = L.layerGroup();
-    map.on('zoomend', () => { if (photoLayerOn) renderPhotoLayer(); });
+    map.on('zoomend', () => { if (photoLayerOn && (map.getZoom() >= THUMB_ZOOM) !== photoLayerThumbState) renderPhotoLayer(); });
 
     buildLegend();
     renderChairs();
@@ -1337,7 +1406,7 @@ window.MapApp = (() => {
       if (!on) filterPerson = '';   // 切回「全部」時，下拉選單改用途（跳到地點），投稿者篩選狀態一併清掉
       rebuildPersonFilter();
       if (on) { renderPhotoLayer(); if (!(opts && opts.silent)) feature('photos'); } else { map.removeLayer(photoLayer); }
-      renderChairs(); drawPersonRoute();
+      renderChairs(); drawPersonRoute(); emitHook('stateChange');
     }
     apb.onclick = function () { if (photoLayerOn) setContribMode(false); };
     plb.onclick = function () { if (!photoLayerOn) setContribMode(true); };
@@ -1358,7 +1427,7 @@ window.MapApp = (() => {
         filterPerson = pf.value;
         try { if (filterPerson) localStorage.setItem(personPrefKey, filterPerson); else localStorage.removeItem(personPrefKey); } catch (e) {}
         if (filterPerson) feature('filter');
-        renderPhotoLayer(); renderChairs(); drawPersonRoute();
+        renderPhotoLayer(); renderChairs(); drawPersonRoute(); emitHook('stateChange');
         const pts = filterPerson ? personPoints(filterPerson).map(e => [e.lat, e.lon]) : [];
         if (pts.length) map.fitBounds(L.latLngBounds(pts).pad(0.25));
       } else {
@@ -1366,7 +1435,7 @@ window.MapApp = (() => {
         pf.value = '';
         if (num != null) {
           const pt = effectivePoints().find(p => p.num === num);
-          if (pt) { openPanel(pt); map.panTo([pt.lat, pt.lon], { animate: true }); }
+          if (pt) { emitHook('panelReset'); openPanel(pt); map.panTo([pt.lat, pt.lon], { animate: true }); }
         }
       }
     };
@@ -1383,6 +1452,18 @@ window.MapApp = (() => {
     document.getElementById('embedWidth').oninput = buildEmbedCode;
     document.getElementById('embedHeight').oninput = buildEmbedCode;
     document.getElementById('embedSizePreset').onchange = buildEmbedCode;
+    // 切單位時把寬高換成該單位下合理的值域（% 是 10–100、px 維持原本 200 起跳），再重組嵌入碼
+    document.getElementById('embedSizeUnit').onchange = () => {
+      const pct = document.getElementById('embedSizeUnit').value === 'pct';
+      ['embedWidth', 'embedHeight'].forEach((id, i) => {
+        const el = document.getElementById(id);
+        el.min = pct ? 10 : 200;
+        el.step = pct ? 5 : 10;
+        if (pct && (!el.value || +el.value > 100)) el.value = 100;
+        if (!pct && (!el.value || +el.value < 200)) el.value = i === 0 ? 800 : 600;
+      });
+      buildEmbedCode();
+    };
 
     // 上傳（精簡模式停用）
     if (!EMBED) {
@@ -1431,6 +1512,10 @@ window.MapApp = (() => {
     if (ub) ub.onclick = openUnlock;
     document.getElementById('unlockSubmit').onclick = trySubmitUnlock;
     document.getElementById('scanBtn').onclick = startScan;
+    const arSubmit = document.getElementById('adminRedeemSubmit');
+    if (arSubmit) arSubmit.onclick = trySubmitAdminRedeem;
+    const arPin = document.getElementById('adminRedeemPinInput');
+    if (arPin) arPin.addEventListener('keydown', e => { if (e.key === 'Enter') trySubmitAdminRedeem(); });
     const idBtn = document.getElementById('idToggleBtn'), idFields = document.getElementById('idFields');
     if (idBtn && idFields) idBtn.onclick = () => {
       const open = idFields.style.display === 'none';
@@ -1460,7 +1545,7 @@ window.MapApp = (() => {
       if (/^(INPUT|TEXTAREA|SELECT)$/.test(tag) || e.metaKey || e.ctrlKey || e.altKey) return;
       const k = e.key.toLowerCase();
       if (k === 'escape') {
-        closePanel(); closeModal(); closeEmbed(); closeUnlock(); closeShare(); closePin();
+        closePanel(); closeModal(); closeEmbed(); closeUnlock(); closeShare(); closePin(); closeAdminRedeem();
         const trG = document.getElementById('topright'), trT = document.getElementById('trToggle');
         if (trG) { trG.classList.remove('open'); if (trT) trT.setAttribute('aria-expanded', 'false'); }
       }
@@ -1491,11 +1576,12 @@ window.MapApp = (() => {
     if (photoLayerOn) sp.set('contrib', '1');
     const url = location.origin + APP.base + PROJECT + '?' + sp.toString();
     const preset = document.getElementById('embedSizePreset').value;
-    const w = document.getElementById('embedWidth').value || 800;
-    const h = document.getElementById('embedHeight').value || 600;
+    const unit = document.getElementById('embedSizeUnit').value === 'pct' ? '%' : 'px';
+    const w = document.getElementById('embedWidth').value || (unit === '%' ? 100 : 800);
+    const h = document.getElementById('embedHeight').value || (unit === '%' ? 100 : 600);
     const wFill = preset === 'fill_w' || preset === 'fill_wh';
     const hFill = preset === 'fill_h' || preset === 'fill_wh';
-    const sizeStyle = 'width:' + (wFill ? '100%' : w + 'px') + ';height:' + (hFill ? '100%' : h + 'px');
+    const sizeStyle = 'width:' + (wFill ? '100%' : w + unit) + ';height:' + (hFill ? '100%' : h + unit);
     document.getElementById('embedCode').value =
       '<iframe src="' + url + '" title="' + esc(META.title || 'Souliong') + '" ' +
       'style="' + sizeStyle + ';border:0;border-radius:12px" loading="lazy"></iframe>';
@@ -1675,5 +1761,11 @@ window.MapApp = (() => {
   function closePin() { document.getElementById('pinDialog').classList.remove('open'); document.removeEventListener('keydown', pinKey); }
 
   boot();
-  return { closePanel, closeModal, openLightbox, closeLightbox, openEmbed, closeEmbed, closePin, closeUnlock, closeShare };
+  return {
+    closePanel, togglePanelSize, closeModal, openLightbox, closeLightbox, openEmbed, closeEmbed, closePin, closeUnlock, closeShare, closeAdminRedeem,
+    // ---- 選用插件掛勾點 API（見 souliong/docs/EXTENDING.md）----
+    onHook, registerPhotoFilter, registerEntriesHint,
+    personTimeline, pointTitle, photoFullUrl, openPanel, refreshEntries: renderEntries,
+    getMap: () => map, getFilterPerson: () => filterPerson, isPhotoLayerOn: () => photoLayerOn,
+  };
 })();

@@ -411,6 +411,22 @@ textarea:focus {
   width: 80px
 }
 
+/* 尺寸列下拉：關掉原生 appearance、右側自畫中性灰箭頭（需晚於 .name-in 的 background 縮寫才不被蓋掉） */
+.embed-size-row select {
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 26px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%238a857c' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 9px center;
+  background-size: 10px;
+  cursor: pointer
+}
+
+.embed-size-row select.embed-size-unit {
+  width: auto
+}
+
 .embed-size-row select.embed-size-preset {
   margin-left: auto;
   width: auto;
@@ -769,7 +785,8 @@ button i {
   height: 13px;
   border-radius: 4px;
   border: 2px solid #fff;
-  background: var(--accent)
+  /* 不用 background 縮寫，避免蓋掉 .photo-sq 的 cover/center（底色＝縮圖載入前的墊色） */
+  background-color: var(--accent)
 }
 
 /* ---------- 浮動地點卡片 ---------- */
@@ -791,13 +808,29 @@ button i {
   transform: translateX(calc(100% + 28px));
   opacity: 0;
   pointer-events: none;
-  transition: transform .28s cubic-bezier(.4, 0, .2, 1), opacity .28s
+  transition: transform .28s cubic-bezier(.4, 0, .2, 1), opacity .28s, width .28s cubic-bezier(.4, 0, .2, 1)
 }
 
 #panel.open {
   transform: none;
   opacity: 1;
   pointer-events: auto
+}
+
+/* 電腦版：展開成接近全螢幕的大卡片（照片牆改多欄）；再按一次縮回預設寬度 */
+#panel.wide {
+  width: min(1080px, calc(100vw - 28px))
+}
+
+#panel.wide .gallery {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 12px;
+  align-items: start
+}
+
+#panel.wide .gallery .entry {
+  margin-bottom: 0
 }
 
 @media (max-width:640px) {
@@ -882,6 +915,37 @@ button i {
 .p-close:hover {
   background: var(--line);
   color: var(--fg)
+}
+
+/* 展開/縮回鈕：樣式同關閉鈕，排在它左邊；手機版面板是底部抽屜，展開沒有意義，直接隱藏 */
+.p-expand {
+  position: absolute;
+  top: 12px;
+  right: 52px;
+  z-index: 2;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.875rem;
+  background: var(--hover);
+  border: none;
+  border-radius: 999px;
+  color: var(--muted);
+  cursor: pointer;
+  transition: background var(--t), color var(--t)
+}
+
+.p-expand:hover {
+  background: var(--line);
+  color: var(--fg)
+}
+
+@media (max-width:640px) {
+  .p-expand {
+    display: none
+  }
 }
 
 .p-body {
@@ -1560,6 +1624,23 @@ button i {
   margin-bottom: 4px
 }
 
+/* 照片資訊：時間後面的 i 小圖示（不是獨立按鈕） */
+#lb .cap .lb-info-i {
+  border: none;
+  background: none;
+  color: #fff;
+  opacity: .7;
+  font-size: 0.875rem;
+  padding: 0 2px;
+  vertical-align: -1px;
+  cursor: pointer;
+  transition: opacity var(--t)
+}
+
+#lb .cap .lb-info-i:hover {
+  opacity: 1
+}
+
 #lb .cap .lb-txt {
   white-space: pre-wrap;
   line-height: 1.5
@@ -1763,8 +1844,12 @@ button i {
   color: var(--muted)
 }
 
-body.embed .tr-group {
-  display: none
+/* 嵌入模式：右上群組只留「主題切換」；身分、分享、漢堡收合都藏起來
+   （回列表／嵌入碼／語言選單本身就有 .hide-in-embed）。theme 鈕直接顯示，不收進漢堡 */
+body.embed .tr-group .idchip,
+body.embed .tr-group #shareBtn,
+body.embed .tr-group .tr-toggle {
+  display: none !important
 }
 
 /* 桌機時把點位卡片下移，讓出右上群組 */
@@ -1840,6 +1925,31 @@ body.embed .tr-group {
     font-size: .75rem;
     font-weight: 600
   }
+
+  /* 嵌入模式手機版：漢堡被藏掉了，theme 鈕不走下拉卡片，直接以一般小圓鈕顯示 */
+  body.embed .tr-items {
+    display: flex;
+    position: static;
+    flex-direction: row;
+    background: none;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    border: 0;
+    box-shadow: none;
+    padding: 0;
+    min-width: 0
+  }
+
+  body.embed .tr-items .icon-btn {
+    width: 30px;
+    height: 30px;
+    justify-content: center;
+    padding: 0
+  }
+
+  body.embed .tr-items .icon-btn::after {
+    content: none
+  }
 }
 
 /* ── 左下：地圖操作（重置，對齊縮放鈕：同寬、同左緣、間隔 8px）── */
@@ -1859,9 +1969,7 @@ body.embed .tr-group {
   color: var(--fg)
 }
 
-body.embed .mapop-btn {
-  display: none
-}
+/* 嵌入模式保留左下「回初始視角」鈕（跟主題切換一樣屬於閱覽功能，不涉及投稿） */
 
 /* ── 右下：解鎖 FAB（與上傳互斥同位）── */
 .fab-unlock {
