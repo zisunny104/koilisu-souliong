@@ -20,9 +20,9 @@
   /* ---------- 注入自己的樣式：核心 style.css 完全不需要知道這個插件存在 ---------- */
   const style = document.createElement('style');
   style.textContent = `
-    .pexp-row { flex-direction: column; align-items: stretch; gap: 6px; padding-top: 10px; border-top: 1px solid var(--line) }
+    .pexp-row { flex-direction: column; flex-wrap: nowrap; align-items: stretch; gap: 6px; padding-top: 10px; border-top: 1px solid var(--line) }
     .pexp-summary { font-size: 0.6875rem; color: var(--muted) }
-    .pexp-nav { display: flex; align-items: center; gap: 4px }
+    .pexp-nav { display: flex; align-items: center; gap: 4px; min-width: 0 }
     .pexp-pos { flex: 1; min-width: 0; font-size: 0.8125rem; font-weight: 500; text-align: center; overflow: hidden; white-space: nowrap }
     .pexp-pos.has-overflow {
       text-align: left;
