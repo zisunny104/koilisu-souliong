@@ -11,10 +11,12 @@ $project = preg_replace('/[^a-z0-9_-]/', '', $_POST['project'] ?? '');
 if ($project === '' || !is_dir($cfg['projects_dir'] . '/' . $project)) { json_out(['error' => 'bad request'], 400); }
 
 $meta = json_decode((string)@file_get_contents($cfg['projects_dir'] . '/' . $project . '/meta.json'), true);
-$real = project_code($cfg, $project, is_array($meta) ? $meta : null);
-if ($real === '') { json_out(['ok' => true, 'gated' => false]); }        // 此地圖未 gated
+if (empty($meta['gated'])) { json_out(['ok' => true, 'gated' => false]); }        // 此地圖未 gated
 $given = preg_replace('/\D/', '', (string)($_POST['code'] ?? ''));   // 純數字碼：容忍空白/貼上
-if (!hash_equals($real, $given)) { json_out(['error' => '投稿碼不正確'], 403); }
+// 只驗證不計次（次數在實際上傳時才扣，見 upload.php）
+if (!code_check($cfg, $project, $given, false)) {
+    json_out(['error' => '投稿碼不正確（或已到期、用完次數）'], 403);
+}
 
 // 可選：以投稿者 PIN 建立跨裝置身分（cpin），並可帶暱稱（cname）。匿名則不帶。
 $cpin = trim((string)($_POST['cpin'] ?? ''));

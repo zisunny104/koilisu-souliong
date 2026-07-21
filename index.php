@@ -45,11 +45,11 @@ switch ($action) {
     case 'unlock':
         require __DIR__ . '/api/unlock.php';
         return;
-    case 'redeem':
-        require __DIR__ . '/api/redeem.php';
-        return;
     case 'exiffix':
         require __DIR__ . '/api/exiffix.php';   // 常駐維護工具：修復投稿缺少相機 EXIF 資訊
+        return;
+    case 'thumbfix':
+        require __DIR__ . '/api/thumbfix.php';  // 備援維護工具：自動產縮圖失敗時，由瀏覽器補產舊投稿縮圖
         return;
     case 'stat':
         require __DIR__ . '/api/stat.php';

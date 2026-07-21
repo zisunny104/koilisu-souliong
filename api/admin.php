@@ -8,6 +8,9 @@ require __DIR__ . '/../pages/error.php';
 $cfg = require __DIR__ . '/config.php';
 rate_limit($cfg, 'admin');
 $esc = fn($s) => htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8');
+// PIN／碼是唯一輸入憑證，後台一律預設遮罩、按眼睛才顯示（固定六點，不洩漏長度）；
+// 例外：常駐投稿碼與「剛建立」區塊屬於正在分享的內容，維持明碼。
+$secret = fn($v) => '<span class="secretwrap"><span class="mono secretval" data-val="' . $esc($v) . '">••••••</span><button type="button" class="eyebtn" title="顯示／隱藏"><i class="fa-solid fa-eye"></i></button></span>';
 
 // ── 登入（POST pin[, project]）→ 種 cookie ──
 $loginErr = '';
@@ -49,6 +52,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'login
 if (isset($_GET['logout'])) {
   admin_clear_cookie();
   header('Location: ?api=admin');
+  exit;
+}
+
+// ── 管理 PIN 邀請兌換（POST project, token, pin[, label]）→ 收件人自己設 PIN／暱稱，成功即種 cookie ──
+// 公開端點（未登入者用），刻意不做 CSRF 檢查：跟 action=login 同一層級，呼叫端本來就沒有已登入頁面可嵌 token；
+// 最多只是幫別人兌換一個權限全關的身分，rate_limit($cfg,'admin')（見本檔開頭）已足以節流亂猜。
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'admin_redeem') {
+  header('Content-Type: application/json; charset=utf-8');
+  $rProj = preg_replace('/[^a-z0-9_-]/', '', $_POST['project'] ?? '');
+  $rToken = (string)($_POST['token'] ?? '');
+  $rPin = (string)($_POST['pin'] ?? '');
+  $rLabel = isset($_POST['label']) ? (string)$_POST['label'] : null;
+  if ($rProj === '' || !is_dir($cfg['projects_dir'] . '/' . $rProj)) {
+    http_response_code(400);
+    echo json_encode(['ok' => false, 'error' => 'invalid']);
+    exit;
+  }
+  $res = pins_redeem($cfg, $rProj, $rToken, $rPin, $rLabel);
+  if ($res['ok']) {
+    padm_set_cookie($cfg, $rProj, (string)$res['id']);
+  } else {
+    http_response_code(403);
+  }
+  echo json_encode($res);
   exit;
 }
 
@@ -211,17 +238,13 @@ if (!$authed) {
             $removed = store_delete($cfg, $p, $id);
             if ($removed && !empty($removed['photo'])) {
               $pp = photo_abs_path($cfg, $removed['photo']);
-              if ($pp) @unlink($pp);
+              if ($pp) {
+                @unlink($pp);
+                // 縮圖（上傳附帶或 photo.php 自動產生的）一律叫 <照片檔名>_t.*，跟著原圖一起清
+                $ppBase = preg_replace('/\.[A-Za-z0-9]+$/', '', $pp);
+                foreach (['webp', 'jpg', 'png'] as $te) @unlink($ppBase . '_t.' . $te);
+              }
             }
-          }
-          header('Location: ?api=admin' . ($scopeProject !== '' ? '&project=' . urlencode($scopeProject) : ''));
-          exit;
-        }
-        if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'rotate') {
-          need_csrf($csrf);
-          $p = preg_replace('/[^a-z0-9_-]/', '', $_POST['project'] ?? '');
-          if ($p !== '' && $canProject($p)) {
-            @unlink(project_dir($cfg, $p) . '/code.txt');
           }
           header('Location: ?api=admin' . ($scopeProject !== '' ? '&project=' . urlencode($scopeProject) : ''));
           exit;
@@ -283,7 +306,9 @@ if (!$authed) {
             $pinId = (string)($_POST['pin_id'] ?? '');
             $on = ($_POST['on'] ?? '') === '1';
             if ($tp !== '' && $pinId !== '' && array_key_exists($permKey, pin_default_perms())) {
-              foreach ($d['projects'][$tp] ?? [] as &$e) {
+              // foreach(...??[] as &$e) 是對暫存值取參照，不會寫回 $d：先確保鍵存在再用真正的變數取參照
+              $d['projects'][$tp] = $d['projects'][$tp] ?? [];
+              foreach ($d['projects'][$tp] as &$e) {
                 if ((string)($e['id'] ?? '') === $pinId) { $e['perms'][$permKey] = $on; break; }
               }
               unset($e);
@@ -311,7 +336,7 @@ if (!$authed) {
           if ($p === '' || !$canProject($p)) {
             error_page(403, '沒有權限', '您沒有這個專案的管理權限。', '?api=admin', '返回後台');
           }
-          $kind = in_array(($_POST['kind'] ?? ''), ['contrib_named', 'contrib_anon', 'admin'], true) ? $_POST['kind'] : 'contrib_anon';
+          $kind = in_array(($_POST['kind'] ?? ''), ['code', 'admin'], true) ? $_POST['kind'] : 'code';
           if ($kind === 'admin' && !($master || admin_perm($cfg, $p, 'delegate_admin'))) {
             error_page(403, '沒有權限', '只有主要管理者，或已被授權「可建管理PIN連結」的專案管理者，才能建立管理PIN分享連結。', '?api=admin&project=' . urlencode($p), '返回後台');
           }
@@ -324,16 +349,38 @@ if (!$authed) {
           }
           $maxUsesRaw = trim((string)($_POST['max_uses'] ?? ''));
           $maxUses = ($maxUsesRaw !== '' && is_numeric($maxUsesRaw)) ? max(1, (int)$maxUsesRaw) : null;
-          $pinInput = trim((string)($_POST['pin_new'] ?? ''));
-          if ($kind === 'admin') {
-            [$grantedPin] = pins_grant_create($cfg, $p, $pinInput !== '' ? $pinInput : null, $label, $expiresAt, $maxUses);
-            $justCreatedShare = ['project' => $p, 'kind' => 'admin', 'url' => $mapUrl($p) . '#redeem=' . rawurlencode($grantedPin) . '&rmode=admin'];
+          if ($kind === 'code') {
+            $pinInput = trim((string)($_POST['pin_new'] ?? ''));
+            $grantedCode = codes_grant_create($cfg, $p, $pinInput, $label, $expiresAt, $maxUses);
+            $justCreatedShare = ['project' => $p, 'kind' => 'code', 'url' => $mapUrl($p) . '?code=' . $grantedCode, 'code' => $grantedCode];
           } else {
-            $namedPin = $kind === 'contrib_named' ? ($pinInput !== '' ? $pinInput : null) : null;
-            [$grantedToken, , $grantedPinPlain] = contrib_grant_create($cfg, $p, $namedPin, $label, $expiresAt, $maxUses);
-            $justCreatedShare = ['project' => $p, 'kind' => $kind, 'url' => $mapUrl($p) . '#redeem=' . rawurlencode($grantedToken)];
-            if ($kind === 'contrib_named') $justCreatedShare['pin'] = $grantedPinPlain;
+            [$grantedToken] = pins_invite_create($cfg, $p, $expiresAt, $maxUses);
+            $justCreatedShare = ['project' => $p, 'kind' => 'admin', 'url' => $mapUrl($p) . '#redeem=' . rawurlencode($grantedToken) . '&rmode=admin'];
           }
+        }
+        // 撤銷管理PIN邀請連結（尚未兌換）：跟建立邀請同一權限門檻——主 PIN 或已被授權 delegate_admin 的專案 PIN 皆可
+        if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'delinvite') {
+          need_csrf($csrf);
+          $p = preg_replace('/[^a-z0-9_-]/', '', $_POST['project'] ?? '');
+          $iid = (string)($_POST['invite_id'] ?? '');
+          if ($p !== '' && $iid !== '' && ($master || admin_perm($cfg, $p, 'delegate_admin'))) {
+            $d = pins_load($cfg);
+            $d['projects'][$p] = array_values(array_filter($d['projects'][$p] ?? [], fn($e) => !(($e['kind'] ?? '') === 'invite' && (string)($e['id'] ?? '') === $iid)));
+            pins_save($cfg, $d);
+          }
+          header('Location: ?api=admin' . ($scopeProject !== '' ? '&project=' . urlencode($scopeProject) : ''));
+          exit;
+        }
+        // 移除附加投稿碼（立即失效；常駐碼另走 rotate）
+        if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'delcode') {
+          need_csrf($csrf);
+          $p = preg_replace('/[^a-z0-9_-]/', '', $_POST['project'] ?? '');
+          $dc = preg_replace('/\D/', '', (string)($_POST['code_del'] ?? ''));
+          if ($p !== '' && $dc !== '' && $canProject($p)) {
+            codes_save($cfg, $p, array_values(array_filter(codes_load($cfg, $p), fn($e) => (string)($e['code'] ?? '') !== $dc)));
+          }
+          header('Location: ?api=admin' . ($scopeProject !== '' ? '&project=' . urlencode($scopeProject) : ''));
+          exit;
         }
         // 移除投稿身分（含分享連結建立的、使用者自行設定的皆可）
         if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'delcontrib') {
@@ -343,6 +390,40 @@ if (!$authed) {
           if ($p !== '' && $cid !== '' && $canProject($p)) {
             $cd = contrib_load($cfg, $p);
             if (isset($cd[$cid])) { unset($cd[$cid]); contrib_save($cfg, $p, $cd); }
+          }
+          header('Location: ?api=admin' . ($scopeProject !== '' ? '&project=' . urlencode($scopeProject) : ''));
+          exit;
+        }
+        // 鎖定／解除鎖定某個投稿身分（PIN 投稿者用 contrib_id、匿名裝置用 owner_hash）：只擋日後投稿，不影響已投稿內容
+        if ($_SERVER['REQUEST_METHOD'] === 'POST' && in_array(($_POST['action'] ?? ''), ['blockid', 'unblockid'], true)) {
+          need_csrf($csrf);
+          $p = preg_replace('/[^a-z0-9_-]/', '', $_POST['project'] ?? '');
+          $kind = ($_POST['kind'] ?? '') === 'owner' ? 'owner' : 'contrib';
+          $key = (string)($_POST['key'] ?? '');
+          if ($p !== '' && $key !== '' && $canProject($p)) {
+            if (($_POST['action']) === 'blockid') block_add($cfg, $p, $kind === 'owner' ? $key : null, $kind === 'contrib' ? $key : null);
+            else block_remove($cfg, $p, $kind === 'owner' ? $key : null, $kind === 'contrib' ? $key : null);
+          }
+          header('Location: ?api=admin' . ($scopeProject !== '' ? '&project=' . urlencode($scopeProject) : ''));
+          exit;
+        }
+        // 刪除某身分的全部投稿：跟單筆刪除同一權限規則（動別人的東西預設限主 PIN，或已授權 delete_others 的專案 PIN）
+        if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'delbyid') {
+          need_csrf($csrf);
+          $p = preg_replace('/[^a-z0-9_-]/', '', $_POST['project'] ?? '');
+          $field = ($_POST['kind'] ?? '') === 'owner' ? 'owner_hash' : 'contrib_id';
+          $key = (string)($_POST['key'] ?? '');
+          if ($p !== '' && $key !== '' && ($master || ($p === $reqProject && admin_perm($cfg, $p, 'delete_others')))) {
+            foreach (store_delete_by($cfg, $p, $field, $key) as $removed) {
+              if (!empty($removed['photo'])) {
+                $pp = photo_abs_path($cfg, $removed['photo']);
+                if ($pp) {
+                  @unlink($pp);
+                  $ppBase = preg_replace('/\.[A-Za-z0-9]+$/', '', $pp);
+                  foreach (['webp', 'jpg', 'png'] as $te) @unlink($ppBase . '_t.' . $te);
+                }
+              }
+            }
           }
           header('Location: ?api=admin' . ($scopeProject !== '' ? '&project=' . urlencode($scopeProject) : ''));
           exit;
@@ -426,7 +507,7 @@ if (!$authed) {
             // 2) 統計 / 投稿碼（僅覆蓋模式才蓋掉）
             if ($mode === 'replace') {
               foreach ($entries as $nm => $content) {
-                if (preg_match('#^projects/([a-z0-9_-]+)/(stats\.json|code\.txt)$#', str_replace('\\', '/', $nm), $mm)) @file_put_contents(project_dir($cfg, $mm[1]) . '/' . $mm[2], $content, LOCK_EX);
+                if (preg_match('#^projects/([a-z0-9_-]+)/(stats\.json|code\.txt|codes\.json|contrib\.json)$#', str_replace('\\', '/', $nm), $mm)) @file_put_contents(project_dir($cfg, $mm[1]) . '/' . $mm[2], $content, LOCK_EX);
                 elseif ($nm === 'data/admin_pins.json') {
                   @file_put_contents(pins_file($cfg), $content, LOCK_EX);
                 }
@@ -559,46 +640,121 @@ if (!$authed) {
       box-shadow: var(--sh)
     }
 
-    .code-card {
-      display: flex;
-      gap: 18px;
-      align-items: flex-start;
-      flex-wrap: wrap;
-      padding: 16px 18px;
-      margin-bottom: 12px
+    /* 投稿碼：一碼一張卡，排成 grid */
+    .code-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 12px;
+      margin-top: 8px
     }
 
-    .code-card .qr {
+    .codecard {
+      display: flex;
+      gap: 14px;
+      align-items: flex-start;
+      padding: 14px 16px
+    }
+
+    .codecard .qr, .sharenew .qr {
       background: #fff;
       padding: 6px;
       border-radius: 12px;
       flex: none;
-      width: 120px;
-      height: 120px
+      width: 84px;
+      height: 84px;
+      cursor: zoom-in
     }
 
-    .code-card .qr svg {
+    /* 點 QR 展開全螢幕，方便現場給人掃描 */
+    .qr-modal {
+      position: fixed;
+      inset: 0;
+      z-index: 999;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(0, 0, 0, .78);
+      padding: 24px
+    }
+
+    .qr-modal .qr-modal-card {
+      background: #fff;
+      border-radius: 28px;
+      padding: 36px 32px;
+      max-width: min(90vw, 440px);
+      width: 100%;
+      text-align: center;
+      box-shadow: 0 24px 70px rgba(0, 0, 0, .45)
+    }
+
+    .qr-modal .qr-modal-title {
+      font-size: 1.0625rem;
+      font-weight: 800;
+      color: #1a1a1a;
+      margin-bottom: 4px
+    }
+
+    .qr-modal .qr-modal-guide {
+      font-size: 0.8125rem;
+      color: #666;
+      margin-bottom: 16px
+    }
+
+    .qr-modal .qr-modal-code {
+      margin-top: 16px;
+      font-family: ui-monospace, Consolas, monospace;
+      font-size: 1.75rem;
+      font-weight: 700;
+      letter-spacing: .08em;
+      color: #1a1a1a
+    }
+
+    .qr-modal .qr-modal-box {
+      width: 100%;
+      aspect-ratio: 1;
+    }
+
+    .qr-modal .qr-modal-box svg {
       width: 100%;
       height: 100%;
       display: block
     }
 
-    .code-info {
-      flex: 1;
-      min-width: 220px
-    }
-
-    .code-info .pill {
-      font-size: 0.75rem;
-      color: var(--muted);
-      margin-bottom: 6px
-    }
-
-    .big {
+    .qr-modal .qr-modal-url {
+      margin-top: 14px;
       font-family: ui-monospace, Consolas, monospace;
-      font-size: 1.875rem;
-      font-weight: 800;
-      letter-spacing: 4px
+      font-size: 0.75rem;
+      color: #444;
+      word-break: break-all
+    }
+
+    .qr-modal .qr-modal-hint {
+      margin-top: 10px;
+      font-size: 0.75rem;
+      color: #888
+    }
+
+    .codecard .qr svg, .sharenew .qr svg {
+      width: 100%;
+      height: 100%;
+      display: block
+    }
+
+    .codecard-info {
+      flex: 1;
+      min-width: 0
+    }
+
+    /* 身分管理：投稿者／管理 PIN 並列 */
+    .idgrid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 16px;
+      margin-top: 8px
+    }
+
+    .idgroup {
+      min-width: 0
     }
 
     .invite {
@@ -613,30 +769,19 @@ if (!$authed) {
       border: 1px solid var(--line)
     }
 
-    .acts {
-      display: flex;
-      flex-direction: column;
-      gap: 8px
-    }
-
     .row {
       display: flex;
       gap: 6px;
       align-items: center;
+      flex-wrap: wrap;
       margin-top: 8px
     }
 
     .metaedit {
-      margin-top: 12px;
-      border-top: 1px solid var(--line);
-      padding-top: 10px
+      display: contents
     }
 
     .metaedit>summary {
-      cursor: pointer;
-      font-size: 0.7813rem;
-      font-weight: 600;
-      color: var(--muted);
       list-style: none
     }
 
@@ -644,15 +789,14 @@ if (!$authed) {
       display: none
     }
 
-    .metaedit>summary:hover {
-      color: var(--fg)
-    }
-
     .metaform {
       display: flex;
       flex-direction: column;
       gap: 8px;
-      margin-top: 10px
+      flex-basis: 100%;
+      margin-top: 10px;
+      border-top: 1px solid var(--line);
+      padding-top: 10px
     }
 
     .metaform label {
@@ -682,7 +826,58 @@ if (!$authed) {
       color: var(--fg);
       padding: 7px 10px;
       font-size: 0.8125rem;
-      width: 140px
+      flex: 1 1 140px;
+      min-width: 120px
+    }
+
+    .row input[type="datetime-local"] {
+      flex-basis: 180px
+    }
+
+    .row input[type="number"] {
+      flex: 0 1 140px
+    }
+
+    .row label.fieldlabel {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      font-size: 0.6875rem;
+      color: var(--muted);
+      flex: 1 1 140px;
+      min-width: 120px
+    }
+
+    .row label.fieldlabel input {
+      width: 100%
+    }
+
+    .expirywidget {
+      display: flex;
+      flex-direction: column;
+      gap: 4px
+    }
+
+    .expirychips {
+      display: flex;
+      gap: 4px;
+      flex-wrap: wrap
+    }
+
+    .chip {
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: var(--card);
+      color: var(--muted);
+      font-size: 0.6875rem;
+      padding: 3px 9px;
+      cursor: pointer
+    }
+
+    .chip.on {
+      background: var(--accent);
+      color: var(--accent-fg);
+      border-color: var(--accent)
     }
 
     .btn {
@@ -953,6 +1148,10 @@ if (!$authed) {
       gap: 4px
     }
 
+    .pinchip-block.blocked {
+      border-color: var(--danger)
+    }
+
     .permrow {
       display: flex;
       gap: 4px;
@@ -976,10 +1175,92 @@ if (!$authed) {
       border-color: var(--accent)
     }
 
-    .sharebox {
+    /* 存取與權限：投稿碼卡片 grid + 身分管理（投稿者／管理PIN）grid，見下方 .code-grid / .idgrid */
+    .sechead {
+      font-size: 0.8125rem;
+      font-weight: 700;
+      margin: 2px 0 4px
+    }
+
+    .sechead .fa-solid {
+      color: var(--accent);
+      margin-right: 4px
+    }
+
+    .projhead {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin: 22px 0 10px
+    }
+
+    .projactions {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      flex: 1 1 240px;
+      gap: 8px;
+      flex-wrap: wrap
+    }
+
+    .projhead .projtitle {
+      font-size: 0.9375rem;
+      font-weight: 700
+    }
+
+    /* 剛建立的分享連結（accent 框）：QR＋連結並排 */
+    .sharenew {
+      padding: 12px 14px;
       margin-top: 10px;
-      border-top: 1px solid var(--line);
-      padding-top: 10px
+      border-color: var(--accent)
+    }
+
+    .sharenew-body {
+      display: flex;
+      gap: 14px;
+      align-items: flex-start;
+      flex-wrap: wrap;
+      margin-top: 8px
+    }
+
+    .sharenew-info {
+      flex: 1;
+      min-width: 220px
+    }
+
+    .sharenew-info .invite {
+      margin-top: 0
+    }
+
+    /* 遮罩的 PIN／碼：按眼睛切換顯示 */
+    .secretwrap {
+      display: inline-flex;
+      align-items: center;
+      gap: 2px
+    }
+
+    .eyebtn {
+      background: none;
+      border: none;
+      color: var(--muted);
+      cursor: pointer;
+      font-size: 0.75rem;
+      padding: 0 3px
+    }
+
+    .eyebtn:hover {
+      color: var(--fg)
+    }
+
+    /* pinchip 內的小型連結按鈕（複製邀請連結等） */
+    .chipbtn {
+      background: none;
+      border: none;
+      color: var(--accent);
+      cursor: pointer;
+      font-size: 0.75rem;
+      padding: 0 3px
     }
 
     /* ── 專案總覽（scope=全部）：一張地圖一張精簡卡，細節請點進去 ── */
@@ -1130,7 +1411,7 @@ if (!$authed) {
 
     <?php
       // 表單送出後回到對應分頁，避免每次都跳回總覽
-      $paneOfAction = ['sharelink' => 'access', 'addpin' => 'access', 'delpin' => 'access', 'setperm' => 'access', 'delcontrib' => 'access', 'meta' => 'access', 'rotate' => 'access', 'delete' => 'records', 'import' => 'tools'];
+      $paneOfAction = ['sharelink' => 'access', 'addpin' => 'access', 'delpin' => 'access', 'setperm' => 'access', 'delinvite' => 'access', 'delcontrib' => 'access', 'delcode' => 'access', 'meta' => 'access', 'rotate' => 'access', 'delete' => 'records', 'import' => 'tools'];
       $forcePane = $paneOfAction[$_POST['action'] ?? ''] ?? '';
     ?>
     <div class="subnav">
@@ -1147,7 +1428,7 @@ if (!$authed) {
       <div class="card" style="padding:16px 18px">
         <div class="pinlist">
           <span class="pinchip">主設定 · <span class="mono">config</span></span>
-          <?php foreach ($mpins as $e): ?><span class="pinchip"><?= $esc(($e['label'] ?? '') !== '' ? $e['label'] : '（無暱稱）') ?> · <span class="mono"><?= $esc($e['pin'] ?? '') ?></span>
+          <?php foreach ($mpins as $e): ?><span class="pinchip"><?= $esc(($e['label'] ?? '') !== '' ? $e['label'] : '（無暱稱）') ?> · <?= $secret($e['pin'] ?? '') ?>
               <form method="post"><input type="hidden" name="csrf" value="<?= $esc_csrf ?>"><input type="hidden" name="action" value="delpin"><input type="hidden" name="scope" value="master"><input type="hidden" name="pin_del" value="<?= $esc($e['pin'] ?? '') ?>"><button class="x" title="移除">×</button></form>
             </span>
           <?php endforeach; ?>
@@ -1158,105 +1439,21 @@ if (!$authed) {
       </div>
     <?php endif; ?>
 
-    <h2>投稿碼 · 邀請<?= $master ? ' · 專案 PIN' : '' ?></h2>
+    <h2>專案存取與權限</h2>
     <?php foreach ($viewProjects as $p):
       $meta = json_decode((string)@file_get_contents($cfg['projects_dir'] . '/' . $p . '/meta.json'), true);
-      $code = project_code($cfg, $p, is_array($meta) ? $meta : null);
-      $ppins = $master ? (pins_load($cfg)['projects'][$p] ?? []) : [];
-      $invite = $origin . $basePath . $p . '?code=' . $code;
+      $gated = !empty($meta['gated']);
+      $ppinsAll = pins_load($cfg)['projects'][$p] ?? [];
+      $realPins = array_values(array_filter($ppinsAll, fn($e) => ($e['kind'] ?? 'pin') !== 'invite'));
+      $invites = array_values(array_filter($ppinsAll, fn($e) => ($e['kind'] ?? 'pin') === 'invite'));
     ?>
-      <div class="card code-card">
-        <?php if ($code !== ''): ?><div class="qr" data-url="<?= $esc($invite) ?>"></div><?php endif; ?>
-        <div class="code-info">
-          <div class="pill"><i class="fa-solid fa-map-location-dot"></i> <?= $esc($meta['title'] ?? $p) ?>（<?= $esc($p) ?>）</div>
-          <?php if ($code !== ''): ?><div class="big"><?= $esc($code) ?></div>
-            <div class="invite"><?= $esc($invite) ?></div><?php else: ?><div class="badge">此地圖未設投稿碼（meta.json 的 "gated": true 才需要）</div><?php endif; ?>
-          <?php if ($master):
-            $permLabels = ['delete_others' => '刪別人投稿', 'edit_others' => '編別人照片', 'edit_points' => '編定位點', 'delegate_admin' => '可建管理PIN連結'];
-          ?>
-            <div class="badge" style="margin-top:10px">專案 PIN（房間鑰匙）</div>
-            <div class="pinlist">
-              <?php foreach ($ppins as $e): $pid = (string)($e['id'] ?? ''); $perms = $e['perms'] ?? pin_default_perms(); ?>
-                <div class="pinchip pinchip-block">
-                  <div><?= $esc(($e['label'] ?? '') !== '' ? $e['label'] : '（無暱稱）') ?> · <span class="mono"><?= $esc($e['pin'] ?? '') ?></span>
-                    <?php if (!empty($e['via_link'])): ?><span class="tag">連結建立</span><?php endif; ?>
-                    <form method="post" style="display:inline"><input type="hidden" name="csrf" value="<?= $esc_csrf ?>"><input type="hidden" name="action" value="delpin"><input type="hidden" name="scope" value="project"><input type="hidden" name="project" value="<?= $esc($p) ?>"><input type="hidden" name="pin_del" value="<?= $esc($e['pin'] ?? '') ?>"><button class="x" title="移除">×</button></form>
-                  </div>
-                  <?php if (!empty($e['expires_at']) || (isset($e['max_uses']) && $e['max_uses'] !== null)): ?>
-                  <div class="badge">
-                    <?= !empty($e['expires_at']) ? '到期：' . $esc(substr((string)$e['expires_at'], 0, 16)) : '不限期' ?>
-                    ・<?= isset($e['max_uses']) && $e['max_uses'] !== null ? '已用 ' . (int)($e['used_count'] ?? 0) . '/' . (int)$e['max_uses'] : '不限次數' ?>
-                  </div>
-                  <?php endif; ?>
-                  <?php if ($pid !== ''): ?>
-                  <div class="permrow">
-                    <?php foreach ($permLabels as $pk => $ptext): $on = !empty($perms[$pk]); ?>
-                      <form method="post" style="display:inline"><input type="hidden" name="csrf" value="<?= $esc_csrf ?>"><input type="hidden" name="action" value="setperm"><input type="hidden" name="scope" value="project"><input type="hidden" name="project" value="<?= $esc($p) ?>"><input type="hidden" name="pin_id" value="<?= $esc($pid) ?>"><input type="hidden" name="perm" value="<?= $esc($pk) ?>"><input type="hidden" name="on" value="<?= $on ? '0' : '1' ?>">
-                        <button class="permtoggle<?= $on ? ' on' : '' ?>" title="下放權限給此專案 PIN；預設關閉，只有主 PIN 能切換"><?= $on ? '✓ ' : '' ?><?= $esc($ptext) ?></button>
-                      </form>
-                    <?php endforeach; ?>
-                  </div>
-                  <?php endif; ?>
-                </div>
-              <?php endforeach; ?>
-            </div>
-            <form class="row" method="post"><input type="hidden" name="csrf" value="<?= $esc_csrf ?>"><input type="hidden" name="action" value="addpin"><input type="hidden" name="scope" value="project"><input type="hidden" name="project" value="<?= $esc($p) ?>">
-              <input name="pin_new" placeholder="新專案 PIN" autocomplete="off"><input name="label" placeholder="暱稱（可選）" autocomplete="off"><button class="btn">新增</button>
-            </form>
-            <div class="hint" style="margin-top:6px">新增的專案 PIN 預設不具備下方任何權限，需逐項開啟才會下放。</div>
-          <?php endif; ?>
-          <?php if ($canProject($p)):
-            $canDelegateAdmin = $master || admin_perm($cfg, $p, 'delegate_admin');
-            $cList = contrib_load($cfg, $p);
-          ?>
-            <div class="sharebox">
-              <div class="badge">分享編輯連結</div>
-              <form class="row" method="post" style="flex-wrap:wrap">
-                <input type="hidden" name="csrf" value="<?= $esc_csrf ?>"><input type="hidden" name="action" value="sharelink"><input type="hidden" name="project" value="<?= $esc($p) ?>">
-                <select name="kind" style="border:1px solid var(--line);border-radius:10px;background:var(--bg);color:var(--fg);padding:7px 10px;font-size:0.8125rem">
-                  <option value="contrib_anon">投稿PIN · 僅限匿名</option>
-                  <option value="contrib_named">投稿PIN · 私人PIN</option>
-                  <?php if ($canDelegateAdmin): ?><option value="admin">管理PIN</option><?php endif; ?>
-                </select>
-                <input name="pin_new" placeholder="自訂 PIN（留空自動產生）" autocomplete="off">
-                <input name="label" placeholder="暱稱（可選）" autocomplete="off">
-                <input name="expires_at" type="datetime-local" title="到期時間（可留空＝不限期）">
-                <input name="max_uses" type="number" min="1" placeholder="次數上限（可留空）" style="width:110px">
-                <button class="btn">建立連結</button>
-              </form>
-              <div class="hint" style="margin-top:6px">到期時間／次數上限只擋「新增投稿」，超過後同一身分仍可編輯或移除自己已投稿過的內容。「僅限匿名」不顯示 PIN，只能靠連結兌換身分。<?= $canDelegateAdmin ? '' : '（「管理PIN」須由主要管理者，或已被授權「可建管理PIN連結」的專案管理者才能建立）' ?></div>
-
-              <?php if ($justCreatedShare && $justCreatedShare['project'] === $p):
-                $kindLabel = ['contrib_anon' => '投稿PIN · 僅限匿名', 'contrib_named' => '投稿PIN · 私人PIN', 'admin' => '管理PIN'][$justCreatedShare['kind']];
-              ?>
-                <div class="card" style="padding:12px 14px;margin-top:10px;border-color:var(--accent)">
-                  <div class="badge"><i class="fa-solid fa-circle-check"></i> 已建立：<?= $esc($kindLabel) ?>（連結只顯示這一次，請立即複製）</div>
-                  <div class="invite"><?= $esc($justCreatedShare['url']) ?></div>
-                  <div class="row"><button type="button" class="btn" data-copy="<?= $esc($justCreatedShare['url']) ?>"><i class="fa-solid fa-copy"></i> 複製連結</button></div>
-                  <?php if (isset($justCreatedShare['pin'])): ?><div class="hint" style="margin-top:6px">PIN：<span class="mono"><?= $esc($justCreatedShare['pin']) ?></span>（可另外告知對方，供他在其他裝置手動輸入使用）</div><?php endif; ?>
-                </div>
-              <?php endif; ?>
-
-              <?php if ($cList): ?>
-                <div class="pinlist" style="margin-top:10px">
-                  <?php foreach ($cList as $cid => $ce): ?>
-                    <div class="pinchip pinchip-block">
-                      <div><?= $esc(($ce['label'] ?? '') !== '' ? $ce['label'] : '（無暱稱投稿者）') ?> · <span class="mono"><?= $esc($cid) ?></span>
-                        <?php if (!empty($ce['via_link'])): ?><span class="tag">連結建立</span><?php endif; ?>
-                        <form method="post" style="display:inline"><input type="hidden" name="csrf" value="<?= $esc_csrf ?>"><input type="hidden" name="action" value="delcontrib"><input type="hidden" name="project" value="<?= $esc($p) ?>"><input type="hidden" name="contrib_id" value="<?= $esc($cid) ?>"><button class="x" title="移除此投稿身分（不影響已投稿內容）">×</button></form>
-                      </div>
-                      <div class="badge">
-                        <?= !empty($ce['expires_at']) ? '到期：' . $esc(substr((string)$ce['expires_at'], 0, 16)) : '不限期' ?>
-                        ・<?= isset($ce['max_uses']) && $ce['max_uses'] !== null ? '已用 ' . (int)($ce['used_count'] ?? 0) . '/' . (int)$ce['max_uses'] : '不限次數' ?>
-                      </div>
-                    </div>
-                  <?php endforeach; ?>
-                </div>
-              <?php endif; ?>
-            </div>
-          <?php endif; ?>
+      <div class="projhead">
+        <div class="projtitle"><i class="fa-solid fa-map-location-dot"></i> <?= $esc($meta['title'] ?? $p) ?>（<?= $esc($p) ?>）</div>
+        <div class="projactions">
+          <a class="btn" href="?api=admin&backup=project&project=<?= $esc($p) ?>"><i class="fa-solid fa-download"></i> 備份此專案</a>
+          <?php if ($canProject($p)): ?>
           <details class="metaedit">
-            <summary><i class="fa-solid fa-pen-to-square"></i> 編輯專案描述</summary>
+            <summary class="btn"><i class="fa-solid fa-pen-to-square"></i> 編輯專案描述</summary>
             <form method="post" class="metaform">
               <input type="hidden" name="csrf" value="<?= $esc_csrf ?>"><input type="hidden" name="action" value="meta"><input type="hidden" name="project" value="<?= $esc($p) ?>">
               <label>標題<input name="title" maxlength="300" value="<?= $esc($meta['title'] ?? '') ?>" placeholder="地圖標題"></label>
@@ -1268,14 +1465,213 @@ if (!$authed) {
               <button class="btn primary"><i class="fa-solid fa-floppy-disk"></i> 儲存描述</button>
             </form>
           </details>
-        </div>
-        <div class="acts">
-          <a class="btn" href="?api=admin&backup=project&project=<?= $esc($p) ?>"><i class="fa-solid fa-download"></i> 備份此專案</a>
-          <?php if ($code !== ''): ?><form method="post" style="margin:0"><input type="hidden" name="csrf" value="<?= $esc_csrf ?>"><input type="hidden" name="action" value="rotate"><input type="hidden" name="project" value="<?= $esc($p) ?>">
-              <button class="btn danger" onclick="return confirm('重新產生會讓舊碼與邀請連結失效，確定？')"><i class="fa-solid fa-rotate"></i> 重新產生碼</button>
-            </form><?php endif; ?>
+          <?php endif; ?>
         </div>
       </div>
+
+      <?php if ($canProject($p)):
+        $canDelegateAdmin = $master || admin_perm($cfg, $p, 'delegate_admin');
+        $cList = contrib_load($cfg, $p);
+        $codesList = codes_load($cfg, $p);
+        $blocked = blocked_load($cfg, $p);
+        // 依實際投稿紀錄統計每個身分的則數：有 PIN 身分的算 contrib_id，其餘（含匿名）算 owner_hash 分組。
+        $contribCounts = [];
+        $ownerGroups = [];
+        foreach ($rows as $r) {
+          if (($r['project'] ?? '') !== $p) continue;
+          $cid = $r['contrib_id'] ?? null;
+          if ($cid) { $contribCounts[$cid] = ($contribCounts[$cid] ?? 0) + 1; continue; }
+          $oh = $r['owner_hash'] ?? null;
+          if (!$oh) continue;
+          if (!isset($ownerGroups[$oh])) $ownerGroups[$oh] = ['count' => 0, 'last_name' => '', 'last_at' => ''];
+          $ownerGroups[$oh]['count']++;
+          $at = (string)($r['created_at'] ?? '');
+          if ($at > $ownerGroups[$oh]['last_at']) { $ownerGroups[$oh]['last_at'] = $at; $ownerGroups[$oh]['last_name'] = (string)($r['name'] ?? ''); }
+        }
+        $canDeleteOthers = $master || admin_perm($cfg, $p, 'delete_others');
+        // 剛建立的憑證：只在本次回應顯示一次，畫在所屬區塊內（屬「正在分享」，維持明碼）
+        $justHere = fn(...$kinds) => $justCreatedShare && $justCreatedShare['project'] === $p && in_array($justCreatedShare['kind'], $kinds, true);
+        $shareNew = function (array $s, string $kindLabel) use ($esc) { ?>
+          <div class="card sharenew">
+            <div class="badge"><i class="fa-solid fa-circle-check"></i> 已建立：<?= $esc($kindLabel) ?>——把連結或 QR 給對方<?= $s['kind'] === 'code' ? '' : '（只顯示這一次，離開頁面就不再出現）' ?></div>
+            <div class="sharenew-body">
+              <div class="qr" data-url="<?= $esc($s['url']) ?>" data-title="<?= $esc($meta['title'] ?? $p) ?>" data-code="<?= isset($s['code']) ? $esc($s['code']) : '' ?>"></div>
+              <div class="sharenew-info">
+                <div class="invite"><?= $esc($s['url']) ?></div>
+                <div class="row"><button type="button" class="btn" data-copy="<?= $esc($s['url']) ?>"><i class="fa-solid fa-copy"></i> 複製連結</button></div>
+                <?php if (isset($s['code'])): ?><div class="hint" style="margin-top:6px">碼：<span class="mono"><?= $esc($s['code']) ?></span>（也可口頭告知，對方在地圖的解鎖視窗輸入）</div><?php endif; ?>
+                <?php if (isset($s['pin'])): ?><div class="hint" style="margin-top:6px">PIN：<span class="mono"><?= $esc($s['pin']) ?></span>（可另外告知對方，供他在其他裝置手動輸入使用）</div><?php endif; ?>
+              </div>
+            </div>
+          </div>
+        <?php };
+      ?>
+        <!-- 投稿碼：一碼一張卡，連結／QR／限制／用量都在同一張卡上 -->
+        <div class="sechead"><i class="fa-solid fa-ticket"></i> 投稿碼<?= $gated ? '' : '（此地圖目前未啟用，任何人皆可直接上傳；碼會在 meta.json 設 "gated": true 後生效）' ?></div>
+        <?php if ($codesList): ?>
+          <div class="code-grid">
+            <?php foreach ($codesList as $ce2): $cc = (string)($ce2['code'] ?? ''); $inviteC = $mapUrl($p) . '?code=' . $cc; ?>
+              <div class="card codecard">
+                <div class="qr" data-url="<?= $esc($inviteC) ?>" data-title="<?= $esc($meta['title'] ?? $p) ?>" data-code="<?= $esc($cc) ?>"></div>
+                <div class="codecard-info">
+                  <div><?= $esc(($ce2['label'] ?? '') !== '' ? $ce2['label'] : '（無暱稱）') ?> · <?= $secret($cc) ?>
+                    <button type="button" class="chipbtn" data-copy="<?= $esc($inviteC) ?>" title="複製此碼的邀請連結"><i class="fa-solid fa-link"></i></button>
+                    <form method="post" style="display:inline"><input type="hidden" name="csrf" value="<?= $esc_csrf ?>"><input type="hidden" name="action" value="delcode"><input type="hidden" name="project" value="<?= $esc($p) ?>"><input type="hidden" name="code_del" value="<?= $esc($cc) ?>"><button class="x" title="移除此投稿碼（立即失效，不影響已投稿內容）">×</button></form>
+                  </div>
+                  <div class="invite"><?= $esc($inviteC) ?></div>
+                  <div class="badge">
+                    <?= !empty($ce2['expires_at']) ? '到期：' . $esc(substr((string)$ce2['expires_at'], 0, 16)) : '不限期' ?>
+                    ・<?= isset($ce2['max_uses']) && $ce2['max_uses'] !== null ? '已傳 ' . (int)($ce2['used_count'] ?? 0) . '/' . (int)$ce2['max_uses'] . ' 張' : '不限次數（已傳 ' . (int)($ce2['used_count'] ?? 0) . ' 張）' ?>
+                  </div>
+                </div>
+              </div>
+            <?php endforeach; ?>
+          </div>
+        <?php else: ?>
+          <div class="emptystate">尚無投稿碼，用下方表單新增第一組</div>
+        <?php endif; ?>
+        <form class="row expirywidget-row" method="post" style="flex-wrap:wrap;margin-top:8px">
+          <input type="hidden" name="csrf" value="<?= $esc_csrf ?>"><input type="hidden" name="action" value="sharelink"><input type="hidden" name="kind" value="code"><input type="hidden" name="project" value="<?= $esc($p) ?>">
+          <label class="fieldlabel">投稿碼<input name="pin_new" inputmode="numeric" autocomplete="off" placeholder="留空自動產生"></label>
+          <label class="fieldlabel">暱稱<input name="label" autocomplete="off" placeholder="可選"></label>
+          <label class="fieldlabel">到期時間
+            <div class="expirywidget">
+              <div class="expirychips">
+                <button type="button" class="chip" data-preset="none">不限期</button>
+                <button type="button" class="chip" data-preset="1h">1小時</button>
+                <button type="button" class="chip" data-preset="1d">1天</button>
+                <button type="button" class="chip" data-preset="1w">1週</button>
+              </div>
+              <input name="expires_at" type="datetime-local" class="expirycustom" title="到期時間（留空＝不限期）">
+            </div>
+          </label>
+          <label class="fieldlabel">張數上限<input name="max_uses" type="number" min="1" placeholder="留空＝不限"></label>
+          <button class="btn"><i class="fa-solid fa-plus"></i> 新增投稿碼</button>
+        </form>
+        <?php if ($justHere('code')) $shareNew($justCreatedShare, '投稿碼'); ?>
+
+        <!-- 身分管理：投稿者（純自助）與管理 PIN 並列 -->
+        <div class="sechead" style="margin-top:24px"><i class="fa-solid fa-users"></i> 身分管理</div>
+        <div class="idgrid">
+          <div class="idgroup">
+            <div class="sechead"><i class="fa-solid fa-id-badge"></i> 投稿者</div>
+            <?php if ($cList || $ownerGroups): ?>
+              <div class="pinlist">
+                <?php foreach ($cList as $cid => $ce):
+                  $cnt = $contribCounts[$cid] ?? 0;
+                  $isBlocked = in_array($cid, $blocked['contribs'], true);
+                ?>
+                  <div class="pinchip pinchip-block<?= $isBlocked ? ' blocked' : '' ?>">
+                    <div><?= $esc(($ce['label'] ?? '') !== '' ? $ce['label'] : '（無暱稱投稿者）') ?> · <span class="mono"><?= $esc($cid) ?></span> · <?= $cnt ?> 則<?php if ($isBlocked): ?> · <span class="tag">已鎖定</span><?php endif; ?>
+                      <form method="post" style="display:inline"><input type="hidden" name="csrf" value="<?= $esc_csrf ?>"><input type="hidden" name="action" value="delcontrib"><input type="hidden" name="project" value="<?= $esc($p) ?>"><input type="hidden" name="contrib_id" value="<?= $esc($cid) ?>"><button class="x" title="撤銷此投稿身分（不影響已投稿內容，也不擋日後用投稿碼再次上傳）">×</button></form>
+                    </div>
+                    <div class="permrow">
+                      <form method="post" style="display:inline"><input type="hidden" name="csrf" value="<?= $esc_csrf ?>"><input type="hidden" name="action" value="<?= $isBlocked ? 'unblockid' : 'blockid' ?>"><input type="hidden" name="project" value="<?= $esc($p) ?>"><input type="hidden" name="kind" value="contrib"><input type="hidden" name="key" value="<?= $esc($cid) ?>"><button class="permtoggle<?= $isBlocked ? ' on' : '' ?>" title="鎖定後此身分無法再投稿，不影響已投稿內容"><?= $isBlocked ? '✓ 已鎖定' : '鎖定' ?></button></form>
+                      <?php if ($cnt > 0 && $canDeleteOthers): ?>
+                        <form method="post" style="display:inline" onsubmit="return confirm('確定刪除此身分的全部 <?= $cnt ?> 則投稿？此動作無法復原')"><input type="hidden" name="csrf" value="<?= $esc_csrf ?>"><input type="hidden" name="action" value="delbyid"><input type="hidden" name="project" value="<?= $esc($p) ?>"><input type="hidden" name="kind" value="contrib"><input type="hidden" name="key" value="<?= $esc($cid) ?>"><button class="permtoggle" title="刪除此身分的全部投稿"><i class="fa-solid fa-trash"></i> 刪除全部</button></form>
+                      <?php endif; ?>
+                    </div>
+                  </div>
+                <?php endforeach; ?>
+                <?php foreach ($ownerGroups as $oh => $og):
+                  $isBlocked = in_array($oh, $blocked['owners'], true);
+                  $nameNote = ($og['last_name'] !== '' && $og['last_name'] !== '匿名') ? '曾用「' . $esc($og['last_name']) . '」' : '匿名投稿者';
+                ?>
+                  <div class="pinchip pinchip-block<?= $isBlocked ? ' blocked' : '' ?>">
+                    <div>（<?= $nameNote ?>） · <span class="mono"><?= $esc(substr($oh, 0, 8)) ?></span> · <?= $og['count'] ?> 則<?php if ($isBlocked): ?> · <span class="tag">已鎖定</span><?php endif; ?></div>
+                    <div class="permrow">
+                      <form method="post" style="display:inline"><input type="hidden" name="csrf" value="<?= $esc_csrf ?>"><input type="hidden" name="action" value="<?= $isBlocked ? 'unblockid' : 'blockid' ?>"><input type="hidden" name="project" value="<?= $esc($p) ?>"><input type="hidden" name="kind" value="owner"><input type="hidden" name="key" value="<?= $esc($oh) ?>"><button class="permtoggle<?= $isBlocked ? ' on' : '' ?>" title="鎖定後此裝置無法再投稿，不影響已投稿內容"><?= $isBlocked ? '✓ 已鎖定' : '鎖定' ?></button></form>
+                      <?php if ($canDeleteOthers): ?>
+                        <form method="post" style="display:inline" onsubmit="return confirm('確定刪除此身分的全部 <?= $og['count'] ?> 則投稿？此動作無法復原')"><input type="hidden" name="csrf" value="<?= $esc_csrf ?>"><input type="hidden" name="action" value="delbyid"><input type="hidden" name="project" value="<?= $esc($p) ?>"><input type="hidden" name="kind" value="owner"><input type="hidden" name="key" value="<?= $esc($oh) ?>"><button class="permtoggle" title="刪除此身分的全部投稿"><i class="fa-solid fa-trash"></i> 刪除全部</button></form>
+                      <?php endif; ?>
+                    </div>
+                  </div>
+                <?php endforeach; ?>
+              </div>
+            <?php else: ?>
+              <div class="emptystate">尚無投稿紀錄</div>
+            <?php endif; ?>
+          </div>
+
+          <?php if ($master || $canDelegateAdmin): ?>
+          <div class="idgroup">
+            <div class="sechead"><i class="fa-solid fa-user-gear"></i> 管理 PIN</div>
+            <?php if ($realPins): ?>
+              <div class="pinlist">
+                <?php if ($master):
+                  $permLabels = ['delete_others' => '刪別人投稿', 'edit_others' => '編別人照片', 'edit_points' => '編定位點', 'delegate_admin' => '可建管理PIN連結'];
+                  foreach ($realPins as $e): $pid = (string)($e['id'] ?? ''); $perms = $e['perms'] ?? pin_default_perms(); ?>
+                  <div class="pinchip pinchip-block">
+                    <div><?= $esc(($e['label'] ?? '') !== '' ? $e['label'] : '（無暱稱）') ?> · <?= $secret($e['pin'] ?? '') ?>
+                      <?php if (!empty($e['via_link'])): ?><span class="tag">邀請兌換</span><?php endif; ?>
+                      <form method="post" style="display:inline"><input type="hidden" name="csrf" value="<?= $esc_csrf ?>"><input type="hidden" name="action" value="delpin"><input type="hidden" name="scope" value="project"><input type="hidden" name="project" value="<?= $esc($p) ?>"><input type="hidden" name="pin_del" value="<?= $esc($e['pin'] ?? '') ?>"><button class="x" title="移除">×</button></form>
+                    </div>
+                    <?php if ($pid !== ''): ?>
+                    <div class="permrow">
+                      <?php foreach ($permLabels as $pk => $ptext): $on = !empty($perms[$pk]); ?>
+                        <form method="post" style="display:inline"><input type="hidden" name="csrf" value="<?= $esc_csrf ?>"><input type="hidden" name="action" value="setperm"><input type="hidden" name="scope" value="project"><input type="hidden" name="project" value="<?= $esc($p) ?>"><input type="hidden" name="pin_id" value="<?= $esc($pid) ?>"><input type="hidden" name="perm" value="<?= $esc($pk) ?>"><input type="hidden" name="on" value="<?= $on ? '0' : '1' ?>">
+                          <button class="permtoggle<?= $on ? ' on' : '' ?>" title="下放權限給此專案 PIN；預設關閉，只有主 PIN 能切換"><?= $on ? '✓ ' : '' ?><?= $esc($ptext) ?></button>
+                        </form>
+                      <?php endforeach; ?>
+                    </div>
+                    <?php endif; ?>
+                  </div>
+                <?php endforeach; else: ?>
+                  <?php foreach ($realPins as $e): ?>
+                    <span class="pinchip" title="非主要管理者只看得到暱稱，看不到 PIN"><?= $esc(($e['label'] ?? '') !== '' ? $e['label'] : '（無暱稱）') ?></span>
+                  <?php endforeach; ?>
+                <?php endif; ?>
+              </div>
+            <?php endif; ?>
+            <?php if ($master): ?>
+              <form class="row" method="post" style="flex-wrap:wrap;margin-top:8px"><input type="hidden" name="csrf" value="<?= $esc_csrf ?>"><input type="hidden" name="action" value="addpin"><input type="hidden" name="scope" value="project"><input type="hidden" name="project" value="<?= $esc($p) ?>">
+                <label class="fieldlabel">直接新增 PIN<input name="pin_new" autocomplete="off" placeholder="不產生連結、不設限"></label>
+                <label class="fieldlabel">暱稱<input name="label" autocomplete="off" placeholder="可選"></label>
+                <button class="btn"><i class="fa-solid fa-plus"></i> 直接新增</button>
+              </form>
+            <?php endif; ?>
+            <?php if ($master && $invites): ?>
+              <div class="sechead" style="margin-top:14px;font-size:0.8125rem"><i class="fa-solid fa-envelope-open-text"></i> 待兌換邀請</div>
+              <div class="pinlist">
+                <?php foreach ($invites as $e): $inviteId = (string)($e['id'] ?? ''); $inviteUrl = $mapUrl($p) . '#redeem=' . rawurlencode((string)($e['token'] ?? '')) . '&rmode=admin'; ?>
+                  <div class="pinchip pinchip-block">
+                    <div>待兌換邀請
+                      <button type="button" class="chipbtn qr-trigger" data-url="<?= $esc($inviteUrl) ?>" data-title="<?= $esc($meta['title'] ?? $p) ?>" title="顯示 QR"><i class="fa-solid fa-qrcode"></i></button>
+                      <button type="button" class="chipbtn" data-copy="<?= $esc($inviteUrl) ?>" title="複製邀請連結"><i class="fa-solid fa-link"></i></button>
+                      <form method="post" style="display:inline"><input type="hidden" name="csrf" value="<?= $esc_csrf ?>"><input type="hidden" name="action" value="delinvite"><input type="hidden" name="project" value="<?= $esc($p) ?>"><input type="hidden" name="invite_id" value="<?= $esc($inviteId) ?>"><button class="x" title="撤銷此邀請連結">×</button></form>
+                    </div>
+                    <div class="badge">
+                      <?= !empty($e['expires_at']) ? '到期：' . $esc(substr((string)$e['expires_at'], 0, 16)) : '不限期' ?>
+                      ・<?= isset($e['max_uses']) && $e['max_uses'] !== null ? '已兌換 ' . (int)($e['used_count'] ?? 0) . '/' . (int)$e['max_uses'] : '已兌換 ' . (int)($e['used_count'] ?? 0) . '（不限人數）' ?>
+                    </div>
+                  </div>
+                <?php endforeach; ?>
+              </div>
+            <?php endif; ?>
+            <?php if ($canDelegateAdmin): ?>
+              <form class="row expirywidget-row" method="post" style="flex-wrap:wrap;margin-top:8px">
+                <input type="hidden" name="csrf" value="<?= $esc_csrf ?>"><input type="hidden" name="action" value="sharelink"><input type="hidden" name="kind" value="admin"><input type="hidden" name="project" value="<?= $esc($p) ?>">
+                <label class="fieldlabel">到期時間
+                  <div class="expirywidget">
+                    <div class="expirychips">
+                      <button type="button" class="chip" data-preset="none">不限期</button>
+                      <button type="button" class="chip" data-preset="1h">1小時</button>
+                      <button type="button" class="chip" data-preset="1d">1天</button>
+                      <button type="button" class="chip" data-preset="1w">1週</button>
+                    </div>
+                    <input name="expires_at" type="datetime-local" class="expirycustom" title="到期時間（留空＝不限期）">
+                  </div>
+                </label>
+                <label class="fieldlabel">兌換人數上限<input name="max_uses" type="number" min="1" placeholder="留空＝不限"></label>
+                <button class="btn"><i class="fa-solid fa-share-nodes"></i> 建立邀請連結</button>
+              </form>
+            <?php endif; ?>
+            <?php if ($justHere('admin')) $shareNew($justCreatedShare, '管理 PIN 邀請連結'); ?>
+          </div>
+          <?php endif; ?>
+        </div>
+
+      <?php endif; ?>
     <?php endforeach; ?>
     </div><!-- /pane-access -->
 
@@ -1388,15 +1784,17 @@ if (!$authed) {
         foreach ($rows as $r):
           $refOrig = !empty($r['edit_of']) ? ($byId[$r['project'] . '/' . $r['edit_of']] ?? null) : null;
           $dispPhoto = !empty($r['photo']) ? $r['photo'] : ($refOrig['photo'] ?? null);
+          $dispThumb = !empty($r['thumb']) ? $r['thumb'] : ($refOrig['thumb'] ?? null);
           $dispExif  = is_array($r['exif'] ?? null) ? $r['exif'] : (is_array($refOrig['exif'] ?? null) ? $refOrig['exif'] : null);
           $photoUrl  = $dispPhoto ? $basePath . '?api=photo&f=' . rawurlencode($dispPhoto) : null;
+          $thumbUrl  = $dispThumb ? $basePath . '?api=photo&f=' . rawurlencode($dispThumb) : ($photoUrl !== null ? $photoUrl . '&th=1' : null);   // 縮圖預覽，點開連到原圖；舊投稿沒 thumb 欄位就請 photo.php 自動產（&th=1）
         ?>
           <tr data-row>
             <td class="mono"><?= $idx-- ?></td>
             <td><?= $esc($r['project']) ?></td>
             <td><?= $esc($r['item_num'] ?? '') ?></td>
             <td><span class="tag"><?= $esc(souliong_kind_label($r['kind'] ?? 'photo')) ?></span><?= !empty($r['edit_of']) ? '<br><span class="tag">編修</span>' : '' ?></td>
-            <td><?= $photoUrl ? '<a href="' . $esc($photoUrl) . '" target="_blank"><img loading="lazy" src="' . $esc($photoUrl) . '" alt=""></a>' : '' ?></td>
+            <td><?= $photoUrl ? '<a href="' . $esc($photoUrl) . '" target="_blank"><img loading="lazy" src="' . $esc($thumbUrl) . '" alt=""></a>' : '' ?></td>
             <td><?= $esc($r['name'] ?? '') ?></td>
             <td><?= nl2br($esc($r['comment'] ?? '')) ?></td>
             <td class="mono"><?= $esc($dispExif ? implode(' ', $dispExif) : '') ?></td>
@@ -1432,8 +1830,9 @@ if (!$authed) {
       </form>
       <div class="card section-card">
         <div class="badge"><i class="fa-solid fa-kit-medical"></i> 資料修復</div>
-        <div class="hint" style="margin-top:6px">投稿的相機資訊（EXIF）缺漏時，用「修復相機資訊」工具補齊：方式一直接由原始版本繼承，方式二上傳原始檔比對。</div>
+        <div class="hint" style="margin-top:6px">投稿的相機資訊（EXIF）缺漏時，用「修復相機資訊」工具補齊：方式一直接由原始版本繼承，方式二上傳原始檔比對。照片縮圖平時會自動產生；只有自動產生失敗（例如主機不支援 WebP）才需要「補產縮圖」。</div>
         <div class="row" style="margin-top:8px"><a class="btn" href="<?= $esc($origin . $basePath . 'exiffix') ?>"><i class="fa-solid fa-kit-medical"></i> 開啟修復相機資訊</a>
+          <a class="btn" href="<?= $esc($origin . $basePath . 'thumbfix') ?>"><i class="fa-solid fa-images"></i> 補產縮圖（備援）</a>
           <a class="btn" href="?api=admin&backup=all"><i class="fa-solid fa-download"></i> 備份全部</a></div>
       </div>
     </div><!-- /pane-tools -->
@@ -1455,7 +1854,61 @@ if (!$authed) {
         });
       } catch (e) {
         el.textContent = 'QR 產生失敗';
+        return;
       }
+      el.title = '點一下全螢幕顯示，方便給人掃描';
+      el.addEventListener('click', function() { openQrModal(el.dataset.url, el.dataset.title, el.dataset.code); });
+    });
+    document.querySelectorAll('.qr-trigger').forEach(function(btn) {
+      btn.addEventListener('click', function() { openQrModal(btn.dataset.url, btn.dataset.title, btn.dataset.code); });
+    });
+    function openQrModal(url, title, codeText) {
+      var wrap = document.createElement('div');
+      wrap.className = 'qr-modal';
+      wrap.innerHTML = '<div class="qr-modal-card">'
+        + (title ? '<div class="qr-modal-title"></div>' : '')
+        + '<div class="qr-modal-guide">請用相機或掃碼 App 掃描這個 QR</div>'
+        + '<div class="qr-modal-box"></div>'
+        + '<div class="qr-modal-url"></div>'
+        + (codeText ? '<div class="qr-modal-code"></div>' : '')
+        + '<div class="qr-modal-hint">點任意處關閉</div></div>';
+      if (title) wrap.querySelector('.qr-modal-title').textContent = title;
+      wrap.querySelector('.qr-modal-url').textContent = url;
+      if (codeText) wrap.querySelector('.qr-modal-code').textContent = codeText;
+      try {
+        var qr = qrcode(0, 'M');
+        qr.addData(url);
+        qr.make();
+        wrap.querySelector('.qr-modal-box').innerHTML = qr.createSvgTag({ cellSize: 8, margin: 2, scalable: true });
+      } catch (e) {}
+      function close() { wrap.remove(); document.removeEventListener('keydown', onKey); }
+      function onKey(e) { if (e.key === 'Escape') close(); }
+      wrap.addEventListener('click', close);
+      document.addEventListener('keydown', onKey);
+      document.body.appendChild(wrap);
+    }
+    document.querySelectorAll('.expirywidget').forEach(function(widget) {
+      var input = widget.querySelector('.expirycustom');
+      var chips = widget.querySelectorAll('.chip');
+      function pad(n) { return String(n).padStart(2, '0'); }
+      function toLocalValue(d) { return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) + 'T' + pad(d.getHours()) + ':' + pad(d.getMinutes()); }
+      function markOn(chip) { chips.forEach(function(c) { c.classList.toggle('on', c === chip); }); }
+      chips.forEach(function(chip) {
+        chip.addEventListener('click', function() {
+          var preset = chip.dataset.preset;
+          if (preset === 'none') { input.value = ''; }
+          else {
+            var ms = { '1h': 3600e3, '1d': 86400e3, '1w': 604800e3 }[preset] || 0;
+            input.value = toLocalValue(new Date(Date.now() + ms));
+          }
+          markOn(chip);
+        });
+      });
+      input.addEventListener('input', function() {
+        var noneChip = widget.querySelector('.chip[data-preset="none"]');
+        markOn(input.value === '' ? noneChip : null);
+      });
+      if (input.value === '') markOn(widget.querySelector('.chip[data-preset="none"]'));
     });
     document.querySelectorAll('[data-copy]').forEach(function(btn) {
       btn.addEventListener('click', function() {
@@ -1465,6 +1918,17 @@ if (!$authed) {
           btn.innerHTML = '<i class="fa-solid fa-check"></i> 已複製';
           setTimeout(function() { btn.innerHTML = t; }, 1500);
         }).catch(function() { alert(v); });
+      });
+    });
+
+    // ── 遮罩的 PIN／碼：按眼睛切換顯示（預設隱藏，正在分享的區塊除外） ──
+    document.querySelectorAll('.eyebtn').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        var val = btn.parentElement.querySelector('.secretval');
+        if (!val) return;
+        var show = btn.classList.toggle('on');
+        val.textContent = show ? val.dataset.val : '••••••';
+        btn.innerHTML = show ? '<i class="fa-solid fa-eye-slash"></i>' : '<i class="fa-solid fa-eye"></i>';
       });
     });
 

@@ -78,6 +78,7 @@ function pins_load(array $cfg): array {
         foreach ($list as &$e) {
             if (empty($e['id'])) { $e['id'] = bin2hex(random_bytes(4)); $dirty = true; }
             if (!isset($e['perms']) || !is_array($e['perms'])) { $e['perms'] = pin_default_perms(); $dirty = true; }
+            if (!isset($e['kind'])) { $e['kind'] = 'pin'; $dirty = true; }
         }
         unset($e);
     }
@@ -100,7 +101,6 @@ function project_pin_match(array $cfg, string $project, string $pin): ?array {
     }
     return null;
 }
-function check_project_pin(array $cfg, string $project, string $pin): bool { return project_pin_match($cfg, $project, $pin) !== null; }
 /**
  * 登入時的到期/次數檢查（僅對有設定 expires_at/max_uses 的專案 PIN 有效，例如分享建立的「管理PIN」連結；
  * 一般專案 PIN 兩者皆為 null，恆放行）。超過限制回傳 false；否則（若有 max_uses）used_count++ 並存檔。
@@ -123,27 +123,63 @@ function pins_check_and_bump(array $cfg, string $project, string $pinId): bool {
     return true;   // 找不到 id（理論上不會發生）：不因此擋登入
 }
 /**
- * 後台「分享編輯連結」建立管理PIN用：寫入一筆專案 PIN entry，perms 一律從全關始（下放權限需另用 setperm 逐項開啟）。
+ * 後台「分享邀請連結」用：寫入一筆 kind:"invite" entry，尚未有 PIN／暱稱——由收到連結的人自己兌換時填入。
  * 呼叫端須自行檢查「只有主 PIN 或已被授權 delegate_admin 的專案 PIN 才能建立」。
- * 回傳 [pin, id] 供後台組出分享連結／QR。
+ * 回傳 [token, id]：token 是連結裡帶的祕密，id 是後台列表／刪除用的公開識別碼。
  */
-function pins_grant_create(array $cfg, string $project, ?string $pin, ?string $label, ?string $expiresAt, ?int $maxUses): array {
-    $pin = ($pin !== null && $pin !== '') ? $pin : bin2hex(random_bytes(6));
+function pins_invite_create(array $cfg, string $project, ?string $expiresAt, ?int $maxUses): array {
+    $token = bin2hex(random_bytes(16));
     $d = pins_load($cfg);
     $entry = [
-        'pin'        => $pin,
-        'label'      => $label !== null ? substr(trim((string)$label), 0, 80) : '',
+        'kind'       => 'invite',
         'id'         => bin2hex(random_bytes(4)),
-        'perms'      => pin_default_perms(),
+        'token'      => $token,
         'expires_at' => $expiresAt,
         'max_uses'   => $maxUses,
         'used_count' => 0,
-        'via_link'   => true,
+        'created_at' => gmdate('c'),
     ];
     $d['projects'][$project] = $d['projects'][$project] ?? [];
     $d['projects'][$project][] = $entry;
     pins_save($cfg, $d);
-    return [$pin, (string)$entry['id']];
+    return [$token, (string)$entry['id']];
+}
+/** 依 token 找出尚未兌換的邀請（kind==='invite'）；找不到回傳 null。 */
+function invite_find(array $cfg, string $project, string $token): ?array {
+    if ($token === '') return null;
+    foreach (pins_load($cfg)['projects'][$project] ?? [] as $e) {
+        if (($e['kind'] ?? '') === 'invite' && hash_equals((string)$e['token'], $token)) return $e;
+    }
+    return null;
+}
+/**
+ * 兌換管理 PIN 邀請：收件人自己輸入 PIN／暱稱，成功後寫入一筆 kind:"pin" entry（perms 全關，
+ * expires_at/max_uses 皆為 null——限制只發生在兌換這一關，不對已兌換出來的 PIN 疊加登入次數限制）。
+ * 回傳 ['ok'=>true,'id'=>...,'label'=>...] 或 ['ok'=>false,'error'=>'pin_len'|'invalid'|'expired_or_used_up'|'pin_taken']。
+ */
+function pins_redeem(array $cfg, string $project, string $token, string $pin, ?string $label): array {
+    if (strlen($pin) < 4 || strlen($pin) > 64) return ['ok' => false, 'error' => 'pin_len'];
+    $invite = invite_find($cfg, $project, $token);
+    if ($invite === null) return ['ok' => false, 'error' => 'invalid'];
+    if (!pins_check_and_bump($cfg, $project, (string)$invite['id'])) return ['ok' => false, 'error' => 'expired_or_used_up'];
+    $d = pins_load($cfg);
+    if (_pin_in($d['projects'][$project] ?? [], $pin)) return ['ok' => false, 'error' => 'pin_taken'];
+    $label = $label !== null ? substr(trim($label), 0, 80) : '';
+    $entry = [
+        'kind'       => 'pin',
+        'pin'        => $pin,
+        'label'      => $label,
+        'id'         => bin2hex(random_bytes(4)),
+        'perms'      => pin_default_perms(),
+        'expires_at' => null,
+        'max_uses'   => null,
+        'used_count' => 0,
+        'via_link'   => true,
+        'invite_id'  => (string)$invite['id'],
+    ];
+    $d['projects'][$project][] = $entry;
+    pins_save($cfg, $d);
+    return ['ok' => true, 'id' => $entry['id'], 'label' => $label];
 }
 function _label_in(array $list, string $pin): string {
     foreach ($list as $e) { if (isset($e['pin']) && $pin !== '' && hash_equals((string)$e['pin'], $pin)) return trim((string)($e['label'] ?? '')); }
@@ -171,20 +207,59 @@ function gen_code(int $len = 6): string {
 }
 
 /**
- * 取得某項目目前的投稿碼（純後端檔案管理）：
- * meta.gated 為真才需碼；碼存 projects/<project>/code.txt，不存在則自動產生。
- * 要換碼 → 直接刪掉該檔，下次呼叫會產生新碼。未 gated 回空字串（開放上傳）。
+ * 投稿碼：可建多組，各自可設到期時間／次數上限（皆留空＝不限期不限次數），
+ * 達到即失效；存 projects/<project>/codes.json = [{code, label, created, expires_at, max_uses, used_count}]。
+ * meta.gated 為真才需要任何碼（見呼叫端 code_check）。
  */
-function project_code(array $cfg, string $project, ?array $meta): string {
-    if (empty($meta['gated'])) return '';
-    $f = project_dir($cfg, $project) . '/code.txt';
-    $c = is_file($f) ? trim((string)@file_get_contents($f)) : '';
-    if ($c === '') {
-        $c = gen_code();
-        if (!is_dir(dirname($f))) { @mkdir(dirname($f), 0775, true); }
-        @file_put_contents($f, $c, LOCK_EX);
+function codes_file(array $cfg, string $project): string { return project_dir($cfg, $project) . '/codes.json'; }
+function codes_load(array $cfg, string $project): array {
+    $f = codes_file($cfg, $project);
+    $d = is_file($f) ? json_decode((string)@file_get_contents($f), true) : null;
+    $d = is_array($d) ? $d : [];
+    // 一次性遷移：舊版常駐碼存在 code.txt，併入清單成一筆不限期不限次數的碼，避免已發出去的碼失效。
+    $legacy = project_dir($cfg, $project) . '/code.txt';
+    if (is_file($legacy)) {
+        $c = trim((string)@file_get_contents($legacy));
+        if ($c !== '' && !array_filter($d, fn($e) => hash_equals((string)($e['code'] ?? ''), $c))) {
+            $d[] = ['code' => $c, 'label' => '', 'created' => gmdate('c'), 'expires_at' => null, 'max_uses' => null, 'used_count' => 0];
+            @file_put_contents($f, json_encode($d, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), LOCK_EX);
+        }
+        @unlink($legacy);
     }
-    return $c;
+    return $d;
+}
+function codes_save(array $cfg, string $project, array $d): void { @file_put_contents(codes_file($cfg, $project), json_encode($d, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), LOCK_EX); }
+function codes_grant_create(array $cfg, string $project, ?string $code, ?string $label, ?string $expiresAt, ?int $maxUses): string {
+    $code = $code !== null ? preg_replace('/\D/', '', $code) : '';
+    if ($code === '') $code = gen_code();
+    $d = codes_load($cfg, $project);
+    $d[] = [
+        'code'       => $code,
+        'label'      => $label !== null ? substr(trim((string)$label), 0, 80) : '',
+        'created'    => gmdate('c'),
+        'expires_at' => $expiresAt,
+        'max_uses'   => $maxUses,
+        'used_count' => 0,
+    ];
+    codes_save($cfg, $project, $d);
+    return $code;
+}
+/** 驗證附加投稿碼；$bump=true（實際上傳）時計一次使用。到期／用罄／不存在回 false。 */
+function code_check(array $cfg, string $project, string $given, bool $bump): bool {
+    if ($given === '') return false;
+    $d = codes_load($cfg, $project);
+    foreach ($d as $i => $e) {
+        if (!hash_equals((string)($e['code'] ?? ''), $given)) continue;
+        if (!empty($e['expires_at']) && gmdate('c') > (string)$e['expires_at']) return false;
+        $max = $e['max_uses'] ?? null;
+        if ($max !== null && (int)($e['used_count'] ?? 0) >= (int)$max) return false;
+        if ($bump) {
+            $d[$i]['used_count'] = (int)($e['used_count'] ?? 0) + 1;
+            codes_save($cfg, $project, $d);
+        }
+        return true;
+    }
+    return false;
 }
 
 /**
@@ -199,7 +274,8 @@ function contrib_token(array $cfg, string $project, string $pin): string {
 function contrib_id_of(string $token): string { return substr(hash('sha256', 'cid|' . $token), 0, 12); }
 function contrib_hash_of(string $token): string { return hash('sha256', $token); }
 
-// 投稿者名冊：projects/<project>/contrib.json = { <contrib_id>: {label, created, assigned} }
+// 投稿者名冊：projects/<project>/contrib.json = { <contrib_id>: {label, created} }
+// 純自助：身分只在使用者自己於解鎖視窗設 PIN 時建立，不帶配額——能不能投稿只看當次用的投稿碼。
 function contrib_file(array $cfg, string $project): string { return project_dir($cfg, $project) . '/contrib.json'; }
 function contrib_load(array $cfg, string $project): array {
     $f = contrib_file($cfg, $project);
@@ -214,61 +290,44 @@ function contrib_register(array $cfg, string $project, string $token, ?string $l
     $label = $label !== null ? preg_replace('/^(.{0,40}).*$/su', '$1', trim($label)) : null;
     if ($label === null) $label = '';
     if (!isset($d[$id])) {
-        $d[$id] = [
-            'label'        => $label,
-            'created'      => gmdate('c'),
-            'expires_at'   => null,
-            'max_uses'     => null,
-            'used_count'   => 0,
-            'grants_admin' => false,
-            'via_link'     => false,
-        ];
+        $d[$id] = ['label' => $label, 'created' => gmdate('c')];
         contrib_save($cfg, $project, $d);
     }
-    elseif ($label !== '' && ($d[$id]['label'] ?? '') !== $label && empty($d[$id]['assigned'])) { $d[$id]['label'] = $label; contrib_save($cfg, $project, $d); }
+    elseif ($label !== '' && ($d[$id]['label'] ?? '') !== $label) { $d[$id]['label'] = $label; contrib_save($cfg, $project, $d); }
     return [$id, $d[$id]['label'] ?? ''];
 }
 
 /**
- * 新增投稿前檢查（僅擋「新增投稿」，不影響本人編輯/刪除已投稿過的內容）：
- * entry 不存在（尚未登記過，例如全新自訂投稿 PIN）視為可投稿，交由 upload 流程走既有 contrib_register 首次建立；
- * entry 存在則檢查 expires_at/max_uses：超過回傳 false，否則 used_count++ 並存檔、回傳 true。
+ * 停權名單：擋掉特定身分（有 PIN 的投稿者用 contrib_id、匿名裝置用 owner_hash）繼續投稿，
+ * 不影響已投稿內容（那是刪除的事）。存 projects/<project>/blocked.json = {owners:[owner_hash…], contribs:[contrib_id…]}。
  */
-function contrib_check_and_bump(array $cfg, string $project, string $token): bool {
-    $id = contrib_id_of($token);
-    $d = contrib_load($cfg, $project);
-    if (!isset($d[$id])) return true;
-    $e = $d[$id];
-    if (!empty($e['expires_at']) && gmdate('c') > (string)$e['expires_at']) return false;
-    $max = $e['max_uses'] ?? null;
-    $used = (int)($e['used_count'] ?? 0);
-    if ($max !== null && $used >= (int)$max) return false;
-    $d[$id]['used_count'] = $used + 1;
-    contrib_save($cfg, $project, $d);
-    return true;
+function blocked_file(array $cfg, string $project): string { return project_dir($cfg, $project) . '/blocked.json'; }
+function blocked_load(array $cfg, string $project): array {
+    $f = blocked_file($cfg, $project);
+    $d = is_file($f) ? json_decode((string)@file_get_contents($f), true) : null;
+    $d = is_array($d) ? $d : [];
+    $d['owners'] = array_values(array_map('strval', $d['owners'] ?? []));
+    $d['contribs'] = array_values(array_map('strval', $d['contribs'] ?? []));
+    return $d;
 }
-
-/**
- * 後台「分享編輯連結」建立投稿身分用：直接寫入一筆 contrib.json entry，不需使用者事先知道 PIN。
- * $pin 留空（「僅限匿名」）時自動產生一組隨機 PIN；PIN 本身不回傳給前台顯示，只靠連結 token 兌換身分。
- * 回傳 [token, id, pin] 供後台組出分享連結／QR；grants_admin 一律 false（管理身分改走 admin_pins.json，見 pins_grant_create）。
- */
-function contrib_grant_create(array $cfg, string $project, ?string $pin, ?string $label, ?string $expiresAt, ?int $maxUses): array {
-    $pin = ($pin !== null && $pin !== '') ? $pin : bin2hex(random_bytes(16));
-    $token = contrib_token($cfg, $project, $pin);
-    $id = contrib_id_of($token);
-    $d = contrib_load($cfg, $project);
-    $d[$id] = [
-        'label'        => $label !== null ? trim((string)$label) : '',
-        'created'      => gmdate('c'),
-        'expires_at'   => $expiresAt,
-        'max_uses'     => $maxUses,
-        'used_count'   => 0,
-        'grants_admin' => false,
-        'via_link'     => true,
-    ];
-    contrib_save($cfg, $project, $d);
-    return [$token, $id, $pin];
+function blocked_save(array $cfg, string $project, array $d): void { @file_put_contents(blocked_file($cfg, $project), json_encode($d, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), LOCK_EX); }
+function is_blocked(array $cfg, string $project, ?string $ownerHash, ?string $contribId): bool {
+    $d = blocked_load($cfg, $project);
+    if ($ownerHash !== null && in_array($ownerHash, $d['owners'], true)) return true;
+    if ($contribId !== null && in_array($contribId, $d['contribs'], true)) return true;
+    return false;
+}
+function block_add(array $cfg, string $project, ?string $ownerHash, ?string $contribId): void {
+    $d = blocked_load($cfg, $project);
+    if ($ownerHash !== null && !in_array($ownerHash, $d['owners'], true)) $d['owners'][] = $ownerHash;
+    if ($contribId !== null && !in_array($contribId, $d['contribs'], true)) $d['contribs'][] = $contribId;
+    blocked_save($cfg, $project, $d);
+}
+function block_remove(array $cfg, string $project, ?string $ownerHash, ?string $contribId): void {
+    $d = blocked_load($cfg, $project);
+    if ($ownerHash !== null) $d['owners'] = array_values(array_diff($d['owners'], [$ownerHash]));
+    if ($contribId !== null) $d['contribs'] = array_values(array_diff($d['contribs'], [$contribId]));
+    blocked_save($cfg, $project, $d);
 }
 
 /** 超過限制時直接以 429 結束請求。個別 bucket 可在 config['rate_limits'][$bucket] 覆寫 max/window（例如批次投稿量遠高於刪除/換鎖等低頻動作）。 */

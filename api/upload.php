@@ -18,17 +18,20 @@ if (!preg_match('/^[a-z0-9_-]{1,40}$/', $project) || !is_dir($cfg['projects_dir'
     json_out(['error' => 'unknown project'], 400);
 }
 
-// 投稿碼：限特定人上傳（碼存在 meta.json，前端拿不到，這裡才是真正把關）。已用管理 PIN 登入者（主 PIN 或此專案的 PIN）視為已解鎖，不受投稿碼限制。
-$metaU = json_decode((string)@file_get_contents($cfg['projects_dir'] . '/' . $project . '/meta.json'), true);
-$needCode = project_code($cfg, $project, is_array($metaU) ? $metaU : null);
-if ($needCode !== '' && !admin_can($cfg, $project) && !hash_equals($needCode, preg_replace('/\D/', '', (string)($_POST['code'] ?? '')))) {
-    json_out(['error' => '需要正確的投稿碼才能上傳'], 403);
+// 停權檢查：被主辦者鎖定的身分（PIN 投稿者或匿名裝置）一律擋下，不論投稿碼是否有效（不影響已投稿內容）。
+$blockOwnerHash = !empty($_POST['owner']) ? hash('sha256', (string)$_POST['owner']) : null;
+$blockContribId = !empty($_POST['ctoken']) ? contrib_id_of((string)$_POST['ctoken']) : null;
+if (is_blocked($cfg, $project, $blockOwnerHash, $blockContribId)) {
+    json_out(['error' => '此身分已被主辦者停權，無法繼續投稿'], 403);
 }
 
-// 投稿身分到期/次數限制（分享編輯連結可附帶）：只擋「新增投稿」，不影響本人編輯/刪除已投稿過的內容
-$ctokenGate = (string)($_POST['ctoken'] ?? '');
-if ($ctokenGate !== '' && !contrib_check_and_bump($cfg, $project, $ctokenGate)) {
-    json_out(['error' => '此投稿身分已到期或已達使用次數上限，僅能檢視／管理已投稿的內容'], 403);
+// 投稿碼：限特定人上傳（碼存後端檔案，前端拿不到，這裡才是真正把關）。已用管理 PIN 登入者視為已解鎖。
+// 能不能投稿完全看投稿碼（codes.json，各自可設到期/次數）；這裡計一次使用。
+$metaU = json_decode((string)@file_get_contents($cfg['projects_dir'] . '/' . $project . '/meta.json'), true);
+$gated = !empty($metaU['gated']);
+$givenCode = preg_replace('/\D/', '', (string)($_POST['code'] ?? ''));
+if ($gated && !admin_can($cfg, $project) && !code_check($cfg, $project, $givenCode, true)) {
+    json_out(['error' => '需要正確的投稿碼才能上傳（碼可能已到期或用完次數）'], 403);
 }
 
 function clean_str(?string $s, int $max): ?string {
@@ -57,6 +60,7 @@ if ($lat !== null && ($lat < -90 || $lat > 90)) $lat = null;
 if ($lon !== null && ($lon < -180 || $lon > 180)) $lon = null;
 
 $photoRel = null;
+$thumbRel = null;
 if (isset($_FILES['photo']) && $_FILES['photo']['error'] === UPLOAD_ERR_OK) {
     $f = $_FILES['photo'];
     if ($f['size'] > $cfg['max_bytes']) {
@@ -76,12 +80,26 @@ if (isset($_FILES['photo']) && $_FILES['photo']['error'] === UPLOAD_ERR_OK) {
     if (!is_dir($destDir)) { @mkdir($destDir, 0775, true); }
     // 檔名用「照片實際拍攝時間」（EXIF／裝置時間），不是伺服器收到上傳的時間，方便直接依檔名辨識拍攝先後
     $shotTs = $photo_time !== null ? strtotime($photo_time) : false;
-    $fname = date('Ymd_His', $shotTs !== false ? $shotTs : time()) . '_' . bin2hex(random_bytes(4)) . '.' . $ext;
+    $fbase = date('Ymd_His', $shotTs !== false ? $shotTs : time()) . '_' . bin2hex(random_bytes(4));
+    $fname = $fbase . '.' . $ext;
     $destAbs = $destDir . '/' . $fname;
     if (!move_uploaded_file($f['tmp_name'], $destAbs)) {
         json_out(['error' => 'save failed'], 500);
     }
     $photoRel = $project . '/' . $fname;
+
+    // 顯示用縮圖（前端隨主圖一起產生；沒有或存失敗都不影響投稿本身，顯示端會 fallback 用原圖）
+    if (isset($_FILES['thumb']) && $_FILES['thumb']['error'] === UPLOAD_ERR_OK) {
+        $tf = $_FILES['thumb'];
+        $tinfo = @getimagesize($tf['tmp_name']);
+        $tmime = is_array($tinfo) ? ($tinfo['mime'] ?? '') : '';
+        if ($tf['size'] <= 1024 * 1024 && isset($cfg['allowed_mime'][$tmime])) {
+            $tname = $fbase . '_t.' . $cfg['allowed_mime'][$tmime];
+            if (@move_uploaded_file($tf['tmp_name'], $destDir . '/' . $tname)) {
+                $thumbRel = $project . '/' . $tname;
+            }
+        }
+    }
 }
 
 if ($kind === 'desc') {
@@ -94,6 +112,7 @@ if ($kind === 'desc') {
 
 try {
     $owner = (string)($_POST['owner'] ?? '');
+    $ownerHash = $blockOwnerHash;
 
     // 相機 EXIF 參數（前端送 JSON；白名單欄位、限縮長度與大小）
     $exif = null;
@@ -117,7 +136,7 @@ try {
 
     // 可選的投稿者身分（ctoken 由 localStorage 帶入）：存公開短 ID 供分組顯示、存 hash 供跨裝置驗刪
     $ctoken = (string)($_POST['ctoken'] ?? '');
-    $contribId = $ctoken !== '' ? contrib_id_of($ctoken) : null;
+    $contribId = $blockContribId;
     $contribHash = $ctoken !== '' ? contrib_hash_of($ctoken) : null;
 
     $record = [
@@ -128,12 +147,13 @@ try {
         'name'       => $name,
         'comment'    => $comment,
         'photo'      => $photoRel,
+        'thumb'      => $thumbRel,
         'photo_time' => $photo_time,
         'lat'        => $lat,
         'lon'        => $lon,
         'loc_source' => $loc_source,
         'exif'       => $exif,
-        'owner_hash' => $owner !== '' ? hash('sha256', $owner) : null,   // 用於「只刪自己的」與同源追蹤
+        'owner_hash' => $ownerHash,                                       // 用於「只刪自己的」與同源追蹤
         'src_hash'   => $srcHash,                                        // 冒名鑑識用，不外流
         'contrib_id' => $contribId,                                      // 可選：對外可見的假名投稿者ID（分組用）
         'contrib_hash' => $contribHash,                                 // 可選：跨裝置驗刪用，不外流

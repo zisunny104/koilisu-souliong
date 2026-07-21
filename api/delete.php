@@ -29,7 +29,15 @@ try {
         json_out(['error' => '沒有權限刪除這則（可能是別人上傳的，或此裝置/身分的標記已更換）'], 403);
     }
     $removed = store_delete($cfg, $project, $id);
-    if ($removed && !empty($removed['photo'])) { $pp = photo_abs_path($cfg, $removed['photo']); if ($pp) @unlink($pp); }
+    if ($removed && !empty($removed['photo'])) {
+        $pp = photo_abs_path($cfg, $removed['photo']);
+        if ($pp) {
+            @unlink($pp);
+            // 縮圖（上傳附帶或 photo.php 自動產生的）一律叫 <照片檔名>_t.*，跟著原圖一起清
+            $ppBase = preg_replace('/\.[A-Za-z0-9]+$/', '', $pp);
+            foreach (['webp', 'jpg', 'png'] as $te) @unlink($ppBase . '_t.' . $te);
+        }
+    }
     json_out(['ok' => true, 'id' => $id]);
 } catch (Throwable $e) {
     error_log('souliong delete: ' . $e->getMessage());

@@ -77,6 +77,31 @@ function store_delete(array $cfg, string $project, string $id): ?array {
     return $removed;
 }
 
+/** 依欄位值批次刪除（例如某個 contrib_id 或 owner_hash 的全部投稿）；回傳被刪除的記錄陣列供呼叫端清照片檔。 */
+function store_delete_by(array $cfg, string $project, string $field, string $value): array {
+    $f = store_file($cfg, $project);
+    if (!is_file($f) || $value === '') return [];
+    $fp = fopen($f, 'c+b');
+    if (!$fp) return [];
+    flock($fp, LOCK_EX);
+    $keep = [];
+    $removed = [];
+    while (($line = fgets($fp)) !== false) {
+        $t = trim($line);
+        if ($t === '') continue;
+        $rec = json_decode($t, true);
+        if (is_array($rec) && (string)($rec[$field] ?? '') === $value) { $removed[] = $rec; continue; }
+        $keep[] = $t;
+    }
+    ftruncate($fp, 0);
+    rewind($fp);
+    foreach ($keep as $l) fwrite($fp, $l . "\n");
+    fflush($fp);
+    flock($fp, LOCK_UN);
+    fclose($fp);
+    return $removed;
+}
+
 /**
  * 就地修補單筆記錄的指定欄位（唯一打破 append-only 的例外，僅供資料修復工具（如 exiffix.php）使用，
  * 例如補救誤存為 null 的欄位；一般編輯一律走 store_append 版本化，不要用這個）。
