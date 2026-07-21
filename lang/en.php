@@ -89,6 +89,7 @@ return [
     'all_contributors_count' => 'All contributors ({n})',
     'jump_to_point'          => 'Jump to a point',
     'jump_to_point_option'   => 'Jump to a point… ({n} total)',
+    'explore_start'          => 'Start exploring',
     'explore_prev'           => 'Previous stop',
     'explore_next'           => 'Next stop',
     'explore_summary'        => '{points} landmarks · {loose} untagged',

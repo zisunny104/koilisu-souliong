@@ -88,6 +88,7 @@ return [
     'all_contributors_count' => '所有投稿者（{n} 人）',
     'jump_to_point'          => '跳到指定地點',
     'jump_to_point_option'   => '跳到地點…（共 {n} 個）',
+    'explore_start'          => '開始依序探索',
     'explore_prev'           => '上一站',
     'explore_next'           => '下一站',
     'explore_summary'        => '{points} 個地標・{loose} 張未標記',

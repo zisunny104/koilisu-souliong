@@ -24,15 +24,12 @@
     .pexp-summary { font-size: 0.6875rem; color: var(--muted) }
     .pexp-nav { display: flex; align-items: center; gap: 4px; min-width: 0 }
     .pexp-pos { flex: 1; min-width: 0; font-size: 0.8125rem; font-weight: 500; text-align: center; overflow: hidden; white-space: nowrap }
-    .pexp-pos.has-overflow {
-      text-align: left;
-      cursor: pointer;
-      mask-image: linear-gradient(to right, #000 calc(100% - 20px), transparent 100%);
-      -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 20px), transparent 100%)
-    }
+    .pexp-pos.has-overflow { text-align: left; cursor: pointer }
     .pexp-pos-inner { display: inline-block; white-space: nowrap }
     .pexp-hint { font-size: 0.75rem; color: var(--muted); margin: 2px 0 10px }
     .pexp-linklike { border: none; background: none; padding: 0; font: inherit; color: var(--accent); text-decoration: underline; cursor: pointer }
+    .pexp-start { display: flex; align-items: center; justify-content: center; gap: 6px; padding: 8px; border: 1px dashed var(--line); border-radius: var(--r-sm); background: none; color: var(--fg); font: inherit; font-weight: 500; cursor: pointer }
+    .pexp-start:hover { background: var(--hover) }
   `;
   document.head.appendChild(style);
 
@@ -46,7 +43,8 @@
   row.style.display = 'none';
   row.innerHTML = `
     <div class="pexp-summary" id="pexpSummary"></div>
-    <div class="pexp-nav">
+    <button class="pexp-start" id="pexpStartBtn" type="button"><i class="fa-solid fa-play" aria-hidden="true"></i> ${esc(t('explore_start'))}</button>
+    <div class="pexp-nav" id="pexpNav" style="display:none">
       <button class="icon-btn" id="pexpPrevBtn" type="button" title="${esc(t('explore_prev'))}" aria-label="${esc(t('explore_prev'))}"><i class="fa-solid fa-chevron-left" aria-hidden="true"></i></button>
       <span class="pexp-pos" id="pexpPos"><span class="pexp-pos-inner" id="pexpPosInner"></span></span>
       <button class="icon-btn" id="pexpNextBtn" type="button" title="${esc(t('explore_next'))}" aria-label="${esc(t('explore_next'))}"><i class="fa-solid fa-chevron-right" aria-hidden="true"></i></button>
@@ -55,7 +53,7 @@
   if (foot) ctlBody.insertBefore(row, foot); else ctlBody.appendChild(row);
 
   /* ---------- state ---------- */
-  let stops = [], idx = -1, focusName = null;
+  let stops = [], idx = -1, focusName = null, started = false, lastPerson = null;
 
   function stopKey(s) { return s.type === 'point' ? ('p' + s.num) : ('l' + s.entry.id); }
   function stopLabel(s) {
@@ -91,6 +89,9 @@
   posOuter.addEventListener('mouseenter', tryPlayMarquee);
   posOuter.addEventListener('click', tryPlayMarquee);
 
+  const startBtn = row.querySelector('#pexpStartBtn');
+  const navEl = row.querySelector('#pexpNav');
+
   function renderUI() {
     const on = App.isPhotoLayerOn() && !!App.getFilterPerson() && stops.length > 0;
     row.style.display = on ? '' : 'none';
@@ -98,6 +99,9 @@
     const nPoint = stops.filter(s => s.type === 'point').length;
     const nLoose = stops.length - nPoint;
     document.getElementById('pexpSummary').textContent = t('explore_summary', { points: nPoint, loose: nLoose });
+    startBtn.style.display = started ? 'none' : '';
+    navEl.style.display = started ? '' : 'none';
+    if (!started) return;   // 還沒按開始，不用算目前這站的位置文字
     posInner.getAnimations().forEach(a => a.cancel());
     posInner.style.transform = 'translateX(0)';
     posInner.textContent = t('explore_pos', { i: idx + 1, n: stops.length }) + '｜' + stopLabel(stops[idx]);
@@ -111,6 +115,7 @@
   // 重新整理資料或切換投稿者時呼叫：盡量保留原本正在看的那一站（用 key 對回新清單的位置）
   function rebuild() {
     const name = App.getFilterPerson();
+    if (name !== lastPerson) { started = false; lastPerson = name; }   // 換人就要重新按開始
     if (!(App.isPhotoLayerOn() && name)) { stops = []; idx = -1; renderUI(); return; }
     const prevKey = (idx >= 0 && stops[idx]) ? stopKey(stops[idx]) : null;
     stops = App.personTimeline(name);
@@ -131,19 +136,28 @@
     }
   }
 
-  function go(delta) {
+  function start() {
     if (!stops.length) return;
+    started = true;
+    idx = 0;
+    jumpToStop(stops[0]);
+    renderUI();
+  }
+
+  function go(delta) {
+    if (!started || !stops.length) return;
     idx = (idx + delta + stops.length) % stops.length;
     jumpToStop(stops[idx]);
     renderUI();
   }
 
+  startBtn.onclick = start;
   document.getElementById('pexpPrevBtn').onclick = () => go(-1);
   document.getElementById('pexpNextBtn').onclick = () => go(1);
 
   /* ---------- 掛到核心的掛勾點 ---------- */
   App.onHook('stateChange', rebuild);
-  App.onHook('panelReset', () => { focusName = null; });
+  App.onHook('panelReset', () => { focusName = null; started = false; renderUI(); });
 
   // 只顯示這個人在這個點的照片：跟核心「這個點所有投稿的照片」清單做交集
   App.registerPhotoFilter((e) => !focusName || e.name === focusName);
