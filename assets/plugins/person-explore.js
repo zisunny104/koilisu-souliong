@@ -157,7 +157,7 @@
 
   /* ---------- 掛到核心的掛勾點 ---------- */
   App.onHook('stateChange', rebuild);
-  App.onHook('panelReset', () => { focusName = null; started = false; renderUI(); });
+  App.onHook('panelReset', () => { focusName = null; renderUI(); });
 
   // 只顯示這個人在這個點的照片：跟核心「這個點所有投稿的照片」清單做交集
   App.registerPhotoFilter((e) => !focusName || e.name === focusName);
