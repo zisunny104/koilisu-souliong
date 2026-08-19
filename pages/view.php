@@ -31,19 +31,29 @@ $gated = is_array($meta) && !empty($meta['gated']);
 // 已用管理 PIN 登入者（主 PIN 或此專案的 PIN）直接視為已解鎖投稿身分，不受投稿碼限制
 require __DIR__ . '/../api/security.php';
 require __DIR__ . '/../api/i18n.php';
+require __DIR__ . '/../api/features.php';
 $apiCfg    = require __DIR__ . '/../api/config.php';
 $isManager = admin_can($apiCfg, $proj);
+// 定位點編輯（editpoint.php）走的是這個公開頁面而非後台頁，因此比照 admin.php 的作法，
+// 帶一份「同源才讀得到」的 CSRF 驗證值，只在已登入管理者時計算並輸出。
+$csrfTok   = $isManager ? (admin_authed($apiCfg) ? admin_derived($apiCfg) : padm_derived($apiCfg, $proj, (string)padm_pin_id($apiCfg, $proj))) : null;
 [$LANG, $DICT] = i18n_init();
 $t = fn(string $key, array $vars = []): string => htmlspecialchars(i18n_t($DICT, $key, $vars), ENT_QUOTES);
+$mod = fn(string $key): bool => souliong_module_on($meta, $key);
+// 每個模組解析後（含未來的相依關係）的開關結果，前端 MOD() 直接讀這份、不再自己重算預設值邏輯，
+// 避免 PHP 端 $mod() 與 JS 端各自判斷、日後模組間有相依時兩邊算出不同答案。
+$moduleState = array_combine(array_keys(souliong_modules()), array_map($mod, array_keys(souliong_modules())));
 
 $APP = [
-    'base'      => $base,
-    'project'   => $proj,
-    'embed'     => $embed,
-    'gated'     => $gated,
-    'meta'      => $meta,
-    'points'    => $points,
-    'isManager' => $isManager,
+    'base'        => $base,
+    'project'     => $proj,
+    'embed'       => $embed,
+    'gated'       => $gated,
+    'meta'        => $meta,
+    'points'      => $points,
+    'isManager'   => $isManager,
+    'csrf'        => $csrfTok,
+    'moduleState' => $moduleState,
 ];
 $jsonFlags = JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_APOS;
 ?><!DOCTYPE html>
@@ -54,7 +64,12 @@ $jsonFlags = JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JS
 <title><?= $t('app_title') ?></title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-<style><?php readfile(__DIR__ . '/../assets/style.css'); ?></style>
+<style><?php
+// 依原本 style.css 的層疊順序拆成多檔（見 assets/css/），新增樣式分類時只要在陣列裡加檔名即可
+foreach (['theme', 'control-card', 'popups', 'map-markers', 'point-panel', 'map-controls', 'lightbox', 'page-frame'] as $f) {
+    readfile(__DIR__ . "/../assets/css/$f.css");
+}
+?></style>
 <script>try{var t=localStorage.getItem('theme');if(t==='dark'||t==='light')document.documentElement.dataset.theme=t;}catch(e){}</script>
 </head>
 <body class="<?= $embed ? 'embed' : '' ?>">
@@ -83,7 +98,7 @@ $jsonFlags = JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JS
     <div class="ctl-row">
       <button class="btn" id="allPointsBtn" title="<?= $t('show_all_points') ?>"><i class="fa-solid fa-layer-group"></i> <?= $t('all') ?></button>
       <button class="btn" id="photoLayerBtn" title="<?= $t('filter_by_contrib') ?>"><i class="fa-solid fa-image"></i> <?= $t('contrib') ?></button>
-      <button class="btn" id="routeBtn" title="<?= $t('route_by_number') ?>"><i class="fa-solid fa-route"></i> <?= $t('route') ?></button>
+      <?php if ($mod('route')): ?><button class="btn" id="routeBtn" title="<?= $t('route_by_number') ?>"><i class="fa-solid fa-route"></i> <?= $t('route') ?></button><?php endif; ?>
     </div>
     <div class="ctl-row">
       <select id="personFilter" title="<?= $t('filter_person') ?>"><option value=""><?= $t('all_contributors') ?></option></select>
@@ -97,8 +112,7 @@ $jsonFlags = JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JS
   <div class="tr-items" id="trItems">
     <span id="identity" class="idchip" title="<?= $t('contributor_identity') ?>" role="button" tabindex="0"></span>
     <a class="icon-btn hide-in-embed" id="homeBtn" href="<?= $b ?>" title="<?= $t('back_to_list') ?>" aria-label="<?= $t('back_to_list') ?>"><i class="fa-solid fa-house" aria-hidden="true"></i></a>
-    <button class="icon-btn" id="shareBtn" title="<?= $t('share_map') ?>" aria-label="<?= $t('share_map') ?>"><i class="fa-solid fa-share-nodes" aria-hidden="true"></i></button>
-    <button id="embedBtn" class="icon-btn hide-in-embed" title="<?= $t('get_embed_code') ?>" aria-label="<?= $t('embed_this_map') ?>"><i class="fa-solid fa-code" aria-hidden="true"></i></button>
+    <?php if ($mod('share')): ?><button class="icon-btn" id="shareBtn" title="<?= $t('share_map') ?>" aria-label="<?= $t('share_map') ?>"><i class="fa-solid fa-share-nodes" aria-hidden="true"></i></button><?php endif; ?>
     <button id="themeBtn" class="icon-btn" title="<?= $t('toggle_theme') ?>" aria-label="<?= $t('toggle_theme_aria') ?>"><i class="fa-solid fa-circle-half-stroke" aria-hidden="true"></i></button>
     <div class="lang-menu hide-in-embed" id="langMenu">
       <button type="button" class="lang-btn" id="langBtn" title="<?= $t('lang_switch') ?>" aria-haspopup="listbox" aria-expanded="false">
@@ -115,11 +129,14 @@ $jsonFlags = JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JS
 
 <button class="icon-btn mapop-btn" id="resetBtn" title="<?= $t('reset_view') ?>" aria-label="<?= $t('reset_view_aria') ?>"><i class="fa-solid fa-location-crosshairs" aria-hidden="true"></i></button>
 
+<?php if ($mod('upload')): ?>
 <button class="fabtn upload-only" id="uploadBtn"><i class="fa-solid fa-plus"></i> <?= $t('upload') ?></button>
 <button class="fabtn fab-unlock" id="unlockFab" style="display:none"><i class="fa-solid fa-lock"></i> <?= $t('unlock_contrib') ?></button>
 <input type="file" id="pickImages" multiple hidden>
+<?php endif; ?>
 <input type="text" id="myName" hidden>
 
+<?php if ($mod('share')): ?>
 <div id="shareScreen" class="sharescreen" aria-hidden="true">
   <div class="share-card">
     <button class="icon-btn share-close" onclick="MapApp.closeShare()" aria-label="<?= $t('close') ?>"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>
@@ -133,6 +150,7 @@ $jsonFlags = JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JS
     </div>
   </div>
 </div>
+<?php endif; ?>
 
 <div id="cloudWarn" class="toast" style="display:none"></div>
 
@@ -151,6 +169,7 @@ $jsonFlags = JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JS
   </div>
 </div>
 
+<?php if ($mod('upload')): ?>
 <div id="modal">
   <div class="modal-box">
     <div class="modal-head">
@@ -167,43 +186,20 @@ $jsonFlags = JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JS
     </div>
   </div>
 </div>
+<?php endif; ?>
 
-<div id="embedDialog" class="dialog">
-  <div class="dialog-box">
-    <div class="dialog-head"><b><?= $t('embed_this_map_title') ?></b><button class="icon-btn" onclick="MapApp.closeEmbed()" aria-label="<?= $t('close') ?>"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button></div>
-    <div class="hint"><?= $t('embed_hint') ?></div>
-    <div class="embed-size-row">
-      <span class="embed-size-label"><?= $t('embed_size_label') ?></span>
-      <input type="number" id="embedWidth" class="name-in" min="200" step="10" value="800">
-      <span class="hint">×</span>
-      <input type="number" id="embedHeight" class="name-in" min="200" step="10" value="600">
-      <select id="embedSizeUnit" class="name-in embed-size-unit" aria-label="<?= $t('embed_size_unit') ?>">
-        <option value="px">px</option>
-        <option value="pct">%</option>
-      </select>
-      <select id="embedSizePreset" class="name-in embed-size-preset">
-        <option value="custom"><?= $t('embed_size_custom') ?></option>
-        <option value="fill_w"><?= $t('embed_fill_container_w') ?></option>
-        <option value="fill_h"><?= $t('embed_fill_container_h') ?></option>
-        <option value="fill_wh"><?= $t('embed_fill_container_wh') ?></option>
-      </select>
-    </div>
-    <textarea id="embedCode" readonly rows="4"></textarea>
-    <div class="dialog-actions"><button class="btn primary" id="copyEmbedBtn"><?= $t('copy') ?></button><span id="copyMsg" class="hint"></span></div>
-  </div>
-</div>
-
+<?php if ($mod('upload')): ?>
 <div id="unlockDialog" class="dialog">
   <div class="dialog-box">
     <div class="dialog-head"><b><?= $t('unlock_contrib') ?></b><button class="icon-btn" onclick="MapApp.closeUnlock()" aria-label="<?= $t('close') ?>"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button></div>
     <div class="hint"><?= $t('unlock_hint') ?></div>
-    <input id="unlockCodeInput" class="name-in" style="width:100%;letter-spacing:8px;text-align:center;font-size:1.375rem" placeholder="<?= $t('six_digits') ?>" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" inputmode="numeric" pattern="[0-9]*" maxlength="8" aria-label="<?= $t('contrib_code') ?>">
+    <input id="unlockCodeInput" class="name-in" style="width:100%;letter-spacing:8px;text-align:center;font-size:1.375rem" placeholder="<?= $t('six_digits') ?>" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" maxlength="8" data-pin-toggle aria-label="<?= $t('contrib_code') ?>">
     <div id="unlockMsg" class="hint" role="status"></div>
     <div style="margin-top:10px">
       <button type="button" class="btn" id="idToggleBtn" aria-expanded="false" aria-controls="idFields"><?= $t('create_identity_btn') ?></button>
       <div id="idFields" style="display:none;margin-top:8px">
         <div class="hint"><?= $t('identity_hint') ?></div>
-        <input id="unlockPinInput" class="name-in" style="width:100%;margin-top:6px" placeholder="<?= $t('set_pin') ?>" autocomplete="off" inputmode="numeric" aria-label="<?= $t('contrib_pin') ?>">
+        <input id="unlockPinInput" class="name-in" style="width:100%;margin-top:6px" placeholder="<?= $t('set_pin') ?>" autocomplete="off" data-pin-toggle aria-label="<?= $t('contrib_pin') ?>">
         <input id="unlockCnameInput" class="name-in" style="width:100%;margin-top:6px" placeholder="<?= $t('display_nickname') ?>" autocomplete="off" maxlength="40" aria-label="<?= $t('contributor_nickname') ?>">
       </div>
     </div>
@@ -215,12 +211,13 @@ $jsonFlags = JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JS
     <div id="scanBox" style="display:none"><video id="scanVideo" playsinline muted></video></div>
   </div>
 </div>
+<?php endif; ?>
 
 <div id="adminRedeemDialog" class="dialog">
   <div class="dialog-box">
     <div class="dialog-head"><b><?= $t('admin_redeem_title') ?></b><button class="icon-btn" onclick="MapApp.closeAdminRedeem()" aria-label="<?= $t('close') ?>"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button></div>
     <div class="hint"><?= $t('admin_redeem_hint') ?></div>
-    <input id="adminRedeemPinInput" class="name-in" style="width:100%;margin-top:6px" placeholder="<?= $t('admin_set_pin') ?>" autocomplete="off" inputmode="numeric" aria-label="<?= $t('admin_set_pin') ?>">
+    <input id="adminRedeemPinInput" class="name-in" style="width:100%;margin-top:6px" placeholder="<?= $t('admin_set_pin') ?>" autocomplete="off" data-pin-toggle aria-label="<?= $t('admin_set_pin') ?>">
     <input id="adminRedeemNameInput" class="name-in" style="width:100%;margin-top:6px" placeholder="<?= $t('admin_nickname') ?>" autocomplete="off" maxlength="40" aria-label="<?= $t('admin_nickname') ?>">
     <div id="adminRedeemMsg" class="hint" role="status"></div>
     <div class="dialog-actions">
@@ -233,8 +230,12 @@ $jsonFlags = JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JS
 <div id="pinDialog" class="dialog">
   <div class="dialog-box pin-box">
     <div class="dialog-head"><b><?= $t('admin_login') ?></b><button class="icon-btn" onclick="MapApp.closePin()" aria-label="<?= $t('close') ?>"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button></div>
-    <div id="pinDisplay" class="pin-display" aria-label="<?= $t('pin_input_area') ?>"></div>
-    <div class="pin-pad" id="pinPad"></div>
+    <input id="pinInput" class="name-in" style="width:100%;text-align:center;font-size:1.125rem" type="password" placeholder="PIN" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-pin-toggle aria-label="<?= $t('pin_input_area') ?>">
+    <div id="pinMsg" class="hint" role="status"></div>
+    <div class="dialog-actions">
+      <span class="spacer"></span>
+      <button class="btn primary" id="pinSubmitBtn"><?= $t('confirm_ok') ?></button>
+    </div>
   </div>
 </div>
 
@@ -245,10 +246,14 @@ $jsonFlags = JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JS
 <script src="https://cdn.jsdelivr.net/npm/exifr/dist/full.umd.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
-<script><?php readfile(__DIR__ . '/../assets/vendor/qrcode-generator.js'); ?></script>
-<script><?php readfile(__DIR__ . '/../assets/viewer.leaflet.js'); ?></script>
-<?php if (!empty($meta['personExplore'])): ?>
-<script><?php readfile(__DIR__ . '/../assets/plugins/person-explore.js'); ?></script>
+<script><?php readfile(__DIR__ . '/../assets/js/vendor/qrcode-generator.js'); ?></script>
+<script><?php readfile(__DIR__ . '/../assets/js/pin-input.js'); ?></script>
+<script><?php readfile(__DIR__ . '/../assets/js/viewer.leaflet.js'); ?></script>
+<?php if ($mod('embed')): ?>
+<script><?php readfile(__DIR__ . '/../assets/js/plugins/embed-code.js'); ?></script>
+<?php endif; ?>
+<?php if ($mod('personExplore')): ?>
+<script><?php readfile(__DIR__ . '/../assets/js/plugins/person-explore.js'); ?></script>
 <?php endif; ?>
 </body>
 </html>

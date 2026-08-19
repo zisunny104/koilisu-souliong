@@ -131,7 +131,7 @@ window.MapApp = (() => {
   // 上傳權限（預設 View；需投稿碼解鎖，限特定人。已用管理 PIN 登入者一律視為已解鎖。EMBED 一律不可上傳）
   function storedCode() { try { return localStorage.getItem('uploadCode_' + PROJECT) || ''; } catch (e) { return ''; } }
   function isUnlocked() { return !APP.gated || !!storedCode() || !!APP.isManager; }
-  function canPost() { return !EMBED && isUnlocked(); }
+  function canPost() { return !EMBED && MOD('upload') && isUnlocked(); }
   function applyPostState() {
     document.body.classList.toggle('noupload', !canPost());
     const fab = document.getElementById('unlockFab');
@@ -232,7 +232,7 @@ window.MapApp = (() => {
     document.getElementById('unlockDialog').classList.add('open');
     setTimeout(() => document.getElementById('unlockCodeInput').focus(), 60);
   }
-  function closeUnlock() { stopScan(); document.getElementById('unlockDialog').classList.remove('open'); }
+  function closeUnlock() { stopScan(); const dlg = document.getElementById('unlockDialog'); if (dlg) dlg.classList.remove('open'); }
   async function trySubmitUnlock() {
     const msg = document.getElementById('unlockMsg');
     msg.style.color = ''; msg.textContent = t('unlocking_verifying');
@@ -298,14 +298,28 @@ window.MapApp = (() => {
 
   /* ---------- 選用插件掛勾點（見 souliong/docs/EXTENDING.md）----------
      核心只負責「發生了什麼事」（onHook/emitHook）與「讓插件參與渲染結果」（registerPhotoFilter/registerEntriesHint），
-     不認得任何特定插件；插件自己的邏輯、DOM、CSS 都放在 assets/plugins/ 底下獨立檔案。 */
+     不認得任何特定插件；插件自己的邏輯、DOM、CSS 都放在 assets/js/plugins/ 底下獨立檔案。 */
   const hookListeners = {};
   function onHook(name, fn) { (hookListeners[name] = hookListeners[name] || []).push(fn); }
   function emitHook(name, ...args) { (hookListeners[name] || []).forEach(fn => { try { fn(...args); } catch (err) { console.error('[hook:' + name + ']', err); } }); }
   const photoFilters = [];     // fn(photoEntry, currentPoint) => bool；renderEntries() 的照片清單要 AND 全部通過
   const entriesHintFns = [];   // fn(currentPoint) => HTMLElement|null；renderEntries() 會把回傳的節點插進卡片內容
+  const scopeParamFns = [];    // fn() => {key: value}|null；插件自己在分享連結／嵌入碼網址上帶的額外參數，讀取時插件自己讀 location.search，不需要核心知道
   function registerPhotoFilter(fn) { photoFilters.push(fn); }
   function registerEntriesHint(fn) { entriesHintFns.push(fn); }
+  function registerScopeParam(fn) { scopeParamFns.push(fn); }
+
+  // 插件基底類別：每個插件檔案 class XxxPlugin extends MapApp.Plugin，只需覆寫 mount()——
+  // 核心建立實例並呼叫 init(MapApp)，插件自己的 state/DOM/CSS 一律掛在 this 底下，不碰核心內部變數。
+  class SouliongPlugin {
+    constructor(key) { this.key = key; this.mapApp = null; }
+    init(MapApp) { this.mapApp = MapApp; this.mount(); }
+    mount() {}
+  }
+
+  // 模組開關（見 souliong/api/features.php souliong_modules()）：直接讀 PHP 算好的 APP.moduleState，
+  // 不在前端重算一次預設值/相依邏輯，確保跟 view.php 用 $mod() 決定要不要輸出 HTML 時的結果一致。
+  function MOD(key) { return !!(APP.moduleState && APP.moduleState[key]); }
 
   /* ---------- helpers ---------- */
   const esc = (s) => String(s).replace(/[&<>"]/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[m]));
@@ -651,6 +665,7 @@ window.MapApp = (() => {
       fd.append('lat', state.lat);
       fd.append('lon', state.lon);
       fd.append('name', displayName());
+      fd.append('csrf', APP.csrf || '');
       const res = await fetch(apiUrl('editpoint'), { method: 'POST', body: fd });
       const j = await res.json();
       if (!res.ok || j.error) throw new Error(j.error || ('HTTP ' + res.status));
@@ -689,7 +704,7 @@ window.MapApp = (() => {
       '<div class="story-body">' + (latest ? esc(latest.comment) : '<span class="empty">' + esc(t('story_empty')) + '</span>') + '</div>' +
       (byLine ? '<div class="story-by">' + byLine + '</div>' : '') +
       '<div class="story-actions">' +
-      (!canPost() ? '' : '<button class="btn small" id="editDescBtn"><i class="fa-solid fa-pen"></i> ' + esc(t('edit_story_btn')) + '</button>') +
+      (!canPost() || !MOD('story') ? '' : '<button class="btn small" id="editDescBtn"><i class="fa-solid fa-pen"></i> ' + esc(t('edit_story_btn')) + '</button>') +
       (!EMBED && versions.length > 1 ? '<button class="btn small" id="histBtn">' + esc(t('history_versions', { n: versions.length })) + '</button>' : '') +
       '</div><div id="descEditor" style="display:none"></div><div id="descHistory" style="display:none"></div>';
     box.appendChild(story);
@@ -930,7 +945,14 @@ window.MapApp = (() => {
   }
   // 傳整筆投稿資料進來，才能連留言／說明文字一起顯示成卡片（不只圖片+姓名時間）
   function openLightbox(e, url) {
-    document.getElementById('lbImg').src = url || photoFullUrl(e);
+    const lbImg = document.getElementById('lbImg');
+    const nextUrl = url || photoFullUrl(e);
+    // 換照片時先淡出，避免舊照片在新資訊（姓名/時間/說明）已更新後還被誤認成「已載入完成」
+    if (lbImg.src !== new URL(nextUrl, location.href).href) {
+      lbImg.classList.add('loading');
+      lbImg.onload = lbImg.onerror = () => lbImg.classList.remove('loading');
+    }
+    lbImg.src = nextUrl;
     // 照片資訊改成「時間後面的 i 小圖示」，不佔一顆獨立按鈕（id 不變，沿用原本的展開邏輯）
     const who = esc(e.name || t('anon_fallback')) + ' ・ ' + fmtTime(e.photo_time || e.created_at) +
       ' <button class="lb-info-i" type="button" id="lbInfoBtn" title="' + esc(t('photo_info_title')) + '" aria-label="' + esc(t('photo_info_title')) + '"><i class="fa-solid fa-circle-info" aria-hidden="true"></i></button>';
@@ -1023,7 +1045,9 @@ window.MapApp = (() => {
   }
   let batchRunning = false;
   function closeModal() {
-    document.getElementById('modal').classList.remove('open');
+    const m = document.getElementById('modal');
+    if (!m) return;
+    m.classList.remove('open');
     // 批次上傳仍在背景進行時不可清空佇列，否則尚未送出的照片會直接遺失；重開視窗會看到原本的佇列與進度
     if (!batchRunning) resetQueue();
   }
@@ -1331,13 +1355,15 @@ window.MapApp = (() => {
     renderChairs();
     if (POINTS.length) map.fitBounds(L.latLngBounds(POINTS.map(c => [c.lat, c.lon])).pad(0.08));
 
-    // 暱稱（隱藏欄位為單一真實來源，與上傳視窗同步）
+    // 暱稱（隱藏欄位為單一真實來源，與上傳視窗同步；上傳模組關閉時沒有上傳視窗，只留隱藏欄位）
     const myName = document.getElementById('myName');
     myName.value = localStorage.getItem('myName') || '';
     const modalName = document.getElementById('modalName');
-    modalName.value = myName.value;
-    modalName.setAttribute('placeholder', SESSION_ANON);   // 預覽本次匿名名
-    modalName.oninput = e => { myName.value = e.target.value; localStorage.setItem('myName', e.target.value); };
+    if (modalName) {
+      modalName.value = myName.value;
+      modalName.setAttribute('placeholder', SESSION_ANON);   // 預覽本次匿名名
+      modalName.oninput = e => { myName.value = e.target.value; localStorage.setItem('myName', e.target.value); };
+    }
 
     // 收折
     // 品牌互動：連點變形狀（點→線→三→四→五→六角）→ 六角小彩蛋；長按 → 管理入口
@@ -1379,7 +1405,10 @@ window.MapApp = (() => {
 
     const controls = document.getElementById('controls');
     const chevron = (collapsed) => '<i class="fa-solid fa-chevron-' + (collapsed ? 'right' : 'down') + '"></i>';
-    if (localStorage.getItem('ctlCollapsed') === '1') { controls.classList.add('collapsed'); document.getElementById('collapseBtn').innerHTML = chevron(true); }
+    // 沒存過使用者偏好時，手機版（同 CSS 斷點 640px）預設收合，桌機維持展開
+    const savedCollapsed = localStorage.getItem('ctlCollapsed');
+    const startCollapsed = savedCollapsed !== null ? savedCollapsed === '1' : window.matchMedia('(max-width:640px)').matches;
+    if (startCollapsed) { controls.classList.add('collapsed'); document.getElementById('collapseBtn').innerHTML = chevron(true); }
     document.getElementById('collapseBtn').onclick = function () {
       const c = controls.classList.toggle('collapsed');
       this.innerHTML = chevron(c);
@@ -1391,7 +1420,8 @@ window.MapApp = (() => {
     if (peBtn) peBtn.onclick = togglePointEditor;
 
     // 圖層/路徑切換
-    document.getElementById('routeBtn').onclick = function () {
+    const routeBtn = document.getElementById('routeBtn');
+    if (routeBtn) routeBtn.onclick = function () {
       routeOn = !routeOn; this.classList.toggle('on', routeOn); drawRoute(); drawPersonRoute(); if (routeOn) feature('route');
       routeEggClick();
     };
@@ -1440,33 +1470,8 @@ window.MapApp = (() => {
       }
     };
 
-    // 嵌入碼
-    const embedBtn = document.getElementById('embedBtn');
-    if (embedBtn) embedBtn.onclick = openEmbed;
-    document.getElementById('copyEmbedBtn').onclick = async () => {
-      const ta = document.getElementById('embedCode');
-      try { await navigator.clipboard.writeText(ta.value); } catch (e) { ta.select(); document.execCommand('copy'); }
-      document.getElementById('copyMsg').innerHTML = '<i class="fa-solid fa-check"></i> ' + esc(t('copied'));
-      setTimeout(() => document.getElementById('copyMsg').textContent = '', 2000);
-    };
-    document.getElementById('embedWidth').oninput = buildEmbedCode;
-    document.getElementById('embedHeight').oninput = buildEmbedCode;
-    document.getElementById('embedSizePreset').onchange = buildEmbedCode;
-    // 切單位時把寬高換成該單位下合理的值域（% 是 10–100、px 維持原本 200 起跳），再重組嵌入碼
-    document.getElementById('embedSizeUnit').onchange = () => {
-      const pct = document.getElementById('embedSizeUnit').value === 'pct';
-      ['embedWidth', 'embedHeight'].forEach((id, i) => {
-        const el = document.getElementById(id);
-        el.min = pct ? 10 : 200;
-        el.step = pct ? 5 : 10;
-        if (pct && (!el.value || +el.value > 100)) el.value = 100;
-        if (!pct && (!el.value || +el.value < 200)) el.value = i === 0 ? 800 : 600;
-      });
-      buildEmbedCode();
-    };
-
-    // 上傳（精簡模式停用）
-    if (!EMBED) {
+    // 上傳（精簡模式或模組關閉時停用）
+    if (!EMBED && MOD('upload')) {
       const pick = document.getElementById('pickImages');
       document.getElementById('uploadBtn').onclick = () => { modalContext = null; resetQueue(); openModal(null); };
       document.getElementById('addMoreBtn').onclick = () => { pick.value = ''; pick.click(); };
@@ -1491,11 +1496,11 @@ window.MapApp = (() => {
     }
 
     // 右上：分享、重置、身分；左下：重置地圖
-    const shareBtn = document.getElementById('shareBtn'); if (shareBtn) shareBtn.onclick = openShare;
-    document.getElementById('shareCopyBtn').onclick = copyShareLink;
+    const shareBtn = document.getElementById('shareBtn');
+    if (shareBtn) { shareBtn.onclick = openShare; document.getElementById('shareCopyBtn').onclick = copyShareLink; }
     const resetBtn = document.getElementById('resetBtn'); if (resetBtn) resetBtn.onclick = resetView;
     const idEl = document.getElementById('identity');
-    const idAction = () => { if (canPost()) { resetQueue(); openModal(null); setTimeout(() => { const n = document.getElementById('modalName'); if (n) n.focus(); }, 60); } else if (APP.gated) { openUnlock(); } };
+    const idAction = () => { if (!MOD('upload')) return; if (canPost()) { resetQueue(); openModal(null); setTimeout(() => { const n = document.getElementById('modalName'); if (n) n.focus(); }, 60); } else if (APP.gated) { openUnlock(); } };
     if (idEl) {
       let idLpTimer = null, idLpFired = false;
       idEl.addEventListener('pointerdown', () => { idLpFired = false; idLpTimer = setTimeout(() => { idLpFired = true; rerollAnon(); }, 600); });
@@ -1510,8 +1515,10 @@ window.MapApp = (() => {
     // 上傳權限：解鎖 FAB（右下）+ 彈窗（含 QR 掃描）+ 邀請連結 ?code=
     const ub = document.getElementById('unlockFab');
     if (ub) ub.onclick = openUnlock;
-    document.getElementById('unlockSubmit').onclick = trySubmitUnlock;
-    document.getElementById('scanBtn').onclick = startScan;
+    if (document.getElementById('unlockDialog')) {
+      document.getElementById('unlockSubmit').onclick = trySubmitUnlock;
+      document.getElementById('scanBtn').onclick = startScan;
+    }
     const arSubmit = document.getElementById('adminRedeemSubmit');
     if (arSubmit) arSubmit.onclick = trySubmitAdminRedeem;
     const arPin = document.getElementById('adminRedeemPinInput');
@@ -1524,7 +1531,11 @@ window.MapApp = (() => {
     };
     const uci = document.getElementById('unlockCodeInput');
     if (uci) uci.addEventListener('keydown', e => { if (e.key === 'Enter') trySubmitUnlock(); });
-    if (params.get('code') && !EMBED) {
+    const pinBtn = document.getElementById('pinSubmitBtn');
+    if (pinBtn) pinBtn.onclick = pinSubmit;
+    const pinInputEl = document.getElementById('pinInput');
+    if (pinInputEl) pinInputEl.addEventListener('keydown', e => { if (e.key === 'Enter') pinSubmit(); });
+    if (params.get('code') && !EMBED && MOD('upload')) {
       const c = params.get('code');
       params.delete('code');
       const qs = params.toString();
@@ -1545,14 +1556,14 @@ window.MapApp = (() => {
       if (/^(INPUT|TEXTAREA|SELECT)$/.test(tag) || e.metaKey || e.ctrlKey || e.altKey) return;
       const k = e.key.toLowerCase();
       if (k === 'escape') {
-        closePanel(); closeModal(); closeEmbed(); closeUnlock(); closeShare(); closePin(); closeAdminRedeem();
+        closePanel(); closeModal(); closeUnlock(); closeShare(); closePin(); closeAdminRedeem(); emitHook('closeAll');
         const trG = document.getElementById('topright'), trT = document.getElementById('trToggle');
         if (trG) { trG.classList.remove('open'); if (trT) trT.setAttribute('aria-expanded', 'false'); }
       }
       else if (k === 'r') { resetView(); }
-      else if (k === 's' && !EMBED) { openShare(); }
+      else if (k === 's' && !EMBED && MOD('share')) { openShare(); }
       else if (k === 't') { const b = document.getElementById('themeBtn'); if (b) b.click(); }
-      else if (k === 'u' && !EMBED) { if (canPost()) { resetQueue(); openModal(current); } else if (APP.gated) openUnlock(); }
+      else if (k === 'u' && !EMBED && MOD('upload')) { if (canPost()) { resetQueue(); openModal(current); } else if (APP.gated) openUnlock(); }
     });
 
     await computeMyHash();       // 先算出本裝置擁有者雜湊（供「刪自己的」判斷）
@@ -1569,36 +1580,19 @@ window.MapApp = (() => {
   }
   setTimeout(hideSkeleton, 9000);   // 保險：即使載入卡住也移除骨架
 
-  function buildEmbedCode() {
-    // 直接沿用網站目前的顯示狀態（投稿者／分類／是否只顯示投稿），跟分享連結同一套邏輯，不用另外挑選
-    const sp = new URLSearchParams(currentScopeParams());
-    sp.set('embed', '1');
-    if (photoLayerOn) sp.set('contrib', '1');
-    const url = location.origin + APP.base + PROJECT + '?' + sp.toString();
-    const preset = document.getElementById('embedSizePreset').value;
-    const unit = document.getElementById('embedSizeUnit').value === 'pct' ? '%' : 'px';
-    const w = document.getElementById('embedWidth').value || (unit === '%' ? 100 : 800);
-    const h = document.getElementById('embedHeight').value || (unit === '%' ? 100 : 600);
-    const wFill = preset === 'fill_w' || preset === 'fill_wh';
-    const hFill = preset === 'fill_h' || preset === 'fill_wh';
-    const sizeStyle = 'width:' + (wFill ? '100%' : w + unit) + ';height:' + (hFill ? '100%' : h + unit);
-    document.getElementById('embedCode').value =
-      '<iframe src="' + url + '" title="' + esc(META.title || 'Souliong') + '" ' +
-      'style="' + sizeStyle + ';border:0;border-radius:12px" loading="lazy"></iframe>';
-  }
-  function openEmbed() {
-    feature('embed');
-    buildEmbedCode();
-    document.getElementById('embedDialog').classList.add('open');
-  }
-  function closeEmbed() { document.getElementById('embedDialog').classList.remove('open'); }
-
-  // 目前畫面的篩選狀態（投稿者／分類），供分享連結／嵌入碼帶入範圍限制；沒有特別篩選時回傳空字串
+  // 目前畫面的篩選狀態（投稿者／分類，再加上插件透過 registerScopeParam() 註冊的額外參數），
+  // 供分享連結／嵌入碼帶入範圍限制；沒有特別篩選時回傳空字串
   function currentScopeParams() {
     const sp = new URLSearchParams();
     if (photoLayerOn && filterPerson) sp.set('contributor', filterPerson);
     const visibleCats = CATS.filter(c => active[c.key] !== false).map(c => c.key);
     if (CATS.length && visibleCats.length < CATS.length) sp.set('cat', visibleCats.join(','));
+    scopeParamFns.forEach(fn => {
+      try {
+        const extra = fn();
+        if (extra) Object.entries(extra).forEach(([k, v]) => { if (v != null && v !== '') sp.set(k, v); });
+      } catch (err) { console.error('[scopeParam]', err); }
+    });
     return sp.toString();
   }
   // 公開地圖網址（分享用，不含 embed/code；帶目前篩選狀態，讓分享連結只給對方看你指定的投稿者或主題）
@@ -1632,6 +1626,7 @@ window.MapApp = (() => {
   }
   function closeShare() {
     const scr = document.getElementById('shareScreen');
+    if (!scr) return;
     // 先把焦點移出這個容器，再設回 aria-hidden，避免「aria-hidden 蓋住仍保有焦點的子元素」的衝突
     const restore = (shareReturnFocus && document.body.contains(shareReturnFocus)) ? shareReturnFocus : document.getElementById('shareBtn');
     if (restore && typeof restore.focus === 'function') restore.focus();
@@ -1704,29 +1699,13 @@ window.MapApp = (() => {
     setTimeout(() => e.remove(), 3600);
   }
 
-  // ---- 管理 PIN 面板 ----
-  const PIN_KINDS = ['dot', 'triangle', 'square', 'pentagon', 'hexagon', 'line'];
-  const PIN_EMPTY = '<svg width="13" height="13" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4.5" fill="none" stroke="currentColor" stroke-width="2.5"/></svg>';
-  const PIN_MAX = 12;          // 容器可顯示上限
-  let pinVal = '';
-  function renderPin() {
-    const disp = document.getElementById('pinDisplay');
-    if (!disp) return;
-    const slots = Math.min(Math.max(4, pinVal.length), PIN_MAX);
-    let html = '';
-    for (let i = 0; i < slots; i++) {
-      html += (i < pinVal.length)
-        ? '<span class="pin-dot filled' + (i === pinVal.length - 1 ? ' pop' : '') + '">' + shapeSVG(PIN_KINDS[i % PIN_KINDS.length]) + '</span>'
-        : '<span class="pin-dot">' + PIN_EMPTY + '</span>';
-    }
-    disp.innerHTML = html;
-  }
-  function pinAdd(d) { if (pinVal.length < PIN_MAX) { pinVal += d; renderPin(); } }
-  function pinDel() { pinVal = pinVal.slice(0, -1); renderPin(); }
+  // ---- 管理 PIN 面板（數字鍵盤／鍵盤切換輸入，見 pin-input.js） ----
   async function pinSubmit() {
-    if (!pinVal) return;
+    const input = document.getElementById('pinInput');
+    const pin = input ? input.value : '';
+    if (!pin) return;
     try {
-      const fd = new FormData(); fd.append('action', 'login'); fd.append('json', '1'); fd.append('pin', pinVal); fd.append('project', PROJECT);
+      const fd = new FormData(); fd.append('action', 'login'); fd.append('json', '1'); fd.append('pin', pin); fd.append('project', PROJECT);
       const res = await fetch(APP.base + '?api=admin', { method: 'POST', body: fd });
       const j = await res.json().catch(() => ({}));
       if (res.ok && j.ok) {
@@ -1734,38 +1713,28 @@ window.MapApp = (() => {
         closePin(); location.href = APP.base + encodeURIComponent(PROJECT) + '/manager'; return;
       }
     } catch (e) {}
-    pinVal = ''; renderPin();
+    if (input) { input.value = ''; input.dispatchEvent(new Event('input')); }
+    const msg = document.getElementById('pinMsg'); if (msg) msg.textContent = t('admin_pin_incorrect');
     const box = document.querySelector('.pin-box'); if (box) { box.style.animation = 'none'; void box.offsetWidth; box.style.animation = 'pinshake .3s'; }
   }
-  function pinKey(e) {
-    if (e.key >= '0' && e.key <= '9') { pinAdd(e.key); e.preventDefault(); }
-    else if (e.key === 'Backspace') { pinDel(); e.preventDefault(); }
-    else if (e.key === 'Enter') { pinSubmit(); }
-    else if (e.key === 'Escape') { closePin(); }
+  function openPinPad() {
+    const input = document.getElementById('pinInput'), msg = document.getElementById('pinMsg');
+    if (input) { input.value = ''; input.dispatchEvent(new Event('input')); }
+    if (msg) msg.textContent = '';
+    document.getElementById('pinDialog').classList.add('open');
+    if (input) input.focus();
   }
-  function buildPinPad() {
-    const pad = document.getElementById('pinPad');
-    if (!pad || pad.dataset.built) return;
-    pad.dataset.built = '1';
-    ['1', '2', '3', '4', '5', '6', '7', '8', '9', 'del', '0', 'ok'].forEach(k => {
-      const b = document.createElement('button');
-      b.className = 'pin-key' + (k === 'ok' ? ' ok' : '') + (k === 'del' ? ' del' : '');
-      b.type = 'button';
-      b.setAttribute('aria-label', k === 'del' ? t('delete') : k === 'ok' ? t('confirm_ok') : k);
-      b.innerHTML = k === 'del' ? '<i class="fa-solid fa-delete-left"></i>' : k === 'ok' ? '<i class="fa-solid fa-check"></i>' : k;
-      b.onclick = () => { k === 'del' ? pinDel() : k === 'ok' ? pinSubmit() : pinAdd(k); };
-      pad.appendChild(b);
-    });
-  }
-  function openPinPad() { pinVal = ''; buildPinPad(); renderPin(); document.getElementById('pinDialog').classList.add('open'); document.addEventListener('keydown', pinKey); }
-  function closePin() { document.getElementById('pinDialog').classList.remove('open'); document.removeEventListener('keydown', pinKey); }
+  function closePin() { document.getElementById('pinDialog').classList.remove('open'); }
 
   boot();
   return {
-    closePanel, togglePanelSize, closeModal, openLightbox, closeLightbox, openEmbed, closeEmbed, closePin, closeUnlock, closeShare, closeAdminRedeem,
+    closePanel, togglePanelSize, closeModal, openLightbox, closeLightbox, closePin, closeUnlock, closeShare, closeAdminRedeem,
     // ---- 選用插件掛勾點 API（見 souliong/docs/EXTENDING.md）----
-    onHook, registerPhotoFilter, registerEntriesHint,
-    personTimeline, pointTitle, photoFullUrl, openPanel, refreshEntries: renderEntries,
+    onHook, registerPhotoFilter, registerEntriesHint, registerScopeParam,
+    personTimeline, pointTitle, photoFullUrl, openPanel, openUnlock, refreshEntries: renderEntries,
     getMap: () => map, getFilterPerson: () => filterPerson, isPhotoLayerOn: () => photoLayerOn,
+    isUnlocked, isEmbedMode: () => EMBED,
+    trackFeature: feature, currentScopeParams, getProjectId: () => PROJECT,
+    Plugin: SouliongPlugin,
   };
 })();

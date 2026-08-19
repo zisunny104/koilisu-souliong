@@ -50,18 +50,45 @@ owner_hash, src_hash, contrib_id, contrib_hash, edit_of, created_at
 - 用回傳 JSON 畫圖：`points` 排序＝熱門點、`by_hour`/`by_dow`＝時段、`device`/`features`/`cameras`＝圓餅或數字卡。
 - 可在 `admin.php` 內嵌一段 `<canvas>` 直接畫（已有摘要文字版）。
 
-## 七、選用前端插件（optional plugin）
+## 六、功能模組開關（後台可關，每張地圖各自設定）
 
-有些功能不是每個專案都需要，做成「選用插件」比寫死在核心程式裡更乾淨：核心不認識任何特定插件，只提供一組掛勾點；插件是 `assets/plugins/` 底下**獨立的檔案**，自己管理自己的 state、DOM、CSS，只在對應 `meta.json` 旗標開啟時才由 `view.php` 用 `<?php if (!empty($meta['xxx'])): ?>` 條件載入（讀完核心 `viewer.leaflet.js` 之後）。
+地圖核心只保留「顯示點位」這個基本功能；路線導覽、地點故事編輯、上傳投稿、嵌入碼、分享這五樣都是可關的模組，管理者在後台「編輯專案描述」對話框裡逐一勾選，存在該地圖 `meta.json` 的 `features` 物件（`{"route":true,"upload":false,...}`）。單一事實來源在 `api/features.php` 的 `souliong_modules()`（key／中文說明／預設值）與 `souliong_module_on($meta, $key)`（沒設定就用預設值，舊地圖不受影響）：
+
+- **後台**（`admin.php`）：`souliong_modules()` 逐一畫勾選框，送出後寫回 `meta.json`。
+- **樣板**（`view.php`）：`$mod = fn($key) => souliong_module_on($meta, $key);`，模組關閉時直接不輸出對應的按鈕／彈窗 HTML（不是用 CSS 藏起來）。
+- **前端邏輯**（`viewer.leaflet.js`）：`MOD(key)` 讀 `window.APP.meta.features[key]`（同樣「沒設定＝開」），`canPost()` 把 `MOD('upload')` 併進解鎖判斷；凡是對應 DOM 可能不存在的地方都要 `if (el)` 再綁事件，全域鍵盤快速鍵／Esc 關閉等會不分模組狀態一律觸發的路徑也要能安全跳過（見各 `close*()` 函式的 null 檢查）。
+
+`personExplore`（依序探索）沿用原本的扁平旗標寫法（`meta.json` 直接存 `personExplore: true/false`），`souliong_module_on()` 對這個 key 特殊處理，行為與既有插件機制（見下一節）相容。
+
+「隨機探索」是首頁層級功能（從所有地圖裡挑一個跳轉，不屬於單一地圖），所以不走 `meta.json`，而是存在跨地圖的 `state/settings.json`（`api/settings.php` 的 `souliong_settings_load()`／`souliong_random_explore_on()`），在後台「工具」分頁（僅主 PIN 可見）開關。
+
+## 七、插件標準（plugin standard）
+
+有些功能不是每個專案都需要，做成「插件」比寫死在核心程式裡更乾淨：核心不認識任何特定插件，只提供一組掛勾點與一個基底類別；插件是 `assets/js/plugins/` 底下**獨立的檔案**，自己管理自己的 state、DOM、CSS，只在對應模組旗標開啟時才由 `view.php` 用 `<?php if ($mod('xxx')): ?>` 條件載入（讀完核心 `viewer.leaflet.js` 之後）。關閉時整個檔案不會被讀進頁面，不留任何 HTML／`<script>` 痕跡——這是插件形式比原本散落在核心裡的 `if (MOD('xxx'))` 分支更乾淨的地方。
+
+一個合格的插件必須符合：
+
+1. **位置與命名**：`assets/js/plugins/<kebab-case-檔名>.js`，檔名中性、避免品牌名稱（例如 `share-link.js` 而非帶特定服務商名稱）；模組旗標的 key 維持 camelCase，跟 `api/features.php` 的 `souliong_modules()` 一致。
+2. **繼承共用基底類別**：核心提供 `MapApp.Plugin`（即 `SouliongPlugin`），插件寫 `class XxxPlugin extends MapApp.Plugin`，只需覆寫 `mount()`——插件自己的 DOM／事件綁定都在這裡建立。載入時由核心（或插件檔案自己，見參考實作）`new XxxPlugin().init(window.MapApp)`；`init()` 是基底類別定義的生命週期，會存好 `this.mapApp` 再呼叫 `mount()`，插件不需要重複寫這段。
+3. **自我管理**：state 放在 `this` 底下（不用模組層級的全域變數）、DOM 由 `mount()` 自己建立插入、CSS 用 `document.createElement('style')` 自己注入（不加進 `assets/css/*.css`——那些檔案是核心一定會載入的層疊樣式，插件的樣式必須跟著插件一起關掉）。
+4. **只透過 `window.MapApp` 溝通**：插件不可讀寫核心內部的 closure 變數，只能呼叫下面公開的 API。需要掛進既有版位時，可以直接用文件裡列出的容器 id（例如 `#ctlBody`）當掛勾點，不需要核心另外開一個「註冊按鈕」的 API——這就是 `person-explore.js` 已經在用的作法。
+5. **核心原生功能 vs. 模組專屬工具**：判斷「訪客能不能寫入」這類跟裝置權限有關的能力（`isUnlocked()`、`owner_hash`）是**核心原生功能**，任何模組都可以依賴；但某個模組自己專屬的工具函式（例如上傳模組的 `canPost()`、`resetQueue()`）**不算**核心原生功能，其他模組不可以呼叫它——即使當下剛好在同一個檔案裡摸得到。這條規則是為了避免「地點故事編輯」曾經誤呼叫上傳模組專屬的 `canPost()` 這種耦合。
 
 `window.MapApp`（核心）目前對插件公開：
 
-- **事件**：`MapApp.onHook(name, fn)` 訂閱、核心內部用 `emitHook(name, ...)` 發送。目前有 `'stateChange'`（投稿者篩選／全部-投稿模式／資料重新整理時發送）、`'panelReset'`（有其他管道直接開/關地點面板時發送，插件若有自己的「聚焦」狀態應在這裡清掉）。
-- **延伸點（有回傳值）**：`MapApp.registerPhotoFilter(fn)`（`fn(photoEntry, currentPoint) => bool`，篩掉不想顯示的照片，AND 疊加）、`MapApp.registerEntriesHint(fn)`（`fn(currentPoint) => HTMLElement|null`，插進地點卡片內容裡的提示區塊，插件自己建節點、自己綁事件）。
-- **資料／動作**：`MapApp.personTimeline(name)`、`MapApp.pointTitle(p)`、`MapApp.photoFullUrl(item)`、`MapApp.openPanel(point)`、`MapApp.openLightbox(entry, url)`、`MapApp.refreshEntries()`（＝目前地點卡片重繪一次，通常在插件自己改了篩選狀態之後呼叫）。
-- **唯讀狀態**：`MapApp.getMap()`、`MapApp.getFilterPerson()`、`MapApp.isPhotoLayerOn()`。
+- **基底類別**：`MapApp.Plugin`（`class SouliongPlugin { constructor(key); init(MapApp); mount(); }`，`mount()` 留給子類別覆寫）。
+- **事件**：`MapApp.onHook(name, fn)` 訂閱、核心內部用 `emitHook(name, ...)` 發送。目前有 `'stateChange'`（投稿者篩選／全部-投稿模式／資料重新整理時發送）、`'panelReset'`（有其他管道直接開/關地點面板時發送，插件若有自己的「聚焦」狀態應在這裡清掉）、`'closeAll'`（全域 Esc 鍵或其他「全部關閉」時機發送；插件若有自己的浮層／對話框應在這裡關閉——核心不需要知道插件的對話框 id）。
+- **延伸點（有回傳值）**：`MapApp.registerPhotoFilter(fn)`（`fn(photoEntry, currentPoint) => bool`，篩掉不想顯示的照片，AND 疊加）、`MapApp.registerEntriesHint(fn)`（`fn(currentPoint) => HTMLElement|null`，插進地點卡片內容裡的提示區塊，插件自己建節點、自己綁事件）、`MapApp.registerScopeParam(fn)`（`fn() => {key: value}|null`，插件自己想在分享連結／嵌入碼網址上多帶的參數，會併進 `currentScopeParams()` 的輸出；讀回來則不用核心幫忙——插件自己在 `mount()` 裡 `new URLSearchParams(location.search)` 讀自己定義的 key 即可，核心不需要知道有這個參數存在）。
+- **資料／動作**：`MapApp.personTimeline(name)`、`MapApp.pointTitle(p)`、`MapApp.photoFullUrl(item)`、`MapApp.openPanel(point)`、`MapApp.openLightbox(entry, url)`、`MapApp.openUnlock()`（跳出投稿碼／解鎖視窗）、`MapApp.refreshEntries()`（＝目前地點卡片重繪一次，通常在插件自己改了篩選狀態之後呼叫）、`MapApp.trackFeature(name)`（記一筆功能使用統計，寫進該地圖的 `stats.json`）、`MapApp.currentScopeParams()`（目前的投稿者／分類篩選狀態，序列化成 querystring 片段，分享連結／嵌入碼都靠這個帶入範圍限制）。
+- **唯讀狀態**：`MapApp.getMap()`、`MapApp.getFilterPerson()`、`MapApp.isPhotoLayerOn()`、`MapApp.isUnlocked()`（裝置是否已解鎖投稿權限——核心原生的權限判斷，見上面第 5 點）、`MapApp.isEmbedMode()`（這個頁面是不是以 `?embed=1` 嵌入模式載入）、`MapApp.getProjectId()`（目前地圖的 project id，已做過安全字元過濾）。
 
-參考實作：`assets/plugins/person-explore.js`（`personExplore` 旗標——選了投稿者後可依序探索他的地標／零散照片時間軸），照抄這個檔案的結構（讀 `window.APP.meta` 自我檢查旗標、`<style>` 自己注入、DOM 自己插入 `#ctlBody`）就能再加一個新插件。
+參考實作：
+- `assets/js/plugins/embed-code.js`（`embed` 旗標——產生 `<iframe>` 嵌入碼；`class EmbedCodePlugin extends MapApp.Plugin` 寫法，是目前符合完整標準的範例）。
+- `assets/js/plugins/person-explore.js`（`personExplore` 旗標——選了投稿者後可依序探索他的地標／零散照片時間軸；這個檔案早於 `MapApp.Plugin` 基底類別存在，尚未改寫成 `extends` 寫法，但其餘規則——旗標自我檢查、`<style>` 自己注入、DOM 自己插入 `#ctlBody`——仍是有效範例）。
+
+### 模組相依（規劃中的機制，尚未接上任何模組）
+
+當一個模組的存在前提是另一個模組開著（例如「依序探索」只有在訪客有具名身分可選時才有意義），`souliong_modules()` 的模組定義可以加一個 `'dependsOn' => 'otherKey'`；`souliong_module_on()` 判斷時，父模組關閉就一併視為關閉，不管自己的旗標是什麼。因為 `view.php`（PHP 端 `$mod()`）與 `viewer.leaflet.js`（JS 端 `MOD()`）都要算出一致的結果，`$APP` 會多帶一份 `moduleState`（每個模組 key 對應解析後的布林值，PHP 端用 `$mod()` 算好），JS 的 `MOD(key)` 直接讀這份資料，不在前端重算一次預設值／相依邏輯——避免兩邊各自判斷、日後兜不起來。
 
 ## 八、命名與品牌
 
