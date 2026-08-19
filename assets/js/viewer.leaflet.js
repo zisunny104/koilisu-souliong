@@ -1495,9 +1495,7 @@ window.MapApp = (() => {
       });
     }
 
-    // 右上：分享、重置、身分；左下：重置地圖
-    const shareBtn = document.getElementById('shareBtn');
-    if (shareBtn) { shareBtn.onclick = openShare; document.getElementById('shareCopyBtn').onclick = copyShareLink; }
+    // 右上：重置、身分；左下：重置地圖
     const resetBtn = document.getElementById('resetBtn'); if (resetBtn) resetBtn.onclick = resetView;
     const idEl = document.getElementById('identity');
     const idAction = () => { if (!MOD('upload')) return; if (canPost()) { resetQueue(); openModal(null); setTimeout(() => { const n = document.getElementById('modalName'); if (n) n.focus(); }, 60); } else if (APP.gated) { openUnlock(); } };
@@ -1556,12 +1554,11 @@ window.MapApp = (() => {
       if (/^(INPUT|TEXTAREA|SELECT)$/.test(tag) || e.metaKey || e.ctrlKey || e.altKey) return;
       const k = e.key.toLowerCase();
       if (k === 'escape') {
-        closePanel(); closeModal(); closeUnlock(); closeShare(); closePin(); closeAdminRedeem(); emitHook('closeAll');
+        closePanel(); closeModal(); closeUnlock(); closePin(); closeAdminRedeem(); emitHook('closeAll');
         const trG = document.getElementById('topright'), trT = document.getElementById('trToggle');
         if (trG) { trG.classList.remove('open'); if (trT) trT.setAttribute('aria-expanded', 'false'); }
       }
       else if (k === 'r') { resetView(); }
-      else if (k === 's' && !EMBED && MOD('share')) { openShare(); }
       else if (k === 't') { const b = document.getElementById('themeBtn'); if (b) b.click(); }
       else if (k === 'u' && !EMBED && MOD('upload')) { if (canPost()) { resetQueue(); openModal(current); } else if (APP.gated) openUnlock(); }
     });
@@ -1595,48 +1592,12 @@ window.MapApp = (() => {
     });
     return sp.toString();
   }
-  // 公開地圖網址（分享用，不含 embed/code；帶目前篩選狀態，讓分享連結只給對方看你指定的投稿者或主題）
-  function mapPublicUrl() {
-    const qs = currentScopeParams();
-    return location.origin + APP.base + PROJECT + (qs ? '?' + qs : '');
-  }
   // 重置地圖回初始視角（左下地圖操作）
   function resetView() {
     if (!map) return;
     if (POINTS && POINTS.length) map.fitBounds(L.latLngBounds(effectivePoints().map(c => [c.lat, c.lon])).pad(0.08));
     else map.setView(META.center || [23.9, 120.7], META.zoom || 14);
     feature('reset');
-  }
-  // 全螢幕分享：地圖背景 + 中央浮空卡片（含 QR）
-  let shareReturnFocus = null;
-  function openShare() {
-    feature('share');
-    const url = mapPublicUrl();
-    document.getElementById('shareTitle').textContent = META.title || t('app_title');
-    document.getElementById('shareSub').textContent = META.subtitle || t('app_tagline');
-    document.getElementById('shareUrl').textContent = url;
-    const box = document.getElementById('shareQr'); box.innerHTML = '';
-    try { const qr = qrcode(0, 'M'); qr.addData(url); qr.make(); box.innerHTML = qr.createSvgTag({ cellSize: 5, margin: 2, scalable: true }); }
-    catch (e) { box.textContent = t('qr_generate_failed'); }
-    shareReturnFocus = document.activeElement;
-    const scr = document.getElementById('shareScreen');
-    scr.removeAttribute('aria-hidden');   // 先解除 aria-hidden，才能把焦點移進去（避免 aria-hidden 蓋住有焦點的子元素）
-    scr.classList.add('open');
-    const closeBtn = scr.querySelector('.share-close'); if (closeBtn) closeBtn.focus();
-  }
-  function closeShare() {
-    const scr = document.getElementById('shareScreen');
-    if (!scr) return;
-    // 先把焦點移出這個容器，再設回 aria-hidden，避免「aria-hidden 蓋住仍保有焦點的子元素」的衝突
-    const restore = (shareReturnFocus && document.body.contains(shareReturnFocus)) ? shareReturnFocus : document.getElementById('shareBtn');
-    if (restore && typeof restore.focus === 'function') restore.focus();
-    scr.setAttribute('aria-hidden', 'true');
-    scr.classList.remove('open');
-    shareReturnFocus = null;
-  }
-  async function copyShareLink() {
-    try { await navigator.clipboard.writeText(mapPublicUrl()); } catch (e) { }
-    const m = document.getElementById('shareCopyMsg'); if (m) { m.innerHTML = '<i class="fa-solid fa-check"></i> ' + esc(t('copied')); setTimeout(() => m.textContent = '', 2000); }
   }
   // 標題單擊 → 若名稱溢出則跑馬燈一次（與形狀彩蛋並存，兩者都綁在同一次點擊）
   function setupTitleMarquee() {
@@ -1728,7 +1689,7 @@ window.MapApp = (() => {
 
   boot();
   return {
-    closePanel, togglePanelSize, closeModal, openLightbox, closeLightbox, closePin, closeUnlock, closeShare, closeAdminRedeem,
+    closePanel, togglePanelSize, closeModal, openLightbox, closeLightbox, closePin, closeUnlock, closeAdminRedeem,
     // ---- 選用插件掛勾點 API（見 souliong/docs/EXTENDING.md）----
     onHook, registerPhotoFilter, registerEntriesHint, registerScopeParam,
     personTimeline, pointTitle, photoFullUrl, openPanel, openUnlock, refreshEntries: renderEntries,

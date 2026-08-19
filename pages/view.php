@@ -112,7 +112,6 @@ foreach (['theme', 'control-card', 'popups', 'map-markers', 'point-panel', 'map-
   <div class="tr-items" id="trItems">
     <span id="identity" class="idchip" title="<?= $t('contributor_identity') ?>" role="button" tabindex="0"></span>
     <a class="icon-btn hide-in-embed" id="homeBtn" href="<?= $b ?>" title="<?= $t('back_to_list') ?>" aria-label="<?= $t('back_to_list') ?>"><i class="fa-solid fa-house" aria-hidden="true"></i></a>
-    <?php if ($mod('share')): ?><button class="icon-btn" id="shareBtn" title="<?= $t('share_map') ?>" aria-label="<?= $t('share_map') ?>"><i class="fa-solid fa-share-nodes" aria-hidden="true"></i></button><?php endif; ?>
     <button id="themeBtn" class="icon-btn" title="<?= $t('toggle_theme') ?>" aria-label="<?= $t('toggle_theme_aria') ?>"><i class="fa-solid fa-circle-half-stroke" aria-hidden="true"></i></button>
     <div class="lang-menu hide-in-embed" id="langMenu">
       <button type="button" class="lang-btn" id="langBtn" title="<?= $t('lang_switch') ?>" aria-haspopup="listbox" aria-expanded="false">
@@ -135,22 +134,6 @@ foreach (['theme', 'control-card', 'popups', 'map-markers', 'point-panel', 'map-
 <input type="file" id="pickImages" multiple hidden>
 <?php endif; ?>
 <input type="text" id="myName" hidden>
-
-<?php if ($mod('share')): ?>
-<div id="shareScreen" class="sharescreen" aria-hidden="true">
-  <div class="share-card">
-    <button class="icon-btn share-close" onclick="MapApp.closeShare()" aria-label="<?= $t('close') ?>"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>
-    <div class="share-qr" id="shareQr" aria-hidden="true"></div>
-    <div class="share-title" id="shareTitle"></div>
-    <div class="share-sub" id="shareSub"></div>
-    <div class="share-url" id="shareUrl"></div>
-    <div class="dialog-actions" style="justify-content:center">
-      <button class="btn primary" id="shareCopyBtn"><i class="fa-solid fa-link"></i> <?= $t('copy_link') ?></button>
-      <span id="shareCopyMsg" class="hint"></span>
-    </div>
-  </div>
-</div>
-<?php endif; ?>
 
 <div id="cloudWarn" class="toast" style="display:none"></div>
 
@@ -246,11 +229,14 @@ foreach (['theme', 'control-card', 'popups', 'map-markers', 'point-panel', 'map-
 <script src="https://cdn.jsdelivr.net/npm/exifr/dist/full.umd.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
-<script><?php readfile(__DIR__ . '/../assets/js/vendor/qrcode-generator.js'); ?></script>
 <script><?php readfile(__DIR__ . '/../assets/js/pin-input.js'); ?></script>
 <script><?php readfile(__DIR__ . '/../assets/js/viewer.leaflet.js'); ?></script>
 <?php if ($mod('embed')): ?>
 <script><?php readfile(__DIR__ . '/../assets/js/plugins/embed-code.js'); ?></script>
+<?php endif; ?>
+<?php if ($mod('share')): ?>
+<script><?php readfile(__DIR__ . '/../assets/js/vendor/qrcode-generator.js'); ?></script>
+<script><?php readfile(__DIR__ . '/../assets/js/plugins/share-link.js'); ?></script>
 <?php endif; ?>
 <?php if ($mod('personExplore')): ?>
 <script><?php readfile(__DIR__ . '/../assets/js/plugins/person-explore.js'); ?></script>
