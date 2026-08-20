@@ -89,6 +89,21 @@ window.MapApp = (() => {
   }
   const isMine = (e) => !!((myOwnerHash && e.owner_hash && e.owner_hash === myOwnerHash) || (myContribId && e.contrib_id && e.contrib_id === myContribId));
 
+  // 新增一筆投稿（故事版本、照片…共用）：project/owner/code/ctoken 這些通用欄位統一在這裡補上，呼叫端只要給業務欄位（kind/name/comment/photo…）
+  async function submitContribution(fields) {
+    const fd = new FormData();
+    fd.append('project', PROJECT);
+    fd.append('owner', ownerToken());
+    fd.append('code', storedCode());
+    const ct = contribToken(); if (ct) fd.append('ctoken', ct);
+    for (const k in fields) { const v = fields[k]; if (v !== undefined && v !== null) fd.append(k, v); }
+    const res = await fetch(apiUrl('upload'), { method: 'POST', body: fd });
+    const j = await res.json();
+    if (!res.ok || j.error) throw new Error(j.error || ('HTTP ' + res.status));
+    CONTRIB.push(j.item);
+    return j.item;
+  }
+
   async function deleteEntry(id) {
     if (!confirm(t('confirm_delete'))) return;
     try {
@@ -651,12 +666,10 @@ window.MapApp = (() => {
       '<div class="story-head">' + esc(t('location_story_title')) + '</div>' +
       '<div class="story-body">' + (latest ? esc(latest.comment) : '<span class="empty">' + esc(t('story_empty')) + '</span>') + '</div>' +
       (byLine ? '<div class="story-by">' + byLine + '</div>' : '') +
-      '<div class="story-actions">' +
-      (!canPost() || !MOD('story') ? '' : '<button class="btn small" id="editDescBtn"><i class="fa-solid fa-pen"></i> ' + esc(t('edit_story_btn')) + '</button>') +
+      '<div class="story-actions" id="storyActions">' +
       (!EMBED && versions.length > 1 ? '<button class="btn small" id="histBtn">' + esc(t('history_versions', { n: versions.length })) + '</button>' : '') +
-      '</div><div id="descEditor" style="display:none"></div><div id="descHistory" style="display:none"></div>';
+      '</div><div id="descHistory" style="display:none"></div>';
     box.appendChild(story);
-    const edb = story.querySelector('#editDescBtn'); if (edb) edb.onclick = () => toggleDescEditor(current.num);
     const hb = story.querySelector('#histBtn'); if (hb) hb.onclick = () => toggleHistory(versions);
 
     // 上傳照片到這個點：放在故事底下、第一張照片之前
@@ -819,18 +832,6 @@ window.MapApp = (() => {
     panel.querySelectorAll('.del-btn[data-id]').forEach(b => b.onclick = () => deleteEntry(b.dataset.id));
   }
 
-  function toggleDescEditor(num) {
-    const el = document.getElementById('descEditor');
-    if (el.style.display === 'none') {
-      el.style.display = 'block';
-      el.innerHTML = '<input type="text" id="descName" class="name-in" placeholder="' + SESSION_ANON + '" style="width:100%;margin-top:8px">' +
-        '<textarea id="descText" placeholder="' + esc(t('story_textarea_placeholder')) + '"></textarea>' +
-        '<button class="btn primary small" id="descSave">' + esc(t('submit_new_version')) + '</button>';
-      document.getElementById('descName').value = document.getElementById('myName').value || '';
-      document.getElementById('descSave').onclick = () => submitDesc(num);
-      document.getElementById('descText').focus();
-    } else { el.style.display = 'none'; el.innerHTML = ''; }
-  }
   function toggleHistory(descs) {
     const el = document.getElementById('descHistory');
     if (el.style.display === 'none') {
@@ -844,31 +845,6 @@ window.MapApp = (() => {
       el.querySelectorAll('.del-btn[data-id]').forEach(b => b.onclick = () => deleteEntry(b.dataset.id));
     } else { el.style.display = 'none'; el.innerHTML = ''; }
   }
-  async function submitDesc(num) {
-    const text = (document.getElementById('descText').value || '').trim();
-    if (!text) { alert(t('enter_story_content')); return; }
-    const nick = (document.getElementById('descName').value || '').trim();
-    if (nick) { document.getElementById('myName').value = nick; localStorage.setItem('myName', nick); document.getElementById('modalName').value = nick; }
-    const btn = document.getElementById('descSave'); btn.disabled = true; btn.textContent = t('submitting');
-    try {
-      const fd = new FormData();
-      fd.append('project', PROJECT); fd.append('kind', 'desc'); fd.append('item_num', num);
-      fd.append('name', nick || displayName());
-      fd.append('comment', text);
-      fd.append('photo_time', new Date().toISOString());
-      fd.append('owner', ownerToken());
-      fd.append('code', storedCode());
-      const ct1 = contribToken(); if (ct1) fd.append('ctoken', ct1);
-      const res = await fetch(apiUrl('upload'), { method: 'POST', body: fd });
-      const j = await res.json();
-      if (!res.ok || j.error) throw new Error(j.error || ('HTTP ' + res.status));
-      CONTRIB.push(j.item);
-      feature('story');
-      rebuildPersonFilter();
-      renderEntries();
-    } catch (err) { alert(t('save_failed', { err: err.message || err })); btn.disabled = false; btn.textContent = t('submit_new_version'); }
-  }
-
   /* ---------- lightbox ---------- */
   // 單張的「i」資訊內容：相機 EXIF（機身/鏡頭/光圈/快門/焦段/ISO）、拍攝時間、座標與定位來源
   function photoInfoHtml(e) {
@@ -1634,10 +1610,12 @@ window.MapApp = (() => {
     // ---- 選用插件掛勾點 API（見 souliong/docs/EXTENDING.md）----
     onHook, registerPhotoFilter, registerEntriesHint, registerScopeParam,
     personTimeline, pointTitle, photoFullUrl, openPanel, openUnlock, refreshEntries: renderEntries,
+    refreshPersonFilter: rebuildPersonFilter,
     getMap: () => map, getFilterPerson: () => filterPerson, isPhotoLayerOn: () => photoLayerOn,
     isUnlocked, isEmbedMode: () => EMBED,
     trackFeature: feature, currentScopeParams, getProjectId: () => PROJECT,
     effectivePhotos, personColor, toast,
+    displayName, anonName: () => SESSION_ANON, submitContribution,
     Plugin: SouliongPlugin,
   };
 })();
