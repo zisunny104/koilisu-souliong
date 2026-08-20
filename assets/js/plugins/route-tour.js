@@ -1,5 +1,6 @@
 /* 選用插件：路徑（見 souliong/docs/EXTENDING.md 第七節）
    只在該地圖 meta.json 的 features.route 為 true 時，view.php 才會載入這個檔案。
+   #routeBtn 由這裡自己建立、插入 #ctlBody 的第一個 .ctl-row（旗標關閉時整個檔案不會載入，按鈕自然也不存在）。
    未選投稿者時：畫出每位投稿者各自的時間路徑（多色）；選了投稿者則改畫他單人的路徑（較粗）。
    彩蛋：快速連點「路徑」鈕數下，依所有投稿的時間順序，重新走一次整條路徑動畫。 */
 (() => {
@@ -25,8 +26,14 @@
       this.eggTimer = null;
       this.eggRun = 0;
 
-      const btn = document.getElementById('routeBtn');
-      if (!btn) return;
+      const row = document.querySelector('#ctlBody .ctl-row');
+      if (!row) return;
+      const btn = document.createElement('button');
+      btn.className = 'btn';
+      btn.id = 'routeBtn';
+      btn.title = t('route_by_number');
+      btn.innerHTML = '<i class="fa-solid fa-route"></i> ' + esc(t('route'));
+      row.appendChild(btn);
       btn.onclick = () => {
         this.routeOn = !this.routeOn;
         btn.classList.toggle('on', this.routeOn);

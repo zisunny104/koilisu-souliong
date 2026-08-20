@@ -1,6 +1,8 @@
 /* 選用插件：投稿者身分（見 souliong/docs/EXTENDING.md 第七節）
-   由 api/features.php 的 identity 旗標決定要不要載入（關閉時連 #identity／#idToggleBtn 等 DOM
-   都不會輸出，personExplore 透過 dependsOn 一併隨之關閉，見 souliong_module_on()）。
+   由 api/features.php 的 identity 旗標決定要不要載入（關閉時整個檔案不會載入，#identity 自然不存在；
+   #idToggleBtn／#idFields 仍是 view.php 在 #unlockDialog 裡輸出的既有 DOM，見下方 idBtn 段落；
+   personExplore 透過 dependsOn 一併隨之關閉，見 souliong_module_on()）。
+   #identity 小標籤改由這裡自己建立、插入 #trItems（在 #homeBtn 之前），view.php 不再輸出這段 HTML。
    管右上角的身分指示鈕（#identity：顯示暱稱/管理者/匿名預覽名、點按觸發上傳捷徑或解鎖、長按換一個匿名名），
    以及解鎖對話框裡「建立身分」的展開/收合（#idToggleBtn/#idFields，PIN／暱稱欄位的讀取與重置仍留在核心，
    因為它們跟純代碼解鎖共用同一個對話框與送出按鈕，拆不乾淨）。
@@ -19,17 +21,23 @@
     constructor() { super('identity'); }
 
     mount() {
-      const idEl = document.getElementById('identity');
-      if (idEl) {
-        let idLpTimer = null, idLpFired = false;
-        idEl.addEventListener('pointerdown', () => { idLpFired = false; idLpTimer = setTimeout(() => { idLpFired = true; this.mapApp.rerollAnon(); }, 600); });
-        const idLpCancel = () => { if (idLpTimer) { clearTimeout(idLpTimer); idLpTimer = null; } };
-        idEl.addEventListener('pointerup', idLpCancel);
-        idEl.addEventListener('pointerleave', idLpCancel);
-        idEl.addEventListener('pointercancel', idLpCancel);
-        idEl.onclick = () => { if (idLpFired) { idLpFired = false; return; } this.mapApp.identityChipClick(); };
-        idEl.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); this.mapApp.identityChipClick(); } };
-      }
+      const trItems = document.getElementById('trItems');
+      const idEl = document.createElement('span');
+      idEl.id = 'identity';
+      idEl.className = 'idchip';
+      idEl.title = t('contributor_identity');
+      idEl.setAttribute('role', 'button');
+      idEl.tabIndex = 0;
+      if (trItems) trItems.insertBefore(idEl, document.getElementById('homeBtn'));
+
+      let idLpTimer = null, idLpFired = false;
+      idEl.addEventListener('pointerdown', () => { idLpFired = false; idLpTimer = setTimeout(() => { idLpFired = true; this.mapApp.rerollAnon(); }, 600); });
+      const idLpCancel = () => { if (idLpTimer) { clearTimeout(idLpTimer); idLpTimer = null; } };
+      idEl.addEventListener('pointerup', idLpCancel);
+      idEl.addEventListener('pointerleave', idLpCancel);
+      idEl.addEventListener('pointercancel', idLpCancel);
+      idEl.onclick = () => { if (idLpFired) { idLpFired = false; return; } this.mapApp.identityChipClick(); };
+      idEl.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); this.mapApp.identityChipClick(); } };
 
       const idBtn = document.getElementById('idToggleBtn'), idFields = document.getElementById('idFields');
       if (idBtn && idFields) idBtn.onclick = () => {

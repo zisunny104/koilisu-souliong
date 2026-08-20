@@ -98,7 +98,6 @@ foreach (['theme', 'control-card', 'popups', 'map-markers', 'point-panel', 'map-
     <div class="ctl-row">
       <button class="btn" id="allPointsBtn" title="<?= $t('show_all_points') ?>"><i class="fa-solid fa-layer-group"></i> <?= $t('all') ?></button>
       <button class="btn" id="photoLayerBtn" title="<?= $t('filter_by_contrib') ?>"><i class="fa-solid fa-image"></i> <?= $t('contrib') ?></button>
-      <?php if ($mod('route')): ?><button class="btn" id="routeBtn" title="<?= $t('route_by_number') ?>"><i class="fa-solid fa-route"></i> <?= $t('route') ?></button><?php endif; ?>
     </div>
     <div class="ctl-row">
       <select id="personFilter" title="<?= $t('filter_person') ?>"><option value=""><?= $t('all_contributors') ?></option></select>
@@ -110,7 +109,6 @@ foreach (['theme', 'control-card', 'popups', 'map-markers', 'point-panel', 'map-
 <div id="topright" class="tr-group">
   <button class="icon-btn tr-toggle" id="trToggle" title="<?= $t('more_options') ?>" aria-label="<?= $t('expand_options_aria') ?>" aria-expanded="false" aria-controls="trItems"><i class="fa-solid fa-bars" aria-hidden="true"></i></button>
   <div class="tr-items" id="trItems">
-    <?php if ($mod('identity')): ?><span id="identity" class="idchip" title="<?= $t('contributor_identity') ?>" role="button" tabindex="0"></span><?php endif; ?>
     <a class="icon-btn hide-in-embed" id="homeBtn" href="<?= $b ?>" title="<?= $t('back_to_list') ?>" aria-label="<?= $t('back_to_list') ?>"><i class="fa-solid fa-house" aria-hidden="true"></i></a>
     <button id="themeBtn" class="icon-btn" title="<?= $t('toggle_theme') ?>" aria-label="<?= $t('toggle_theme_aria') ?>"><i class="fa-solid fa-circle-half-stroke" aria-hidden="true"></i></button>
     <div class="lang-menu hide-in-embed" id="langMenu">
