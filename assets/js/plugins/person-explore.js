@@ -30,6 +30,11 @@
     .pexp-linklike { border: none; background: none; padding: 0; font: inherit; color: var(--accent); text-decoration: underline; cursor: pointer }
     .pexp-start { display: flex; align-items: center; justify-content: center; gap: 6px; padding: 8px; border: 1px dashed var(--line); border-radius: var(--r-sm); background: none; color: var(--fg); font: inherit; font-weight: 500; cursor: pointer }
     .pexp-start:hover { background: var(--hover) }
+    /* 面板收合、探索已開始時才出現的小浮動跳轉列，貼在收合後的面板下方 */
+    .pexp-float { position: fixed; left: 14px; z-index: 2050; display: flex; align-items: center; gap: 4px; padding: 4px; max-width: calc(100vw - 28px); background: var(--glass); -webkit-backdrop-filter: blur(16px) saturate(1.6); backdrop-filter: blur(16px) saturate(1.6); border: 1px solid var(--line); border-radius: 999px; box-shadow: var(--sh-2) }
+    .pexp-float .icon-btn { flex: none }
+    .pexp-float-pos { flex: 0 1 auto; min-width: 0; border: none; background: none; padding: 0 6px; font: inherit; font-size: 0.75rem; font-weight: 600; color: var(--fg); cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+    .pexp-float-pos:hover { text-decoration: underline }
   `;
   document.head.appendChild(style);
 
@@ -51,6 +56,30 @@
     </div>
   `;
   if (foot) ctlBody.insertBefore(row, foot); else ctlBody.appendChild(row);
+
+  /* ---------- 浮動跳轉列：面板收合時取代卡片內的上一站/下一站 ---------- */
+  const floatNav = document.createElement('div');
+  floatNav.className = 'pexp-float';
+  floatNav.id = 'pexpFloat';
+  floatNav.style.display = 'none';
+  floatNav.innerHTML = `
+    <button class="icon-btn" id="pexpFloatPrev" type="button" title="${esc(t('explore_prev'))}" aria-label="${esc(t('explore_prev'))}"><i class="fa-solid fa-chevron-left" aria-hidden="true"></i></button>
+    <button class="pexp-float-pos" id="pexpFloatPos" type="button"></button>
+    <button class="icon-btn" id="pexpFloatNext" type="button" title="${esc(t('explore_next'))}" aria-label="${esc(t('explore_next'))}"><i class="fa-solid fa-chevron-right" aria-hidden="true"></i></button>
+  `;
+  document.body.appendChild(floatNav);
+  floatNav.querySelector('#pexpFloatPrev').onclick = () => go(-1);
+  floatNav.querySelector('#pexpFloatNext').onclick = () => go(1);
+  floatNav.querySelector('#pexpFloatPos').onclick = () => { const b = document.getElementById('collapseBtn'); if (b) b.click(); };
+
+  function controlsCollapsed() {
+    const c = document.getElementById('controls');
+    return !c || c.classList.contains('collapsed');
+  }
+  function positionFloatNav() {
+    const c = document.getElementById('controls');
+    if (c) floatNav.style.top = (c.getBoundingClientRect().bottom + 8) + 'px';
+  }
 
   /* ---------- state ---------- */
   let stops = [], idx = -1, focusName = null, started = false, lastPerson = null;
@@ -95,6 +124,17 @@
   function renderUI() {
     const on = App.isPhotoLayerOn() && !!App.getFilterPerson() && stops.length > 0;
     row.style.display = on ? '' : 'none';
+
+    const floatOn = on && started && controlsCollapsed();
+    floatNav.style.display = floatOn ? '' : 'none';
+    if (floatOn) {
+      const label = t('explore_pos', { i: idx + 1, n: stops.length });
+      const posBtn = document.getElementById('pexpFloatPos');
+      posBtn.textContent = label;
+      posBtn.title = label;
+      positionFloatNav();
+    }
+
     if (!on) return;
     const nPoint = stops.filter(s => s.type === 'point').length;
     const nLoose = stops.length - nPoint;
@@ -125,12 +165,15 @@
 
   function jumpToStop(s) {
     const map = App.getMap();
+    // 兩種站型切換時，先關掉另一種疊層，避免舊的地點卡片／燈箱蓋住新內容（看起來像卡住或閃到舊資訊）
     if (s.type === 'point' && s.point) {
+      App.closeLightbox();
       focusName = App.getFilterPerson();
       map.panTo([s.point.lat, s.point.lon], { animate: true });
       App.openPanel(s.point);
     } else if (s.type === 'loose') {
       const e = s.entry;
+      App.closePanel();
       if (typeof e.lat === 'number' && typeof e.lon === 'number') map.panTo([e.lat, e.lon], { animate: true });
       App.openLightbox(e, App.photoFullUrl(e));
     }
@@ -158,6 +201,10 @@
   /* ---------- 掛到核心的掛勾點 ---------- */
   App.onHook('stateChange', rebuild);
   App.onHook('panelReset', () => { focusName = null; renderUI(); });
+
+  // 單純收合/展開面板（沒有換站）不會經過上面任何 hook，額外補聽一次同步浮動列的顯示
+  const collapseBtn = document.getElementById('collapseBtn');
+  if (collapseBtn) collapseBtn.addEventListener('click', () => renderUI());
 
   // 只顯示這個人在這個點的照片：跟核心「這個點所有投稿的照片」清單做交集
   App.registerPhotoFilter((e) => !focusName || e.name === focusName);
