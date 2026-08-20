@@ -52,7 +52,7 @@ owner_hash, src_hash, contrib_id, contrib_hash, edit_of, created_at
 
 ## 六、功能模組開關（後台可關，每張地圖各自設定）
 
-地圖核心只保留「顯示點位」這個基本功能；路線導覽、地點故事編輯、上傳投稿、嵌入碼、分享這五樣都是可關的模組，管理者在後台「編輯專案描述」對話框裡逐一勾選，存在該地圖 `meta.json` 的 `features` 物件（`{"route":true,"upload":false,...}`）。單一事實來源在 `api/features.php` 的 `souliong_modules()`（key／中文說明／預設值）與 `souliong_module_on($meta, $key)`（沒設定就用預設值，舊地圖不受影響）：
+地圖核心只保留「顯示點位」這個基本功能；路線導覽、地點故事編輯、上傳投稿、嵌入碼、分享、投稿者身分這六樣都是可關的模組，管理者在後台「編輯專案描述」對話框裡逐一勾選，存在該地圖 `meta.json` 的 `features` 物件（`{"route":true,"upload":false,...}`）。單一事實來源在 `api/features.php` 的 `souliong_modules()`（key／中文說明／預設值）與 `souliong_module_on($meta, $key)`（沒設定就用預設值，舊地圖不受影響）：
 
 - **後台**（`admin.php`）：`souliong_modules()` 逐一畫勾選框，送出後寫回 `meta.json`。
 - **樣板**（`view.php`）：`$mod = fn($key) => souliong_module_on($meta, $key);`，模組關閉時直接不輸出對應的按鈕／彈窗 HTML（不是用 CSS 藏起來）。
@@ -88,12 +88,14 @@ owner_hash, src_hash, contrib_id, contrib_hash, edit_of, created_at
 - `assets/js/plugins/route-tour.js`（`route` 旗標——多投稿者路徑／單人路徑／連點彩蛋動畫；`class RouteTourPlugin extends MapApp.Plugin` 寫法。這個模組原本跟核心主渲染流程（新增／刪除／編輯／篩選）交纏最深，改法是把核心那些散落各處的 `drawRoute()`/`drawPersonRoute()` 呼叫全部收斂成統一的 `'stateChange'` 事件——資料或篩選狀態一變就發送一次，插件訂閱這個事件自己決定要不要重繪，核心不用再認得「路徑」這個概念）。
 - `assets/js/plugins/story-editor.js`（`story` 旗標——地點故事「新增一則版本」；`class StoryEditorPlugin extends MapApp.Plugin` 寫法。故事的顯示與「歷史版本」查看／刪除仍留在核心（唯讀、一律開放，不受此旗標影響），只有「編輯」按鈕與送出表單移進插件。順便修掉一個既有 bug：舊版編輯鈕誤判成要 `MOD('upload')` 也開著才顯示（複製貼上上傳模組的 `canPost()` 判斷式），現在單純看 `isUnlocked()`，`story` 與 `upload` 各自獨立開關就名副其實了。插件透過 `registerEntriesHint` 掛勾，純粹借用它「每次 `renderEntries()` 重繪都會呼叫」的時機，把按鈕插進核心模板裡固定的 `#storyActions` 容器，而不是用它「回傳元素插進去」的字面用法）。
 - `assets/js/plugins/contribution-upload.js`（`upload` 旗標——目前最大的一個插件：上傳按鈕、批次選圖／拍照視窗、EXIF 讀取與 WebP 轉檔、每張照片的小地圖／定位來源／地點下拉、送出（含 429 限流自動重試）。解鎖對話框（掃碼／投稿碼／PIN）與 `?code=` 網址參數自動解鎖仍留在核心，完全不受此旗標影響——「能不能寫入」是核心原生功能，「怎麼上傳」才是這個模組的範圍，見上面第 5 點規則。身分小標籤點擊快速開啟批次視窗改用 `'identityUploadShortcut'` 事件（核心不再直接呼叫插件內部函式），`u` 鍵快速鍵與地點卡片裡的「上傳照片到這個點」按鈕都用 `MapApp.getCurrentPoint()`／`MapApp.isUnlocked()` 等核心原生功能拿到需要的狀態，不假設自己知道核心內部變數）。
-- `assets/js/plugins/contributor-identity.js`（目前尚無自己的旗標、無條件載入——右上角身分小標籤的渲染（暱稱／管理者／匿名預覽名、解鎖狀態圖示）、點擊與長按換名的事件綁定、解鎖對話框裡「建立身分」PIN／暱稱欄位的展開收合按鈕。PIN／暱稱欄位本身的讀取（送出解鎖時）與重置（對話框重開時）仍留在核心——它們跟純代碼解鎖共用同一個對話框與送出按鈕，沒有乾淨的切點；`contribToken`/`contribInfo`/`myContribId` 這些「有無設定過 PIN」的實際存取也留在核心，因為 `submitContribution`／刪除／照片編輯等核心自身送出流程都要用到，且沒設 PIN 時它們本來就是無害的空字串，不受這個模組開關影響。等 `api/features.php` 那邊的 `identity` 旗標正式登記後，才會改成條件載入並依旗標隱藏對應 UI）。
+- `assets/js/plugins/contributor-identity.js`（`identity` 旗標——右上角身分小標籤的渲染（暱稱／管理者／匿名預覽名、解鎖狀態圖示）、點擊與長按換名的事件綁定、解鎖對話框裡「建立身分」PIN／暱稱欄位的展開收合按鈕。旗標關閉時 `view.php` 連 `#identity` 小標籤與 `#idToggleBtn`/`#idFields` 這段 HTML 都不會輸出，不是只藏插件腳本；解鎖對話框其餘部分（投稿碼輸入、QR 掃描）不受影響，純代碼解鎖照常可用。PIN／暱稱欄位本身的讀取（送出解鎖時）與重置（對話框重開時）仍留在核心——它們跟純代碼解鎖共用同一個對話框與送出按鈕，沒有乾淨的切點，且已對 DOM 是否存在做防呆（`if (el)`），旗標關閉時安全略過；`contribToken`/`contribInfo`/`myContribId` 這些「有無設定過 PIN」的實際存取也留在核心，因為 `submitContribution`／刪除／照片編輯等核心自身送出流程都要用到，且沒設 PIN 時它們本來就是無害的空字串，不受這個模組開關影響。`personExplore` 透過 `dependsOn` 相依這個模組，見下一節）。
 - `assets/js/plugins/person-explore.js`（`personExplore` 旗標——選了投稿者後可依序探索他的地標／零散照片時間軸；這個檔案早於 `MapApp.Plugin` 基底類別存在，尚未改寫成 `extends` 寫法，但其餘規則——旗標自我檢查、`<style>` 自己注入、DOM 自己插入 `#ctlBody`——仍是有效範例）。
 
-### 模組相依（規劃中的機制，尚未接上任何模組）
+### 模組相依
 
-當一個模組的存在前提是另一個模組開著（例如「依序探索」只有在訪客有具名身分可選時才有意義），`souliong_modules()` 的模組定義可以加一個 `'dependsOn' => 'otherKey'`；`souliong_module_on()` 判斷時，父模組關閉就一併視為關閉，不管自己的旗標是什麼。因為 `view.php`（PHP 端 `$mod()`）與 `viewer.leaflet.js`（JS 端 `MOD()`）都要算出一致的結果，`$APP` 會多帶一份 `moduleState`（每個模組 key 對應解析後的布林值，PHP 端用 `$mod()` 算好），JS 的 `MOD(key)` 直接讀這份資料，不在前端重算一次預設值／相依邏輯——避免兩邊各自判斷、日後兜不起來。
+當一個模組的存在前提是另一個模組開著，`souliong_modules()` 的模組定義可以加一個 `'dependsOn' => 'otherKey'`；`souliong_module_on()` 判斷時，父模組關閉就一併視為關閉，不管自己的旗標是什麼。因為 `view.php`（PHP 端 `$mod()`）與 `viewer.leaflet.js`（JS 端 `MOD()`）都要算出一致的結果，`$APP` 會多帶一份 `moduleState`（每個模組 key 對應解析後的布林值，PHP 端用 `$mod()` 算好），JS 的 `MOD(key)` 直接讀這份資料，不在前端重算一次預設值／相依邏輯——避免兩邊各自判斷、日後兜不起來。
+
+目前唯一接上這個機制的是 `personExplore`（依序探索）相依 `identity`（投稿者身分）：只有訪客能設定具名身分時，「選了某人、依序探索他的地標」才有意義；`identity` 關閉時 `personExplore` 一併視為關閉，即使該地圖的 `personExplore` 旗標本身是開著的（後台勾選框仍會顯示、但不生效，直到 `identity` 重新打開）。
 
 ## 八、命名與品牌
 

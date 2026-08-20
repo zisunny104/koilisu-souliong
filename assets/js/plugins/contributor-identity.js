@@ -1,5 +1,6 @@
 /* 選用插件：投稿者身分（見 souliong/docs/EXTENDING.md 第七節）
-   目前仍無條件載入（尚未接上 souliong_modules() 的 identity 開關，等 api/ 那邊的模組登記完成後再補）。
+   由 api/features.php 的 identity 旗標決定要不要載入（關閉時連 #identity／#idToggleBtn 等 DOM
+   都不會輸出，personExplore 透過 dependsOn 一併隨之關閉，見 souliong_module_on()）。
    管右上角的身分指示鈕（#identity：顯示暱稱/管理者/匿名預覽名、點按觸發上傳捷徑或解鎖、長按換一個匿名名），
    以及解鎖對話框裡「建立身分」的展開/收合（#idToggleBtn/#idFields，PIN／暱稱欄位的讀取與重置仍留在核心，
    因為它們跟純代碼解鎖共用同一個對話框與送出按鈕，拆不乾淨）。

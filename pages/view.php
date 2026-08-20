@@ -110,7 +110,7 @@ foreach (['theme', 'control-card', 'popups', 'map-markers', 'point-panel', 'map-
 <div id="topright" class="tr-group">
   <button class="icon-btn tr-toggle" id="trToggle" title="<?= $t('more_options') ?>" aria-label="<?= $t('expand_options_aria') ?>" aria-expanded="false" aria-controls="trItems"><i class="fa-solid fa-bars" aria-hidden="true"></i></button>
   <div class="tr-items" id="trItems">
-    <span id="identity" class="idchip" title="<?= $t('contributor_identity') ?>" role="button" tabindex="0"></span>
+    <?php if ($mod('identity')): ?><span id="identity" class="idchip" title="<?= $t('contributor_identity') ?>" role="button" tabindex="0"></span><?php endif; ?>
     <a class="icon-btn hide-in-embed" id="homeBtn" href="<?= $b ?>" title="<?= $t('back_to_list') ?>" aria-label="<?= $t('back_to_list') ?>"><i class="fa-solid fa-house" aria-hidden="true"></i></a>
     <button id="themeBtn" class="icon-btn" title="<?= $t('toggle_theme') ?>" aria-label="<?= $t('toggle_theme_aria') ?>"><i class="fa-solid fa-circle-half-stroke" aria-hidden="true"></i></button>
     <div class="lang-menu hide-in-embed" id="langMenu">
@@ -178,6 +178,7 @@ foreach (['theme', 'control-card', 'popups', 'map-markers', 'point-panel', 'map-
     <div class="hint"><?= $t('unlock_hint') ?></div>
     <input id="unlockCodeInput" class="name-in" style="width:100%;letter-spacing:8px;text-align:center;font-size:1.375rem" placeholder="<?= $t('six_digits') ?>" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" maxlength="8" data-pin-toggle aria-label="<?= $t('contrib_code') ?>">
     <div id="unlockMsg" class="hint" role="status"></div>
+    <?php if ($mod('identity')): ?>
     <div style="margin-top:10px">
       <button type="button" class="btn" id="idToggleBtn" aria-expanded="false" aria-controls="idFields"><?= $t('create_identity_btn') ?></button>
       <div id="idFields" style="display:none;margin-top:8px">
@@ -186,6 +187,7 @@ foreach (['theme', 'control-card', 'popups', 'map-markers', 'point-panel', 'map-
         <input id="unlockCnameInput" class="name-in" style="width:100%;margin-top:6px" placeholder="<?= $t('display_nickname') ?>" autocomplete="off" maxlength="40" aria-label="<?= $t('contributor_nickname') ?>">
       </div>
     </div>
+    <?php endif; ?>
     <div class="dialog-actions">
       <button class="btn" id="scanBtn"><i class="fa-solid fa-qrcode"></i> <?= $t('scan_qr') ?></button>
       <span class="spacer"></span>
@@ -231,7 +233,9 @@ foreach (['theme', 'control-card', 'popups', 'map-markers', 'point-panel', 'map-
 <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
 <script><?php readfile(__DIR__ . '/../assets/js/pin-input.js'); ?></script>
 <script><?php readfile(__DIR__ . '/../assets/js/viewer.leaflet.js'); ?></script>
+<?php if ($mod('identity')): ?>
 <script><?php readfile(__DIR__ . '/../assets/js/plugins/contributor-identity.js'); ?></script>
+<?php endif; ?>
 <?php if ($mod('upload')): ?>
 <script><?php readfile(__DIR__ . '/../assets/js/plugins/contribution-upload.js'); ?></script>
 <?php endif; ?>

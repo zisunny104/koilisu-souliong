@@ -40,3 +40,42 @@ function souliong_features(): array
         'share'  => '分享',
     ];
 }
+
+// 每張地圖可獨立開關的功能模組：key => 後台勾選 UI 用的中繼資料。
+// 這是「這張地圖要不要有這個功能」的開關（view.php 用它決定渲不渲染、viewer.leaflet.js
+// 用它決定要不要啟用行為），跟上面 souliong_features() 那份「事後統計要顯示的名稱」是兩件事。
+// 未在 meta.json 出現的 key 一律視為 default 值，舊專案（meta.json 沒有 features 欄位）
+// 因此完全不受影響、行為與拆分之前一致。
+function souliong_modules(): array
+{
+    return [
+        'route'  => ['label' => '路線導覽', 'desc' => '依編號的路徑導覽，及連點路線鈕的時間軸動畫彩蛋。', 'default' => true],
+        'story'  => ['label' => '地點故事編輯', 'desc' => '訪客可送出新版地點故事文字（關閉後地點故事唯讀）。', 'default' => true],
+        'upload' => ['label' => '上傳投稿', 'desc' => '訪客上傳照片／文字紀錄；關閉後整張地圖唯讀，投稿碼與解鎖流程一併隱藏。', 'default' => true],
+        'embed'  => ['label' => '嵌入載入', 'desc' => '產生可嵌入其他網站的 iframe 碼。', 'default' => true],
+        'share'  => ['label' => '分享', 'desc' => '分享連結／QR Code 彈窗。', 'default' => true],
+        'identity' => ['label' => '投稿者身分', 'desc' => '右上角身分小標籤（暱稱／管理者／匿名預覽名）與建立身分（PIN）欄位。關閉後依序探索也會一併隱藏。', 'default' => true],
+        'personExplore' => ['label' => '依序探索（插件）', 'desc' => '選了投稿者後，可依序探索他的地標／零散照片時間軸。', 'default' => false, 'dependsOn' => 'identity'],
+    ];
+}
+
+// $meta 是該專案 meta.json 解析後的陣列（可能是 null）。
+// personExplore 沿用既有的扁平旗標寫法（$meta['personExplore']），其餘模組存在 $meta['features'][$key]。
+function souliong_module_on(?array $meta, string $key): bool
+{
+    $dep = souliong_modules()[$key]['dependsOn'] ?? null;
+    if ($dep !== null && !souliong_module_on($meta, $dep)) {
+        return false;
+    }
+    $def = souliong_modules()[$key]['default'] ?? true;
+    if (!is_array($meta)) {
+        return $def;
+    }
+    if ($key === 'personExplore') {
+        return (bool)($meta['personExplore'] ?? $def);
+    }
+    if (isset($meta['features'][$key])) {
+        return (bool)$meta['features'][$key];
+    }
+    return $def;
+}
