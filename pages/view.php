@@ -126,11 +126,6 @@ foreach (['theme', 'control-card', 'popups', 'map-markers', 'point-panel', 'map-
 
 <button class="icon-btn mapop-btn" id="resetBtn" title="<?= $t('reset_view') ?>" aria-label="<?= $t('reset_view_aria') ?>"><i class="fa-solid fa-location-crosshairs" aria-hidden="true"></i></button>
 
-<?php if ($mod('upload')): ?>
-<button class="fabtn upload-only" id="uploadBtn"><i class="fa-solid fa-plus"></i> <?= $t('upload') ?></button>
-<button class="fabtn fab-unlock" id="unlockFab" style="display:none"><i class="fa-solid fa-lock"></i> <?= $t('unlock_contrib') ?></button>
-<input type="file" id="pickImages" multiple hidden>
-<?php endif; ?>
 <input type="text" id="myName" hidden>
 
 <div id="cloudWarn" class="toast" style="display:none"></div>
@@ -149,25 +144,6 @@ foreach (['theme', 'control-card', 'popups', 'map-markers', 'point-panel', 'map-
     <div id="entries"></div>
   </div>
 </div>
-
-<?php if ($mod('upload')): ?>
-<div id="modal">
-  <div class="modal-box">
-    <div class="modal-head">
-      <h3><?= $t('upload_photo') ?></h3>
-      <input class="name-in" id="modalName" placeholder="<?= $t('your_nickname') ?>" autocomplete="off" style="width:130px">
-      <button class="btn" onclick="MapApp.closeModal()"><?= $t('close') ?></button>
-    </div>
-    <div class="modal-body" id="queue"></div>
-    <div class="modal-foot">
-      <button class="btn" id="addMoreBtn"><i class="fa-solid fa-plus"></i> <?= $t('add_more_photos') ?></button>
-      <span class="spacer"></span>
-      <span class="hint" id="batchProgress"></span>
-      <button class="btn primary" id="submitAllBtn"><?= $t('submit_all') ?></button>
-    </div>
-  </div>
-</div>
-<?php endif; ?>
 
 <?php if ($mod('upload')): ?>
 <div id="unlockDialog" class="dialog">
@@ -196,6 +172,7 @@ foreach (['theme', 'control-card', 'popups', 'map-markers', 'point-panel', 'map-
 </div>
 <?php endif; ?>
 
+<?php if ($mod('delegation')): ?>
 <div id="adminRedeemDialog" class="dialog">
   <div class="dialog-box">
     <div class="dialog-head"><b><?= $t('admin_redeem_title') ?></b><button class="icon-btn" onclick="MapApp.closeAdminRedeem()" aria-label="<?= $t('close') ?>"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button></div>
@@ -221,6 +198,7 @@ foreach (['theme', 'control-card', 'popups', 'map-markers', 'point-panel', 'map-
     </div>
   </div>
 </div>
+<?php endif; ?>
 
 <div id="lb" onclick="MapApp.closeLightbox()"><img id="lbImg" alt=""><div class="cap" id="lbCap"></div><div class="photo-editor" id="lbEditor" style="display:none" onclick="event.stopPropagation()"></div></div>
 

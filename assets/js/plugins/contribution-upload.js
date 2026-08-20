@@ -1,5 +1,7 @@
 /* 選用插件：投稿上傳（見 souliong/docs/EXTENDING.md 第七節）
    只在該地圖 meta.json 的 features.upload 為 true 時，view.php 才會載入這個檔案。
+   #uploadBtn／#unlockFab／#pickImages（插在 #resetBtn 之後）與批次上傳彈窗 #modal（插在 #panel 之後）
+   都由這裡的 injectDom() 自己建立、插入固定位置，view.php 不再輸出這幾段 HTML。
    管理：批次上傳彈窗（EXIF/HEIC 轉檔、GPS 定位、迷你地圖校正）、u 快速鍵、身分晶片的「快速上傳」捷徑。
    解鎖對話框（QR 掃描、PIN 建立身分）仍留在核心，因為 isUnlocked()/openUnlock() 是任何模組都可能用到的核心原語。 */
 (() => {
@@ -77,7 +79,41 @@
       this.deviceLocCache = null;
     }
 
+    // #uploadBtn／#unlockFab／#pickImages 原本緊接在 #resetBtn 之後、#myName 之前；
+    // #modal 批次上傳彈窗原本緊接在 #panel 之後、#unlockDialog 之前——插入點沿用原本 view.php 的順序。
+    injectDom() {
+      const resetBtn = document.getElementById('resetBtn');
+      if (resetBtn) {
+        resetBtn.insertAdjacentHTML('afterend',
+          '<button class="fabtn upload-only" id="uploadBtn"><i class="fa-solid fa-plus"></i> ' + esc(t('upload')) + '</button>' +
+          '<button class="fabtn fab-unlock" id="unlockFab" style="display:none"><i class="fa-solid fa-lock"></i> ' + esc(t('unlock_contrib')) + '</button>' +
+          '<input type="file" id="pickImages" multiple hidden>');
+      }
+
+      const panel = document.getElementById('panel');
+      if (panel) {
+        panel.insertAdjacentHTML('afterend',
+          '<div id="modal">' +
+            '<div class="modal-box">' +
+              '<div class="modal-head">' +
+                '<h3>' + esc(t('upload_photo')) + '</h3>' +
+                '<input class="name-in" id="modalName" placeholder="' + esc(t('your_nickname')) + '" autocomplete="off" style="width:130px">' +
+                '<button class="btn" onclick="MapApp.closeModal()">' + esc(t('close')) + '</button>' +
+              '</div>' +
+              '<div class="modal-body" id="queue"></div>' +
+              '<div class="modal-foot">' +
+                '<button class="btn" id="addMoreBtn"><i class="fa-solid fa-plus"></i> ' + esc(t('add_more_photos')) + '</button>' +
+                '<span class="spacer"></span>' +
+                '<span class="hint" id="batchProgress"></span>' +
+                '<button class="btn primary" id="submitAllBtn">' + esc(t('submit_all')) + '</button>' +
+              '</div>' +
+            '</div>' +
+          '</div>');
+      }
+    }
+
     mount() {
+      this.injectDom();
       this.mapApp.registerEntriesHint(point => this.entriesUploadButton(point));
       this.mapApp.onHook('closeAll', () => this.closeModal());
       this.mapApp.onHook('identityUploadShortcut', () => {

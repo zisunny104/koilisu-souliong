@@ -54,8 +54,9 @@ function souliong_modules(): array
         'upload' => ['label' => '上傳投稿', 'desc' => '訪客上傳照片／文字紀錄；關閉後整張地圖唯讀，投稿碼與解鎖流程一併隱藏。', 'default' => true],
         'embed'  => ['label' => '嵌入載入', 'desc' => '產生可嵌入其他網站的 iframe 碼。', 'default' => true],
         'share'  => ['label' => '分享', 'desc' => '分享連結／QR Code 彈窗。', 'default' => true],
-        'identity' => ['label' => '投稿者身分', 'desc' => '右上角身分小標籤（暱稱／管理者／匿名預覽名）與建立身分（PIN）欄位。關閉後依序探索也會一併隱藏。', 'default' => true],
+        'identity' => ['label' => '投稿者身分', 'desc' => '右上角身分小標籤（暱稱／管理者／匿名預覽名）與建立身分（PIN）欄位。關閉後依序探索也會一併隱藏。', 'default' => true, 'dependsOn' => 'upload'],
         'personExplore' => ['label' => '依序探索（插件）', 'desc' => '選了投稿者後，可依序探索他的地標／零散照片時間軸。', 'default' => false, 'dependsOn' => 'identity'],
+        'delegation' => ['label' => '管理者邀請登入', 'desc' => '地圖頁上的管理者登入／邀請兌換彈窗。關閉後這張地圖不再產生新的專案 PIN 或邀請連結，只能用主 PIN 從後台網址（/manager）登入管理，適合純檢視、僅超級管理者更新內容的部署。', 'default' => true],
     ];
 }
 

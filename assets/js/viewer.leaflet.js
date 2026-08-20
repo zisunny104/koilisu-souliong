@@ -194,7 +194,7 @@ window.MapApp = (() => {
   // 讀出後立刻用 history.replaceState 清掉，避免重新整理或分享網址時重複兌換／外流。
   let pendingRedeem = null; // {project, token}，等待使用者在 #adminRedeemDialog 自己輸入 PIN／暱稱後才送出
   async function handleRedeemFragment() {
-    if (EMBED) return;
+    if (EMBED || !MOD('delegation')) return;
     const raw = location.hash.startsWith('#') ? location.hash.slice(1) : location.hash;
     if (!/(^|&)redeem=/.test(raw)) return;
     const hp = new URLSearchParams(raw);
@@ -1009,7 +1009,8 @@ window.MapApp = (() => {
 
     // 收折
     // 品牌互動：連點變形狀（點→線→三→四→五→六角）→ 六角小彩蛋；長按 → 管理入口
-    setupBrandEgg();
+    // delegation 關閉時這張地圖不接受新的專案 PIN／邀請登入，連彩蛋入口都不掛，管理者一律走 /manager 直接登入
+    if (MOD('delegation')) setupBrandEgg();
 
     // 主題切換（系統／淺／深）
     updateThemeIcon();
@@ -1292,7 +1293,7 @@ window.MapApp = (() => {
     document.getElementById('pinDialog').classList.add('open');
     if (input) input.focus();
   }
-  function closePin() { document.getElementById('pinDialog').classList.remove('open'); }
+  function closePin() { const dlg = document.getElementById('pinDialog'); if (dlg) dlg.classList.remove('open'); }
 
   boot();
   return {
