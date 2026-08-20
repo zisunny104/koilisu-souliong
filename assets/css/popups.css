@@ -1,0 +1,214 @@
+/* ---------- 上傳 FAB ---------- */
+.fabtn {
+  position: fixed;
+  right: 18px;
+  bottom: calc(20px + env(safe-area-inset-bottom));
+  z-index: 1000;
+  border: none;
+  border-radius: 999px;
+  padding: 15px 24px;
+  font-family: inherit;
+  font-size: 0.9375rem;
+  font-weight: 700;
+  background: var(--accent);
+  color: var(--accent-fg);
+  box-shadow: var(--sh-2);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  transition: transform var(--t), box-shadow var(--t), opacity var(--t)
+}
+
+.fabtn:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--sh-3)
+}
+
+.fabtn:active {
+  transform: translateY(0) scale(.98)
+}
+
+/* ---------- 提示 toast ---------- */
+.toast {
+  position: fixed;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1200;
+  background: #fdecec;
+  color: #8a1f1f;
+  padding: 10px 16px;
+  border-radius: var(--r-md);
+  font-size: 0.75rem;
+  box-shadow: var(--sh-2);
+  max-width: 92vw;
+  text-align: center
+}
+
+@media (prefers-color-scheme: dark) {
+  .toast {
+    background: #3a1c1c;
+    color: #ffb4b4
+  }
+}
+
+/* ---------- 對話框（嵌入碼） ---------- */
+.dialog {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, .45);
+  -webkit-backdrop-filter: blur(3px);
+  backdrop-filter: blur(3px);
+  z-index: 1600;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 16px
+}
+
+.dialog.open {
+  display: flex
+}
+
+.dialog-box {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  padding: 20px;
+  width: min(460px, 92vw);
+  box-shadow: var(--sh-3)
+}
+
+.dialog-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+  font-size: 1rem
+}
+
+.dialog .hint {
+  font-size: 0.75rem;
+  color: var(--muted);
+  margin: 8px 0
+}
+
+.dialog textarea {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  padding: 10px;
+  font-size: 0.75rem;
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  background: var(--bg);
+  color: var(--fg);
+  resize: vertical;
+  line-height: 1.5;
+  margin-top: 12px
+}
+
+.dialog-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 12px
+}
+
+/* PIN 面板 */
+.pin-box {
+  width: min(300px, 92vw)
+}
+
+@keyframes pinshake {
+
+  0%,
+  100% {
+    transform: translateX(0)
+  }
+
+  20% {
+    transform: translateX(-8px)
+  }
+
+  40% {
+    transform: translateX(8px)
+  }
+
+  60% {
+    transform: translateX(-6px)
+  }
+
+  80% {
+    transform: translateX(6px)
+  }
+}
+
+/* 數字鍵盤／一般鍵盤切換輸入（見 pin-input.js） */
+.pin-toggle-wrap {
+  position: relative;
+  display: inline-flex;
+  vertical-align: middle
+}
+
+.pin-toggle-wrap .name-in {
+  padding-right: 34px
+}
+
+/* 密碼型 PIN 欄位：用幾何圖案取代瀏覽器原生圓點遮罩（實際輸入仍是原生欄位，見 pin-input.js） */
+.pin-mask-overlay {
+  position: absolute;
+  inset: 0;
+  right: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  overflow: hidden;
+  pointer-events: none;
+  color: var(--accent)
+}
+
+.pin-mask-dot.pop {
+  animation: brandpop .2s ease
+}
+
+.pin-toggle-btn {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 26px;
+  height: 26px;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--r-md);
+  transition: background var(--t), color var(--t)
+}
+
+.pin-toggle-btn:hover {
+  background: var(--hover);
+  color: var(--fg)
+}
+
+/* QR 掃描 */
+#scanBox {
+  margin-top: 12px;
+  border-radius: var(--r-md);
+  overflow: hidden;
+  border: 1px solid var(--line)
+}
+
+#scanVideo {
+  width: 100%;
+  max-height: 260px;
+  object-fit: cover;
+  display: block;
+  background: #000
+}
+

@@ -1,0 +1,114 @@
+/* ---------- Leaflet 控制項（配合設計語彙） ---------- */
+.leaflet-control-zoom.leaflet-bar {
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  overflow: hidden;
+  box-shadow: var(--sh-2);
+  margin: 16px !important
+}
+
+.leaflet-bar a,
+.leaflet-bar a:hover {
+  width: 36px;
+  height: 36px;
+  line-height: 36px;
+  font-size: 1.125rem;
+  color: var(--fg);
+  background: var(--glass);
+  -webkit-backdrop-filter: blur(14px) saturate(1.4);
+  backdrop-filter: blur(14px) saturate(1.4);
+  border-bottom: 1px solid var(--line)
+}
+
+.leaflet-bar a:hover {
+  background: var(--hover)
+}
+
+.leaflet-bar a:last-child {
+  border-bottom: none
+}
+
+.leaflet-bar a.leaflet-disabled {
+  opacity: .4
+}
+
+.leaflet-control-attribution {
+  background: var(--glass) !important;
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  color: var(--muted) !important;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 4px 12px !important;
+  font-size: 0.625rem;
+  line-height: 1.5;
+  margin: 14px !important;
+  box-shadow: var(--sh-1);
+  max-width: calc(100vw - 28px);
+  white-space: normal;
+  word-break: keep-all;
+  text-align: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap
+}
+
+.leaflet-control-attribution i {
+  margin: 0 1px
+}
+
+.leaflet-control-attribution a {
+  color: var(--muted) !important;
+  text-decoration: none
+}
+
+/* 版權：外部（義務標註）與自家連結分組——大螢幕豎線分隔，小螢幕換行加橫線 */
+.cr-ext, .cr-own {
+  white-space: normal
+}
+
+.cr-sep {
+  width: 1px;
+  align-self: stretch;
+  background: var(--line);
+  margin: 0 .5em
+}
+
+@media (max-width: 560px) {
+  .leaflet-control-attribution {
+    flex-direction: column
+  }
+
+  .cr-sep {
+    width: 60%;
+    height: 1px;
+    align-self: center;
+    margin: .3em 0
+  }
+}
+
+.leaflet-touch .leaflet-bar a {
+  width: 36px;
+  height: 36px;
+  line-height: 36px
+}
+
+/* 版權置中於下方（縮放留在左下） */
+.leaflet-bottom.leaflet-right {
+  left: 50%;
+  right: auto;
+  transform: translateX(-50%)
+}
+
+/* 深色底圖提亮，讓圖面與物件更清楚（不影響標記，標記在另一個 pane） */
+:root[data-theme="dark"] .leaflet-tile-pane {
+  filter: brightness(1.45) contrast(.9)
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .leaflet-tile-pane {
+    filter: brightness(1.45) contrast(.9)
+  }
+}
+

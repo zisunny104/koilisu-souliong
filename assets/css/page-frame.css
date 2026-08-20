@@ -1,0 +1,398 @@
+/* ── 右上：網頁資訊群組 ── */
+.tr-group {
+  position: fixed;
+  top: 14px;
+  right: 14px;
+  z-index: 1250;
+  display: flex;
+  align-items: center;
+  gap: .375rem;
+  background: var(--glass);
+  -webkit-backdrop-filter: blur(16px) saturate(1.6);
+  backdrop-filter: blur(16px) saturate(1.6);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  box-shadow: var(--sh-2);
+  padding: .3rem .45rem;
+  max-width: calc(100vw - 28px)
+}
+
+.tr-items {
+  display: flex;
+  align-items: center;
+  gap: .375rem
+}
+
+.tr-toggle {
+  display: none
+}
+
+.idchip {
+  display: inline-flex;
+  align-items: center;
+  gap: .4rem;
+  font-size: .75rem;
+  font-weight: 700;
+  color: var(--fg);
+  background: var(--hover);
+  border-radius: 999px;
+  padding: .35rem .6rem;
+  max-width: 34vw;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+  transition: background var(--t)
+}
+
+.idchip:hover {
+  background: var(--line)
+}
+
+.lang-menu {
+  position: relative
+}
+
+.lang-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 .65rem;
+  border: none;
+  background: var(--hover);
+  color: var(--fg);
+  font: inherit;
+  font-size: .75rem;
+  font-weight: 700;
+  cursor: pointer;
+  border-radius: 999px;
+  transition: background var(--t)
+}
+
+.lang-btn:hover {
+  background: var(--line)
+}
+
+.lang-menu.open .lang-btn {
+  background: var(--line)
+}
+
+.lang-btn i {
+  font-size: .625rem;
+  color: var(--muted);
+  transition: transform var(--t)
+}
+
+.lang-menu.open .lang-btn i {
+  transform: rotate(180deg)
+}
+
+.lang-list {
+  position: absolute;
+  top: calc(100% + .4rem);
+  right: 0;
+  margin: 0;
+  padding: .3rem;
+  list-style: none;
+  min-width: 8rem;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: .8rem;
+  box-shadow: var(--sh-2);
+  z-index: 10
+}
+
+.lang-menu:not(.open) .lang-list {
+  display: none
+}
+
+.lang-list li {
+  padding: .5rem .6rem;
+  border-radius: .5rem;
+  font-size: .8125rem;
+  color: var(--fg);
+  cursor: pointer;
+  transition: background var(--t)
+}
+
+.lang-list li:hover {
+  background: var(--hover)
+}
+
+.lang-list li[aria-selected="true"] {
+  font-weight: 700;
+  background: var(--hover)
+}
+
+.idchip i {
+  color: var(--muted)
+}
+
+/* 嵌入模式：右上群組只留「主題切換」；身分、漢堡收合都藏起來
+   （回列表／分享／嵌入碼／語言選單本身就有 .hide-in-embed）。theme 鈕直接顯示，不收進漢堡 */
+body.embed .tr-group .idchip,
+body.embed .tr-group .tr-toggle {
+  display: none !important
+}
+
+/* 桌機時把點位卡片下移，讓出右上群組 */
+@media (min-width:641px) {
+  #panel {
+    top: 60px;
+    max-height: calc(100dvh - 74px)
+  }
+}
+
+/* 手機：右上群組收成漢堡，避免遮擋卡片；點開後以下拉卡片顯示 */
+@media (max-width:640px) {
+  .tr-toggle {
+    display: inline-flex
+  }
+
+  .tr-items {
+    display: none;
+    position: absolute;
+    top: calc(100% + .5rem);
+    right: 0;
+    flex-direction: column;
+    align-items: stretch;
+    gap: .3rem;
+    background: var(--glass);
+    -webkit-backdrop-filter: blur(16px) saturate(1.6);
+    backdrop-filter: blur(16px) saturate(1.6);
+    border: 1px solid var(--line);
+    border-radius: 1rem;
+    box-shadow: var(--sh-2);
+    padding: .5rem;
+    min-width: 11rem
+  }
+
+  .tr-group.open .tr-items {
+    display: flex
+  }
+
+  .tr-items .idchip {
+    max-width: none;
+    justify-content: center
+  }
+
+  .tr-items .icon-btn {
+    width: 100%;
+    height: auto;
+    border-radius: .7rem;
+    justify-content: flex-start;
+    padding: .45rem .6rem;
+    gap: .5rem
+  }
+
+  .tr-items .lang-menu {
+    width: 100%
+  }
+
+  .tr-items .lang-btn {
+    width: 100%;
+    height: auto;
+    justify-content: space-between;
+    border-radius: .7rem;
+    padding: .45rem .6rem
+  }
+
+  .tr-items .lang-list {
+    left: 0;
+    right: 0;
+    min-width: 0
+  }
+
+  .tr-items .icon-btn::after {
+    content: attr(aria-label);
+    font-size: .75rem;
+    font-weight: 600
+  }
+
+  /* 嵌入模式手機版：漢堡被藏掉了，theme 鈕不走下拉卡片，直接以一般小圓鈕顯示 */
+  body.embed .tr-items {
+    display: flex;
+    position: static;
+    flex-direction: row;
+    background: none;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    border: 0;
+    box-shadow: none;
+    padding: 0;
+    min-width: 0
+  }
+
+  body.embed .tr-items .icon-btn {
+    width: 30px;
+    height: 30px;
+    justify-content: center;
+    padding: 0
+  }
+
+  body.embed .tr-items .icon-btn::after {
+    content: none
+  }
+}
+
+/* ── 左下：地圖操作（重置，對齊縮放鈕：同寬、同左緣、間隔 8px）── */
+.mapop-btn {
+  position: fixed;
+  left: 16px;
+  bottom: calc(96px + env(safe-area-inset-bottom));
+  z-index: 1000;
+  background: var(--glass);
+  -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: blur(16px);
+  border: 1px solid var(--line);
+  box-shadow: var(--sh-1);
+  width: 36px;
+  height: 36px;
+  border-radius: var(--r-md);
+  color: var(--fg)
+}
+
+/* 嵌入模式保留左下「回初始視角」鈕（跟主題切換一樣屬於閱覽功能，不涉及投稿） */
+
+/* ── 右下：解鎖 FAB（與上傳互斥同位）── */
+.fab-unlock {
+  background: var(--panel);
+  color: var(--fg);
+  border: 1px solid var(--line)
+}
+
+/* ── 標題跑馬燈（單擊一次；與形狀彩蛋並存）── */
+.brand {
+  max-width: min(52vw, 220px)
+}
+
+.brand-txt {
+  display: inline-block;
+  white-space: nowrap
+}
+
+.brand.marquee {
+  overflow: hidden
+}
+
+.brand.marquee .brand-txt {
+  animation: marquee 8s ease-in-out
+}
+
+@keyframes marquee {
+
+  0%,
+  8% {
+    transform: translateX(0)
+  }
+
+  50% {
+    transform: translateX(var(--mq-shift, 0))
+  }
+
+  92%,
+  100% {
+    transform: translateX(0)
+  }
+}
+
+@media (prefers-reduced-motion:reduce) {
+  .brand.marquee .brand-txt {
+    animation: none
+  }
+}
+
+/* 卡片底部：資料來源（上）與平台聲明（下，較淡並以細線分隔） */
+.foot-src {
+  font-size: 0.6875rem;
+  color: var(--muted);
+  line-height: 1.6
+}
+
+.foot-note {
+  font-size: 0.6563rem;
+  color: var(--muted);
+  opacity: .85;
+  line-height: 1.6;
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--line)
+}
+
+.foot-src:empty {
+  display: none
+}
+
+/* 有投稿的點：加光環標記；開「投稿」聚焦模式時淡化沒有投稿的點 */
+.dot-pin.has-contrib {
+  box-shadow: 0 2px 6px rgba(0, 0, 0, .35), 0 0 0 3px rgba(255, 255, 255, .55), 0 0 10px 2px rgba(0, 0, 0, .28)
+}
+
+body.focus-contrib .dot-pin:not(.has-contrib) {
+  opacity: .32;
+  filter: grayscale(.55)
+}
+
+.dot-pin {
+  transition: opacity .2s, filter .2s
+}
+
+/* 「投稿」鈕上的數量標 */
+.btn .cnt {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.05rem;
+  height: 1.05rem;
+  padding: 0 .3rem;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--accent-fg);
+  font-size: .68rem;
+  font-weight: 800;
+  line-height: 1
+}
+
+.btn.on .cnt {
+  background: var(--accent-fg);
+  color: var(--accent)
+}
+
+/* 資料來源連結（可展開） */
+.src-links {
+  margin-top: 5px
+}
+
+.src-links>summary {
+  cursor: pointer;
+  font-size: 0.6875rem;
+  color: var(--muted);
+  list-style: none
+}
+
+.src-links>summary::-webkit-details-marker {
+  display: none
+}
+
+.src-links>summary::before {
+  content: '▸ ';
+  font-size: 0.5625rem
+}
+
+.src-links[open]>summary::before {
+  content: '▾ '
+}
+
+.src-links a {
+  display: block;
+  font-size: 0.6875rem;
+  color: var(--muted);
+  margin-top: 4px;
+  word-break: break-all;
+  text-decoration: underline
+}
+
+.src-links a:hover {
+  color: var(--fg)
+}

@@ -1,0 +1,146 @@
+/* ---------- 燈箱 ---------- */
+#lb {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, .92);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+  cursor: zoom-out;
+  padding: 16px
+}
+
+#lb img {
+  max-width: 94vw;
+  max-height: 86vh;
+  border-radius: var(--r-md);
+  box-shadow: var(--sh-3);
+  opacity: 1;
+  transition: opacity .15s ease
+}
+
+#lb img.loading {
+  opacity: .35
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #lb img {
+    transition: none
+  }
+}
+
+#lb .cap {
+  position: absolute;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: min(94vw, 480px);
+  max-height: 30vh;
+  overflow-y: auto;
+  text-align: left;
+  color: #fff;
+  font-size: 0.8125rem;
+  background: rgba(20, 20, 20, .72);
+  border-radius: var(--r-md);
+  padding: 10px 14px;
+}
+
+#lb .cap:empty {
+  display: none
+}
+
+#lb .cap .lb-who {
+  opacity: .8;
+  margin-bottom: 4px
+}
+
+/* 照片資訊：時間後面的 i 小圖示（不是獨立按鈕） */
+#lb .cap .lb-info-i {
+  border: none;
+  background: none;
+  color: #fff;
+  opacity: .7;
+  font-size: 0.875rem;
+  padding: 0 2px;
+  vertical-align: -1px;
+  cursor: pointer;
+  transition: opacity var(--t)
+}
+
+#lb .cap .lb-info-i:hover {
+  opacity: 1
+}
+
+#lb .cap .lb-txt {
+  white-space: pre-wrap;
+  line-height: 1.5
+}
+
+#lb .cap .lb-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 8px
+}
+
+#lb .cap .lb-info {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(255, 255, 255, .2);
+  font-size: 0.75rem;
+  line-height: 1.7
+}
+
+#lb .cap .lb-info .lbi-row {
+  display: flex;
+  gap: 10px
+}
+
+#lb .cap .lb-info .lbi-k {
+  opacity: .65;
+  flex: 0 0 4.5em
+}
+
+#lb .cap .lb-info .empty {
+  opacity: .6
+}
+
+#lb .cap .lb-actions .btn {
+  background: rgba(255, 255, 255, .14);
+  border-color: rgba(255, 255, 255, .3);
+  color: #fff
+}
+
+#lb .cap .lb-actions .btn:hover {
+  background: rgba(255, 255, 255, .24)
+}
+
+#lb .cap .lb-actions .del-btn {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: #ff8080;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px 0
+}
+
+#lb .cap .lb-actions .del-btn:hover {
+  text-decoration: underline
+}
+
+#lb .photo-editor {
+  position: absolute;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(94vw, 480px);
+  max-height: 70vh;
+  overflow-y: auto;
+  border-top: none;
+  border-radius: var(--r-md);
+  box-shadow: var(--sh-3);
+  cursor: default
+}
+
