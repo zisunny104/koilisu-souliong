@@ -99,7 +99,7 @@ window.MapApp = (() => {
       const j = await res.json().catch(() => ({}));
       if (!res.ok || j.error) { alert(t('delete_failed', { reason: j.error || ('HTTP ' + res.status) })); return; }
       CONTRIB = CONTRIB.filter(e => String(e.id) !== String(id));
-      recount(); renderChairs(); renderPhotoLayer(); rebuildPersonFilter(); drawRoute(); drawPersonRoute();
+      recount(); renderChairs(); renderPhotoLayer(); rebuildPersonFilter(); emitHook('stateChange');
       if (current) renderEntries();
     } catch (e) { alert(t('delete_failed', { reason: e.message })); }
   }
@@ -272,8 +272,8 @@ window.MapApp = (() => {
   }
 
   let META = null, POINTS = [], CATS = [], active = {}, CONTRIB = [], counts = {};
-  let map, photoLayer, baseTile = null, routeLines = [], routeOn = false, photoLayerOn = false;
-  let filterPerson = '', personLine = null;
+  let map, photoLayer, baseTile = null, photoLayerOn = false;
+  let filterPerson = '';
 
   function setBaseTile() {
     if (baseTile) map.removeLayer(baseTile);
@@ -438,52 +438,6 @@ window.MapApp = (() => {
       m.on('click', () => { emitHook('panelReset'); openPanel(c); });
       chairMarkers[c.num] = m;
     });
-    drawRoute();
-  }
-  // 未選特定投稿者時：同時畫出「每位投稿者」各自的時間路徑（多色）；選了人則交給 drawPersonRoute() 畫單人路徑。
-  // 效能：只單次掃描 effectivePhotos() 依姓名分組，不對每個人各自重新計算一次。
-  function drawRoute() {
-    routeLines.forEach(l => map.removeLayer(l)); routeLines = [];
-    if (!routeOn || filterPerson) return;
-    const byName = {};
-    effectivePhotos().forEach(e => {
-      if (!e.name || typeof e.lat !== 'number' || typeof e.lon !== 'number') return;
-      (byName[e.name] = byName[e.name] || []).push(e);
-    });
-    Object.keys(byName).forEach(name => {
-      const pts = byName[name].sort((a, b) => tv(a) - tv(b)).map(e => [e.lat, e.lon]);
-      if (pts.length >= 2) routeLines.push(L.polyline(pts, { color: personColor(name), weight: 2, opacity: .65 }).addTo(map));
-    });
-  }
-  // 彩蛋：快速連點「路徑」鈕數下 → 依所有投稿的時間順序，重新走一次整條路徑
-  const ROUTE_EGG_COUNT = 6, ROUTE_EGG_WINDOW = 1200;
-  let routeEggN = 0, routeEggTimer = null, routeEggRun = 0;
-  function routeEggClick() {
-    routeEggN++;
-    clearTimeout(routeEggTimer);
-    routeEggTimer = setTimeout(() => { routeEggN = 0; }, ROUTE_EGG_WINDOW);
-    if (routeEggN >= ROUTE_EGG_COUNT) {
-      routeEggN = 0; clearTimeout(routeEggTimer);
-      playRouteTimeline();
-    }
-  }
-  async function playRouteTimeline() {
-    const pts = effectivePhotos().filter(e => typeof e.lat === 'number' && typeof e.lon === 'number').sort((a, b) => tv(a) - tv(b));
-    if (pts.length < 2) { toast(esc(t('route_egg_not_enough'))); return; }
-    const myRun = ++routeEggRun;   // 若又被連點觸發一次，讓前一場動畫提早結束，不互相干擾
-    toast(esc(t('route_egg_msg')));
-    const trail = L.polyline([], { color: '#ff6b35', weight: 3, opacity: .85, dashArray: '4 6' }).addTo(map);
-    const marker = L.circleMarker([pts[0].lat, pts[0].lon], { radius: 8, color: '#fff', weight: 2, fillColor: '#ff6b35', fillOpacity: 1 }).addTo(map);
-    const path = [];
-    for (let i = 0; i < pts.length && myRun === routeEggRun; i++) {
-      const p = pts[i];
-      path.push([p.lat, p.lon]);
-      trail.setLatLngs(path);
-      marker.setLatLng([p.lat, p.lon]);
-      map.panTo([p.lat, p.lon], { animate: true, duration: .5 });
-      await new Promise(r => setTimeout(r, 550));
-    }
-    if (myRun === routeEggRun) setTimeout(() => { map.removeLayer(trail); map.removeLayer(marker); }, 1200);
   }
   const THUMB_ZOOM = 15;   // ≥ 此縮放顯示縮圖，較遠只顯示小方塊
   function photoIcon(url, thumb) {
@@ -544,12 +498,6 @@ window.MapApp = (() => {
   function personColor(name) {
     if (!personColorCache[name]) personColorCache[name] = 'hsl(' + Math.floor(Math.random() * 360) + ', 70%, 45%)';
     return personColorCache[name];
-  }
-  function drawPersonRoute() {
-    if (personLine) { map.removeLayer(personLine); personLine = null; }
-    if (!filterPerson || !routeOn) return;   // 要「選投稿者」且「路徑」開關也開著，才畫路線
-    const pts = personPoints(filterPerson).map(e => [e.lat, e.lon]);
-    if (pts.length >= 2) personLine = L.polyline(pts, { color: personColor(filterPerson), weight: 3, opacity: .85 }).addTo(map);
   }
   // 依目前「全部／投稿」模式切換下拉選單的用途：投稿模式列投稿者、全部模式列地點標籤（可跳到任一地點，
   // 不受地圖上標記可能重疊、點不到的影響）
@@ -844,7 +792,7 @@ window.MapApp = (() => {
       CONTRIB.push(j.item);
       mini.remove(); panel._mini = null;
       panel.style.display = 'none'; panel.innerHTML = '';
-      recount(); renderChairs(); renderPhotoLayer(); rebuildPersonFilter(); drawRoute(); drawPersonRoute();
+      recount(); renderChairs(); renderPhotoLayer(); rebuildPersonFilter(); emitHook('stateChange');
       if (current) renderEntries();
       if (onSaved) onSaved(j.item);
     } catch (err) {
@@ -1232,7 +1180,7 @@ window.MapApp = (() => {
         state.done = true;
         CONTRIB.push(j.item);
         feature('upload');
-        if (opts.bulk) { recount(); } else { recount(); renderChairs(); renderPhotoLayer(); rebuildPersonFilter(); drawPersonRoute(); if (current) renderEntries(); }
+        if (opts.bulk) { recount(); } else { recount(); renderChairs(); renderPhotoLayer(); rebuildPersonFilter(); emitHook('stateChange'); if (current) renderEntries(); }
         card.classList.add('done');
         card.querySelectorAll('input,textarea,button').forEach(el => el.disabled = true);
         if (state.marker) state.marker.dragging.disable();
@@ -1268,7 +1216,7 @@ window.MapApp = (() => {
       showProg();
     }
     // 批次跑完後才一次重繪地圖／清單，避免每送出一張就整層重繪造成卡頓
-    renderChairs(); renderPhotoLayer(); rebuildPersonFilter(); drawPersonRoute();
+    renderChairs(); renderPhotoLayer(); rebuildPersonFilter(); emitHook('stateChange');
     if (current) renderEntries();
     batchRunning = false;
     if (submitBtn) submitBtn.disabled = false;
@@ -1303,7 +1251,7 @@ window.MapApp = (() => {
       const j = await res.json();
       if (j.error) throw new Error(j.error + (j.detail ? '：' + j.detail : ''));
       CONTRIB = (j.items || []).map(x => ({ ...x, lat: x.lat != null ? +x.lat : null, lon: x.lon != null ? +x.lon : null }));
-      recount(); renderChairs(); renderPhotoLayer(); rebuildPersonFilter(); drawPersonRoute(); emitHook('stateChange');
+      recount(); renderChairs(); renderPhotoLayer(); rebuildPersonFilter(); emitHook('stateChange');
       if (filterPerson) {   // 重新整理後恢復先前記住的投稿者篩選，順便把地圖對焦回他的觀察地圖
         const pts = personPoints(filterPerson).map(e => [e.lat, e.lon]);
         if (pts.length) map.fitBounds(L.latLngBounds(pts).pad(0.25));
@@ -1419,13 +1367,6 @@ window.MapApp = (() => {
     const peBtn = document.getElementById('pointEditBtn');
     if (peBtn) peBtn.onclick = togglePointEditor;
 
-    // 圖層/路徑切換
-    const routeBtn = document.getElementById('routeBtn');
-    if (routeBtn) routeBtn.onclick = function () {
-      routeOn = !routeOn; this.classList.toggle('on', routeOn); drawRoute(); drawPersonRoute(); if (routeOn) feature('route');
-      routeEggClick();
-    };
-
     // 全部點位／投稿：互斥的顯示模式，預設「全部」；?contrib=1（嵌入用）或曾記住的投稿者篩選可預設改成「投稿」
     const apb = document.getElementById('allPointsBtn'), plb = document.getElementById('photoLayerBtn');
     function setContribMode(on, opts) {
@@ -1436,7 +1377,7 @@ window.MapApp = (() => {
       if (!on) filterPerson = '';   // 切回「全部」時，下拉選單改用途（跳到地點），投稿者篩選狀態一併清掉
       rebuildPersonFilter();
       if (on) { renderPhotoLayer(); if (!(opts && opts.silent)) feature('photos'); } else { map.removeLayer(photoLayer); }
-      renderChairs(); drawPersonRoute(); emitHook('stateChange');
+      renderChairs(); emitHook('stateChange');
     }
     apb.onclick = function () { if (photoLayerOn) setContribMode(false); };
     plb.onclick = function () { if (!photoLayerOn) setContribMode(true); };
@@ -1457,7 +1398,7 @@ window.MapApp = (() => {
         filterPerson = pf.value;
         try { if (filterPerson) localStorage.setItem(personPrefKey, filterPerson); else localStorage.removeItem(personPrefKey); } catch (e) {}
         if (filterPerson) feature('filter');
-        renderPhotoLayer(); renderChairs(); drawPersonRoute(); emitHook('stateChange');
+        renderPhotoLayer(); renderChairs(); emitHook('stateChange');
         const pts = filterPerson ? personPoints(filterPerson).map(e => [e.lat, e.lon]) : [];
         if (pts.length) map.fitBounds(L.latLngBounds(pts).pad(0.25));
       } else {
@@ -1696,6 +1637,7 @@ window.MapApp = (() => {
     getMap: () => map, getFilterPerson: () => filterPerson, isPhotoLayerOn: () => photoLayerOn,
     isUnlocked, isEmbedMode: () => EMBED,
     trackFeature: feature, currentScopeParams, getProjectId: () => PROJECT,
+    effectivePhotos, personColor, toast,
     Plugin: SouliongPlugin,
   };
 })();

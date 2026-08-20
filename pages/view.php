@@ -238,6 +238,9 @@ foreach (['theme', 'control-card', 'popups', 'map-markers', 'point-panel', 'map-
 <script><?php readfile(__DIR__ . '/../assets/js/vendor/qrcode-generator.js'); ?></script>
 <script><?php readfile(__DIR__ . '/../assets/js/plugins/share-link.js'); ?></script>
 <?php endif; ?>
+<?php if ($mod('route')): ?>
+<script><?php readfile(__DIR__ . '/../assets/js/plugins/route-tour.js'); ?></script>
+<?php endif; ?>
 <?php if ($mod('personExplore')): ?>
 <script><?php readfile(__DIR__ . '/../assets/js/plugins/person-explore.js'); ?></script>
 <?php endif; ?>
