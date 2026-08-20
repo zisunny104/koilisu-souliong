@@ -36,6 +36,7 @@ window.MapApp = (() => {
   const isDark = () => { const t = document.documentElement.dataset.theme; return t === 'dark' ? true : t === 'light' ? false : systemDark(); };
   // 底圖：淺色用 Voyager（道路較寬、有淡彩），深色用 Dark Matter
   const tileUrl = () => 'https://{s}.basemaps.cartocdn.com/' + (isDark() ? 'dark_all' : 'rastertiles/voyager') + '/{z}/{x}/{y}{r}.png';
+  function addTileLayer(map) { return L.tileLayer(tileUrl(), TILE_OPTS).addTo(map); }
   let themeMode = localStorage.getItem('theme') || 'system';
   if (themeMode !== 'system') document.documentElement.dataset.theme = themeMode;
 
@@ -89,19 +90,35 @@ window.MapApp = (() => {
   }
   const isMine = (e) => !!((myOwnerHash && e.owner_hash && e.owner_hash === myOwnerHash) || (myContribId && e.contrib_id && e.contrib_id === myContribId));
 
-  // 新增一筆投稿（故事版本、照片…共用）：project/owner/code/ctoken 這些通用欄位統一在這裡補上，呼叫端只要給業務欄位（kind/name/comment/photo…）
-  async function submitContribution(fields) {
-    const fd = new FormData();
-    fd.append('project', PROJECT);
-    fd.append('owner', ownerToken());
-    fd.append('code', storedCode());
-    const ct = contribToken(); if (ct) fd.append('ctoken', ct);
-    for (const k in fields) { const v = fields[k]; if (v !== undefined && v !== null) fd.append(k, v); }
-    const res = await fetch(apiUrl('upload'), { method: 'POST', body: fd });
-    const j = await res.json();
-    if (!res.ok || j.error) throw new Error(j.error || ('HTTP ' + res.status));
-    CONTRIB.push(j.item);
-    return j.item;
+  // 新增一筆投稿（故事版本、照片…共用）：project/owner/code/ctoken 這些通用欄位統一在這裡補上，呼叫端只要給業務欄位（kind/name/comment/photo…）。
+  // 欄位值傳 [blob, filename] 陣列可指定 Blob 的檔名（否則瀏覽器預設存成 "blob"）。
+  // opts.maxRetry 搭配 opts.onRetry(waitSeconds, attempt, maxAttempt) 可在遇到伺服器限流（429）時自動倒數重試，不做的話（不傳 opts）就是原本的單次送出行為。
+  async function submitContribution(fields, opts) {
+    opts = opts || {};
+    const maxRetry = opts.maxRetry || 0;
+    for (let attempt = 0; attempt <= maxRetry; attempt++) {
+      const fd = new FormData();
+      fd.append('project', PROJECT);
+      fd.append('owner', ownerToken());
+      fd.append('code', storedCode());
+      const ct = contribToken(); if (ct) fd.append('ctoken', ct);
+      for (const k in fields) {
+        const v = fields[k];
+        if (v === undefined || v === null) continue;
+        if (Array.isArray(v)) fd.append(k, v[0], v[1]); else fd.append(k, v);
+      }
+      const res = await fetch(apiUrl('upload'), { method: 'POST', body: fd });
+      if (res.status === 429 && attempt < maxRetry) {
+        const wait = parseInt(res.headers.get('Retry-After') || '10', 10) || 10;
+        if (opts.onRetry) await opts.onRetry(wait, attempt + 1, maxRetry);
+        continue;
+      }
+      const j = await res.json().catch(() => ({ error: 'HTTP ' + res.status }));
+      if (!res.ok || j.error) throw new Error((j.error || ('HTTP ' + res.status)) + (j.detail ? '：' + j.detail : ''));
+      CONTRIB.push(j.item);
+      return j.item;
+    }
+    const err = new Error(t('failed_rate_limited_retry_manually')); err.rateLimited = true; throw err;
   }
 
   async function deleteEntry(id) {
@@ -114,8 +131,7 @@ window.MapApp = (() => {
       const j = await res.json().catch(() => ({}));
       if (!res.ok || j.error) { alert(t('delete_failed', { reason: j.error || ('HTTP ' + res.status) })); return; }
       CONTRIB = CONTRIB.filter(e => String(e.id) !== String(id));
-      recount(); renderChairs(); renderPhotoLayer(); rebuildPersonFilter(); emitHook('stateChange');
-      if (current) renderEntries();
+      refreshAll();
     } catch (e) { alert(t('delete_failed', { reason: e.message })); }
   }
 
@@ -309,7 +325,6 @@ window.MapApp = (() => {
     if (map) setBaseTile();
   }
   const chairMarkers = {};
-  let deviceLocCache = null;
 
   /* ---------- 選用插件掛勾點（見 souliong/docs/EXTENDING.md）----------
      核心只負責「發生了什麼事」（onHook/emitHook）與「讓插件參與渲染結果」（registerPhotoFilter/registerEntriesHint），
@@ -648,6 +663,7 @@ window.MapApp = (() => {
     }
   }
   function renderEntries() {
+    if (!current) return;
     const box = document.getElementById('entries'); box.innerHTML = '';
     const descs = CONTRIB.filter(e => e.item_num === current.num && e.kind === 'desc' && e.comment).sort((a, b) => tv(a) - tv(b));
     const photos = effectivePhotos().filter(e => e.item_num === current.num && photoFilters.every(f => f(e, current))).sort((a, b) => tv(a) - tv(b));
@@ -672,14 +688,7 @@ window.MapApp = (() => {
     box.appendChild(story);
     const hb = story.querySelector('#histBtn'); if (hb) hb.onclick = () => toggleHistory(versions);
 
-    // 上傳照片到這個點：放在故事底下、第一張照片之前
-    const upBtn = document.createElement('button');
-    upBtn.className = 'btn primary upload-only'; upBtn.style.width = '100%';
-    upBtn.innerHTML = '<i class="fa-solid fa-plus"></i> ' + esc(t('upload_to_point'));
-    upBtn.onclick = () => { resetQueue(); openModal(current); };
-    box.appendChild(upBtn);
-
-    // 插件掛勾點：讓插件（例如依序探索）在照片牆前面插入自己的提示區塊（如「僅顯示 X 的照片・顯示全部」）
+    // 插件掛勾點：讓插件（例如上傳、依序探索）在照片牆前面插入自己的提示區塊或按鈕（如「上傳照片到這個點」「僅顯示 X 的照片・顯示全部」）
     entriesHintFns.forEach(fn => { const el = fn(current); if (el) box.appendChild(el); });
 
     // 照片牆
@@ -911,163 +920,7 @@ window.MapApp = (() => {
     document.getElementById('lb').style.display = 'none';
   }
 
-  /* ---------- image: EXIF + HEIC→WebP ---------- */
-  async function readExif(file) {
-    const out = { time: null, lat: null, lon: null, source: null, cam: null };
-    try { const g = await exifr.gps(file); if (g && typeof g.latitude === 'number') { out.lat = g.latitude; out.lon = g.longitude; out.source = 'exif'; } } catch (e) {}
-    try {
-      const m = await exifr.parse(file, ['DateTimeOriginal', 'CreateDate', 'Make', 'Model', 'LensModel', 'FNumber', 'ExposureTime', 'ISO', 'FocalLength', 'Software']);
-      if (m) {
-        const dt = m.DateTimeOriginal || m.CreateDate; if (dt) out.time = new Date(dt).getTime();
-        const s = (v, n) => String(v).replace(/\x00/g, '').trim().slice(0, n);
-        const cam = {};
-        if (m.Make) cam.make = s(m.Make, 40);
-        if (m.Model) cam.model = s(m.Model, 60);
-        if (m.LensModel) cam.lens = s(m.LensModel, 60);
-        if (m.FNumber) cam.f = +(+m.FNumber).toFixed(1);
-        if (m.ExposureTime) cam.exp = +(+m.ExposureTime).toFixed(5);
-        if (m.ISO) cam.iso = parseInt(m.ISO, 10) || undefined;
-        if (m.FocalLength) cam.focal = +(+m.FocalLength).toFixed(1);
-        if (m.Software) cam.sw = s(m.Software, 40);
-        if (Object.keys(cam).length) out.cam = cam;
-      }
-    } catch (e) {}
-    if (!out.time) out.time = file.lastModified || Date.now();
-    return out;
-  }
-  async function toWebp(file, max = 1600, q = 0.85) {
-    let src = file;
-    if (/heic|heif/i.test(file.type) || /\.hei[cf]$/i.test(file.name)) {
-      const j = await heic2any({ blob: file, toType: 'image/jpeg', quality: 0.92 });
-      src = Array.isArray(j) ? j[0] : j;
-    }
-    let bmp;
-    try { bmp = await createImageBitmap(src, { imageOrientation: 'from-image' }); }
-    catch (e) { bmp = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = URL.createObjectURL(src); }); }
-    let w = bmp.width, h = bmp.height;
-    if (Math.max(w, h) > max) { const s = max / Math.max(w, h); w = Math.round(w * s); h = Math.round(h * s); }
-    const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
-    cv.getContext('2d').drawImage(bmp, 0, 0, w, h);
-    return await new Promise(r => cv.toBlob(r, 'image/webp', q));
-  }
-  function getDeviceLoc() {
-    if (deviceLocCache !== null) return Promise.resolve(deviceLocCache);
-    return new Promise(res => {
-      if (!navigator.geolocation) { deviceLocCache = false; return res(false); }
-      navigator.geolocation.getCurrentPosition(
-        p => { deviceLocCache = { lat: p.coords.latitude, lon: p.coords.longitude }; res(deviceLocCache); },
-        () => { deviceLocCache = false; res(false); }, { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 });
-    });
-  }
-
-  /* ---------- batch upload ---------- */
-  let queueSeq = 0;
-  function openModal(contextPoint) {
-    document.getElementById('modalName').value = document.getElementById('myName').value || localStorage.getItem('myName') || '';
-    document.getElementById('modal').classList.add('open');
-    modalContext = contextPoint || null;
-  }
-  let batchRunning = false;
-  function closeModal() {
-    const m = document.getElementById('modal');
-    if (!m) return;
-    m.classList.remove('open');
-    // 批次上傳仍在背景進行時不可清空佇列，否則尚未送出的照片會直接遺失；重開視窗會看到原本的佇列與進度
-    if (!batchRunning) resetQueue();
-  }
-  let modalContext = null;
-
-  async function addFiles(files) {
-    if (!files || !files.length) return;
-    // 只收圖片檔（改用「檔案」選擇器後可能混入其他類型）
-    const imgs = (files || []).filter(f => /^image\//i.test(f.type) || /\.(jpe?g|png|webp|heic|heif|gif|bmp|tiff?)$/i.test(f.name));
-    if (!imgs.length) { alert(t('select_images_alert')); return; }
-    const qe = document.querySelector('.queue-empty'); if (qe) qe.remove();
-    for (const file of imgs) {
-     try {
-      const id = 'q' + (++queueSeq);
-      const card = document.createElement('div'); card.className = 'card'; card.id = id;
-      card.innerHTML =
-        '<button class="btn small c-cancel" type="button" title="' + esc(t('cancel_remove_from_queue')) + '"><i class="fa-solid fa-xmark"></i></button>' +
-        '<div class="thumb">' + esc(t('processing')) + '</div>' +
-        '<div class="fields">' +
-        '<div class="time">' + esc(t('loading')) + '</div>' +
-        '<input type="text" class="c-name" placeholder="' + SESSION_ANON + '">' +
-        '<textarea class="c-cmt" placeholder="' + esc(t('write_something_placeholder')) + '"></textarea>' +
-        '<label class="c-lab">' + esc(t('related_point_label_multi')) + '</label>' +
-        '<div class="row"><select class="c-chair"></select><button class="btn small c-nearest" type="button">' + esc(t('nearest_btn')) + '</button></div>' +
-        '<div class="mini"></div>' +
-        '<div class="loc"></div>' +
-        '<div class="row"><button class="btn small c-reset-loc" type="button">' + esc(t('reset_location_btn')) + '</button></div>' +
-        '<div class="row"><button class="btn primary c-send">' + esc(t('submit_this_one')) + '</button><span class="status"></span></div>' +
-        '</div>';
-      document.getElementById('queue').appendChild(card);
-      card.querySelector('.c-name').value = document.getElementById('modalName').value || '';
-      const state = { id, file, exif: null, webp: null, thumb: null, loc: null, origLoc: null, source: null, done: false, mini: null, marker: null };
-      cards[id] = state;
-      card.querySelector('.c-cancel').onclick = () => cancelCard(id);
-
-      // 座標優先抓「照片 EXIF GPS」；沒有才用裝置定位（僅輔助，且到這時才詢問權限）
-      state.exif = await readExif(file);
-      if (state.exif.source === 'exif') { state.loc = { lat: state.exif.lat, lon: state.exif.lon }; state.source = 'exif'; }
-      else {
-        const dev = await getDeviceLoc();
-        if (dev) { state.loc = { lat: dev.lat, lon: dev.lon }; state.source = 'device'; }
-        else if (modalContext) { state.loc = { lat: modalContext.lat, lon: modalContext.lon }; state.source = 'chair'; }
-        else { state.loc = { lat: META.center[0], lon: META.center[1] }; state.source = 'default'; }
-      }
-      state.origLoc = { lat: state.loc.lat, lon: state.loc.lon, source: state.source };
-      card.querySelector('.time').innerHTML = '<i class="fa-solid fa-clock"></i> ' + fmtTime(state.exif.time);
-
-      // 關聯地點選單（預設：開啟來源地點，否則最近的一個；可選不指定；每張卡片獨立）
-      const defChair = modalContext ? modalContext.num : (nearestPoint(state.loc.lat, state.loc.lon) || {}).num;
-      const sel = card.querySelector('.c-chair');
-      sel.innerHTML = chairOptionsHtml(defChair);
-      card.querySelector('.c-nearest').onclick = () => { const np = nearestPoint(state.loc.lat, state.loc.lon); if (np) sel.value = String(np.num); };
-
-      // 縮圖/轉檔（WebP）
-      try {
-        state.webp = await toWebp(file);
-        card.querySelector('.thumb').style.backgroundImage = 'url(' + URL.createObjectURL(state.webp) + ')';
-        card.querySelector('.thumb').textContent = '';
-        // 顯示用小縮圖（從已轉好的主圖再縮一次，避免重讀 HEIC）；失敗不擋上傳，顯示端會 fallback 用原圖
-        try { state.thumb = await toWebp(state.webp, 640, 0.78); } catch (e) { state.thumb = null; }
-      } catch (e) {
-        card.querySelector('.thumb').textContent = t('image_read_failed');
-      }
-
-      // 迷你地圖（可拖曳；只調整照片自己的座標，不會改動地點座標）
-      const miniDiv = card.querySelector('.mini');
-      const mini = L.map(miniDiv, { attributionControl: false, zoomControl: false, dragging: true })
-        .setView([state.loc.lat, state.loc.lon], 16);
-      L.tileLayer(tileUrl(), TILE_OPTS).addTo(mini);
-      const mk = L.marker([state.loc.lat, state.loc.lon], { draggable: true }).addTo(mini);
-      state.mini = mini; state.marker = mk;
-      const updLoc = (ll) => {
-        state.loc = { lat: ll.lat, lon: ll.lng };
-        // 用外框顏色標示定位來源（不覆蓋 Leaflet 自身 class）
-        miniDiv.classList.remove('src-ok', 'src-warn', 'src-info', 'src-muted');
-        miniDiv.classList.add('src-' + srcTone(state.source));
-        card.querySelector('.loc').innerHTML = locNote(state.source) + ' <span class="loc-hint">' + esc(t('drag_to_fix_hint')) + '</span>';
-      };
-      mk.on('dragend', e => { state.source = 'manual'; updLoc(e.target.getLatLng()); });
-      mini.on('click', e => { mk.setLatLng(e.latlng); state.source = 'manual'; updLoc(e.latlng); });
-      updLoc({ lat: state.loc.lat, lng: state.loc.lon });
-      card.querySelector('.c-reset-loc').onclick = () => {
-        const o = state.origLoc; if (!o) return;
-        mk.setLatLng([o.lat, o.lon]); mini.panTo([o.lat, o.lon]);
-        state.source = o.source; updLoc({ lat: o.lat, lng: o.lon });
-      };
-      // 校正尺寸（手機容器尺寸較晚定案）：rAF + ResizeObserver + 逾時保險
-      const fix = () => { try { mini.invalidateSize(false); } catch (e) {} };
-      requestAnimationFrame(fix);
-      if (window.ResizeObserver) { const ro = new ResizeObserver(fix); ro.observe(miniDiv); state.ro = ro; }
-      [150, 500, 1200].forEach(ms => setTimeout(fix, ms));
-
-      card.querySelector('.c-send').onclick = () => submitCard(state, card);
-     } catch (err) { console.warn('這張照片處理失敗，略過：', err); }
-    }
-  }
+  // 照片定位來源標示：lightbox 資訊面板（核心）與上傳插件的批次卡片共用，故留在核心並開放給插件呼叫
   const SRC_META = {
     exif:    { key: 'loc_src_exif',    tone: 'ok',    icon: 'fa-location-dot' },
     device:  { key: 'loc_src_device',  tone: 'warn',  icon: 'fa-location-crosshairs' },
@@ -1080,127 +933,6 @@ window.MapApp = (() => {
     const m = SRC_META[src] || SRC_META.default;
     return '<span class="loc-src ' + m.tone + '"><i class="fa-solid ' + m.icon + '"></i> ' + esc(t(m.key)) + '</span>';
   }
-  const cards = {};
-  function queueEmptyHtml() {
-    return '<div class="queue-empty"><button class="btn primary" id="pickBtn"><i class="fa-solid fa-image"></i> ' + esc(t('pick_photos_btn')) + '</button>' +
-      '<div class="hint">' + esc(t('pick_photos_hint')) + '</div></div>';
-  }
-  function wirePickBtn() {
-    const pb = document.getElementById('pickBtn');
-    if (pb) pb.onclick = () => { const p = document.getElementById('pickImages'); p.value = ''; p.click(); };
-  }
-  function resetQueue() {
-    Object.values(cards).forEach(st => { try { if (st.ro) st.ro.disconnect(); } catch (e) {} try { if (st.mini) st.mini.remove(); } catch (e) {} });
-    Object.keys(cards).forEach(k => delete cards[k]);
-    document.getElementById('queue').innerHTML = queueEmptyHtml();
-    wirePickBtn();
-  }
-  function cancelCard(id) {
-    const st = cards[id];
-    if (!st || st.done) return;   // 已送出的不可取消（不可更改），只能取消尚未送出的
-    try { if (st.ro) st.ro.disconnect(); } catch (e) {}
-    try { if (st.mini) st.mini.remove(); } catch (e) {}
-    delete cards[id];
-    const card = document.getElementById(id);
-    if (card) card.remove();
-    if (!Object.keys(cards).length) { document.getElementById('queue').innerHTML = queueEmptyHtml(); wirePickBtn(); }
-  }
-
-  // 遇到伺服器限流（429）時倒數等待再自動重試，而不是直接判定失敗、丟掉這張
-  function waitCountdown(statusEl, seconds, attempt, maxAttempt) {
-    return new Promise(resolve => {
-      let left = seconds;
-      const tick = () => { statusEl.textContent = t('rate_limited_retry', { left: left, attempt: attempt, maxAttempt: maxAttempt }); statusEl.className = 'status warn'; };
-      tick();
-      const iv = setInterval(() => { left--; if (left <= 0) { clearInterval(iv); resolve(); } else tick(); }, 1000);
-    });
-  }
-  const MAX_RATE_RETRY = 6;
-  // opts.bulk：批次送出時，成功後只更新輕量的投稿計數，地圖/清單重繪留給 submitAll 結束後一次做，避免逐張重繪卡頓
-  async function submitCard(state, card, opts) {
-    opts = opts || {};
-    if (state.done) return true;
-    const statusEl = card.querySelector('.status');
-    const btn = card.querySelector('.c-send');
-    const cancelBtn = card.querySelector('.c-cancel');
-    if (!state.webp && !card.querySelector('.c-cmt').value.trim()) { statusEl.textContent = t('need_photo_or_comment'); statusEl.className = 'status err'; return false; }
-    btn.disabled = true; if (cancelBtn) cancelBtn.disabled = true;
-    for (let attempt = 0; attempt <= MAX_RATE_RETRY; attempt++) {
-      if (attempt === 0) { statusEl.textContent = t('uploading'); statusEl.className = 'status'; }
-      try {
-        const chairNum = parseInt(card.querySelector('.c-chair').value, 10);
-        const fd = new FormData();
-        fd.append('project', PROJECT);
-        if (!isNaN(chairNum)) fd.append('item_num', chairNum);
-        fd.append('name', card.querySelector('.c-name').value.trim() || displayName());
-        fd.append('comment', card.querySelector('.c-cmt').value.trim());
-        fd.append('photo_time', new Date(state.exif.time).toISOString());
-        fd.append('lat', state.loc.lat);
-        fd.append('lon', state.loc.lon);
-        fd.append('loc_source', state.source);
-        fd.append('owner', ownerToken());
-        fd.append('code', storedCode());
-        const ct2 = contribToken(); if (ct2) fd.append('ctoken', ct2);
-        if (state.exif && state.exif.cam) fd.append('exif', JSON.stringify(state.exif.cam));
-        if (state.webp) fd.append('photo', state.webp, 'photo.webp');
-        if (state.webp && state.thumb) fd.append('thumb', state.thumb, 'thumb.webp');
-        const res = await fetch(apiUrl('upload'), { method: 'POST', body: fd });
-        if (res.status === 429 && attempt < MAX_RATE_RETRY) {
-          const wait = parseInt(res.headers.get('Retry-After') || '10', 10) || 10;
-          await waitCountdown(statusEl, wait, attempt + 1, MAX_RATE_RETRY);
-          continue;   // 排進去繼續等，不視為失敗、不丟棄這張
-        }
-        const j = await res.json().catch(() => ({ error: 'HTTP ' + res.status }));
-        if (!res.ok || j.error) throw new Error((j.error || ('HTTP ' + res.status)) + (j.detail ? '：' + j.detail : ''));
-        // 成功：鎖定卡片
-        state.done = true;
-        CONTRIB.push(j.item);
-        feature('upload');
-        if (opts.bulk) { recount(); } else { recount(); renderChairs(); renderPhotoLayer(); rebuildPersonFilter(); emitHook('stateChange'); if (current) renderEntries(); }
-        card.classList.add('done');
-        card.querySelectorAll('input,textarea,button').forEach(el => el.disabled = true);
-        if (state.marker) state.marker.dragging.disable();
-        statusEl.innerHTML = '<i class="fa-solid fa-check"></i> ' + esc(t('submitted_locked')); statusEl.className = 'status ok';
-        return true;
-      } catch (err) {
-        statusEl.textContent = t('save_failed', { err: err.message || err }); statusEl.className = 'status err';
-        btn.disabled = false; if (cancelBtn) cancelBtn.disabled = false;
-        return false;
-      }
-    }
-    // 重試次數用盡仍被限流：留在佇列裡，讓使用者可按「送出這張」手動再試，不會憑空消失
-    statusEl.textContent = t('failed_rate_limited_retry_manually'); statusEl.className = 'status err';
-    btn.disabled = false; if (cancelBtn) cancelBtn.disabled = false;
-    return false;
-  }
-  async function submitAll() {
-    const ids = Object.keys(cards).filter(id => !cards[id].done);
-    if (!ids.length) return;
-    batchRunning = true;
-    const submitBtn = document.getElementById('submitAllBtn');
-    const prog = document.getElementById('batchProgress');
-    const total = ids.length;
-    let ok = 0, fail = 0;
-    if (submitBtn) submitBtn.disabled = true;
-    const showProg = () => { if (prog) { prog.removeAttribute('data-done'); prog.textContent = t('upload_progress', { done: ok + fail, total: total, failSuffix: fail ? t('upload_fail_suffix', { fail: fail }) : '' }); } };
-    showProg();
-    for (const id of ids) {
-      const st = cards[id]; const card = document.getElementById(id);
-      if (!st || st.done || !card) continue;
-      const success = await submitCard(st, card, { bulk: true });
-      if (success) ok++; else fail++;
-      showProg();
-    }
-    // 批次跑完後才一次重繪地圖／清單，避免每送出一張就整層重繪造成卡頓
-    renderChairs(); renderPhotoLayer(); rebuildPersonFilter(); emitHook('stateChange');
-    if (current) renderEntries();
-    batchRunning = false;
-    if (submitBtn) submitBtn.disabled = false;
-    if (prog) {
-      if (!fail) { prog.dataset.done = '1'; prog.innerHTML = '<i class="fa-solid fa-check"></i> ' + esc(t('upload_all_done', { ok: ok })); setTimeout(() => { if (prog.dataset.done === '1') { prog.textContent = ''; delete prog.dataset.done; } }, 5000); }
-      else prog.textContent = t('upload_partial_done', { ok: ok, total: total, fail: fail });
-    }
-  }
 
   let photoTotal = 0;
   function recount() {
@@ -1211,6 +943,8 @@ window.MapApp = (() => {
     });
     updatePhotoBtn();
   }
+  // 供插件在自己完成一次會影響地圖/清單顯示的動作（例如上傳）後，一次重繪所有受影響的畫面
+  function refreshAll() { recount(); renderChairs(); renderPhotoLayer(); rebuildPersonFilter(); emitHook('stateChange'); renderEntries(); }
   // 「投稿」鈕顯示總照片張數；有投稿的地點數移到 title 提示裡
   function updatePhotoBtn() {
     const btn = document.getElementById('photoLayerBtn');
@@ -1387,15 +1121,6 @@ window.MapApp = (() => {
       }
     };
 
-    // 上傳（精簡模式或模組關閉時停用）
-    if (!EMBED && MOD('upload')) {
-      const pick = document.getElementById('pickImages');
-      document.getElementById('uploadBtn').onclick = () => { modalContext = null; resetQueue(); openModal(null); };
-      document.getElementById('addMoreBtn').onclick = () => { pick.value = ''; pick.click(); };
-      pick.onchange = e => { addFiles(Array.from(e.target.files)); };
-      document.getElementById('submitAllBtn').onclick = submitAll;
-    }
-
     // 右上：手機收成漢堡（避免遮住卡片），點外部或 Esc 收合
     const trGroup = document.getElementById('topright');
     const trToggle = document.getElementById('trToggle');
@@ -1415,7 +1140,7 @@ window.MapApp = (() => {
     // 右上：重置、身分；左下：重置地圖
     const resetBtn = document.getElementById('resetBtn'); if (resetBtn) resetBtn.onclick = resetView;
     const idEl = document.getElementById('identity');
-    const idAction = () => { if (!MOD('upload')) return; if (canPost()) { resetQueue(); openModal(null); setTimeout(() => { const n = document.getElementById('modalName'); if (n) n.focus(); }, 60); } else if (APP.gated) { openUnlock(); } };
+    const idAction = () => { if (!MOD('upload')) return; if (canPost()) { emitHook('identityUploadShortcut'); } else if (APP.gated) { openUnlock(); } };
     if (idEl) {
       let idLpTimer = null, idLpFired = false;
       idEl.addEventListener('pointerdown', () => { idLpFired = false; idLpTimer = setTimeout(() => { idLpFired = true; rerollAnon(); }, 600); });
@@ -1471,13 +1196,12 @@ window.MapApp = (() => {
       if (/^(INPUT|TEXTAREA|SELECT)$/.test(tag) || e.metaKey || e.ctrlKey || e.altKey) return;
       const k = e.key.toLowerCase();
       if (k === 'escape') {
-        closePanel(); closeModal(); closeUnlock(); closePin(); closeAdminRedeem(); emitHook('closeAll');
+        closePanel(); closeUnlock(); closePin(); closeAdminRedeem(); emitHook('closeAll');
         const trG = document.getElementById('topright'), trT = document.getElementById('trToggle');
         if (trG) { trG.classList.remove('open'); if (trT) trT.setAttribute('aria-expanded', 'false'); }
       }
       else if (k === 'r') { resetView(); }
       else if (k === 't') { const b = document.getElementById('themeBtn'); if (b) b.click(); }
-      else if (k === 'u' && !EMBED && MOD('upload')) { if (canPost()) { resetQueue(); openModal(current); } else if (APP.gated) openUnlock(); }
     });
 
     await computeMyHash();       // 先算出本裝置擁有者雜湊（供「刪自己的」判斷）
@@ -1606,16 +1330,20 @@ window.MapApp = (() => {
 
   boot();
   return {
-    closePanel, togglePanelSize, closeModal, openLightbox, closeLightbox, closePin, closeUnlock, closeAdminRedeem,
+    closePanel, togglePanelSize, openLightbox, closeLightbox, closePin, closeUnlock, closeAdminRedeem,
     // ---- 選用插件掛勾點 API（見 souliong/docs/EXTENDING.md）----
     onHook, registerPhotoFilter, registerEntriesHint, registerScopeParam,
     personTimeline, pointTitle, photoFullUrl, openPanel, openUnlock, refreshEntries: renderEntries,
     refreshPersonFilter: rebuildPersonFilter,
     getMap: () => map, getFilterPerson: () => filterPerson, isPhotoLayerOn: () => photoLayerOn,
+    getCurrentPoint: () => current,
     isUnlocked, isEmbedMode: () => EMBED,
     trackFeature: feature, currentScopeParams, getProjectId: () => PROJECT,
     effectivePhotos, personColor, toast,
     displayName, anonName: () => SESSION_ANON, submitContribution,
+    chairOptionsHtml, nearestPoint, locNote, srcTone, addTileLayer, fmtTime,
+    getMeta: () => META,
+    refreshCounts: recount, refreshAll,
     Plugin: SouliongPlugin,
   };
 })();

@@ -231,6 +231,9 @@ foreach (['theme', 'control-card', 'popups', 'map-markers', 'point-panel', 'map-
 <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
 <script><?php readfile(__DIR__ . '/../assets/js/pin-input.js'); ?></script>
 <script><?php readfile(__DIR__ . '/../assets/js/viewer.leaflet.js'); ?></script>
+<?php if ($mod('upload')): ?>
+<script><?php readfile(__DIR__ . '/../assets/js/plugins/contribution-upload.js'); ?></script>
+<?php endif; ?>
 <?php if ($mod('embed')): ?>
 <script><?php readfile(__DIR__ . '/../assets/js/plugins/embed-code.js'); ?></script>
 <?php endif; ?>
