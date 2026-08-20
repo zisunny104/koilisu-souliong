@@ -49,9 +49,8 @@ window.MapApp = (() => {
     SESSION_ANON = newAnonName();
     try { localStorage.setItem('anonName', SESSION_ANON); localStorage.removeItem('myName'); } catch (e) {}
     const myName = document.getElementById('myName'); if (myName) myName.value = '';
-    const modalName = document.getElementById('modalName');
-    if (modalName) { modalName.value = ''; modalName.setAttribute('placeholder', SESSION_ANON); }
-    updateIdentity();
+    emitHook('identityChanged');
+    emitHook('identityReroll');
     toast(t('toast_new_anon_name', { name: SESSION_ANON }));
   }
   function displayName() {
@@ -167,21 +166,12 @@ window.MapApp = (() => {
     document.body.classList.toggle('noupload', !canPost());
     const fab = document.getElementById('unlockFab');
     if (fab) fab.style.display = (APP.gated && !isUnlocked() && !EMBED) ? '' : 'none';
-    updateIdentity();
+    emitHook('identityChanged');
     if (current) renderEntries();   // 讓「編輯說明」鈕跟著出現/消失
   }
-  // 右上身分指示：顯示目前暱稱（未輸入則管理者帶入「管理者」、否則顯示本次匿名預覽名）；解鎖狀態附鎖圖示
-  function updateIdentity() {
-    const el = document.getElementById('identity');
-    if (!el) return;
-    if (EMBED) { el.style.display = 'none'; return; }
-    let name = '';
-    try { name = (localStorage.getItem('myName') || '').trim(); } catch (e) {}
-    const shown = name || (APP.isManager ? t('identity_manager') : SESSION_ANON);
-    const unlocked = isUnlocked();
-    el.innerHTML = '<i class="fa-solid ' + (unlocked ? 'fa-user-check' : 'fa-user') + '"></i> ' + esc(shown);
-    el.title = t('identity_title_named', { name: shown }) + (name ? '' : (APP.isManager ? t('identity_title_manager_suffix') : t('identity_title_anon_suffix')));
-  }
+  // 右上身分指示鈕的點擊行為（觸發上傳捷徑或解鎖流程）：留在核心是因為要用到 MOD/canPost 等私有狀態；
+  // 指示鈕本身的渲染／長按換名／解鎖對話框裡的建立身分欄位都在 assets/js/plugins/contributor-identity.js。
+  function identityChipClick() { if (!MOD('upload')) return; if (canPost()) { emitHook('identityUploadShortcut'); } else if (APP.gated) { openUnlock(); } }
   async function doUnlock(code, cpin, cname) {
     code = (code || '').trim();
     if (!code) return { ok: false, msg: t('enter_code') };
@@ -1013,15 +1003,9 @@ window.MapApp = (() => {
     renderChairs();
     if (POINTS.length) map.fitBounds(L.latLngBounds(POINTS.map(c => [c.lat, c.lon])).pad(0.08));
 
-    // 暱稱（隱藏欄位為單一真實來源，與上傳視窗同步；上傳模組關閉時沒有上傳視窗，只留隱藏欄位）
+    // 暱稱隱藏欄位（單一真實來源；與上傳視窗 #modalName 的同步交給 contribution-upload.js 自己處理）
     const myName = document.getElementById('myName');
     myName.value = localStorage.getItem('myName') || '';
-    const modalName = document.getElementById('modalName');
-    if (modalName) {
-      modalName.value = myName.value;
-      modalName.setAttribute('placeholder', SESSION_ANON);   // 預覽本次匿名名
-      modalName.oninput = e => { myName.value = e.target.value; localStorage.setItem('myName', e.target.value); };
-    }
 
     // 收折
     // 品牌互動：連點變形狀（點→線→三→四→五→六角）→ 六角小彩蛋；長按 → 管理入口
@@ -1137,20 +1121,8 @@ window.MapApp = (() => {
       });
     }
 
-    // 右上：重置、身分；左下：重置地圖
+    // 右上：重置；左下：重置地圖（身分指示鈕的渲染／互動見 assets/js/plugins/contributor-identity.js）
     const resetBtn = document.getElementById('resetBtn'); if (resetBtn) resetBtn.onclick = resetView;
-    const idEl = document.getElementById('identity');
-    const idAction = () => { if (!MOD('upload')) return; if (canPost()) { emitHook('identityUploadShortcut'); } else if (APP.gated) { openUnlock(); } };
-    if (idEl) {
-      let idLpTimer = null, idLpFired = false;
-      idEl.addEventListener('pointerdown', () => { idLpFired = false; idLpTimer = setTimeout(() => { idLpFired = true; rerollAnon(); }, 600); });
-      const idLpCancel = () => { if (idLpTimer) { clearTimeout(idLpTimer); idLpTimer = null; } };
-      idEl.addEventListener('pointerup', idLpCancel);
-      idEl.addEventListener('pointerleave', idLpCancel);
-      idEl.addEventListener('pointercancel', idLpCancel);
-      idEl.onclick = () => { if (idLpFired) { idLpFired = false; return; } idAction(); };
-      idEl.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); idAction(); } };
-    }
 
     // 上傳權限：解鎖 FAB（右下）+ 彈窗（含 QR 掃描）+ 邀請連結 ?code=
     const ub = document.getElementById('unlockFab');
@@ -1163,12 +1135,6 @@ window.MapApp = (() => {
     if (arSubmit) arSubmit.onclick = trySubmitAdminRedeem;
     const arPin = document.getElementById('adminRedeemPinInput');
     if (arPin) arPin.addEventListener('keydown', e => { if (e.key === 'Enter') trySubmitAdminRedeem(); });
-    const idBtn = document.getElementById('idToggleBtn'), idFields = document.getElementById('idFields');
-    if (idBtn && idFields) idBtn.onclick = () => {
-      const open = idFields.style.display === 'none';
-      idFields.style.display = open ? '' : 'none';
-      idBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
-    };
     const uci = document.getElementById('unlockCodeInput');
     if (uci) uci.addEventListener('keydown', e => { if (e.key === 'Enter') trySubmitUnlock(); });
     const pinBtn = document.getElementById('pinSubmitBtn');
@@ -1341,6 +1307,7 @@ window.MapApp = (() => {
     trackFeature: feature, currentScopeParams, getProjectId: () => PROJECT,
     effectivePhotos, personColor, toast,
     displayName, anonName: () => SESSION_ANON, submitContribution,
+    rerollAnon, identityChipClick,
     chairOptionsHtml, nearestPoint, locNote, srcTone, addTileLayer, fmtTime,
     getMeta: () => META,
     refreshCounts: recount, refreshAll,

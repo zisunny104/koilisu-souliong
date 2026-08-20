@@ -85,6 +85,18 @@
         this.openModal(null);
         setTimeout(() => { const n = document.getElementById('modalName'); if (n) n.focus(); }, 60);
       });
+      // 暱稱：#modalName 是這個模組自己的欄位，開機時從核心的 #myName（單一真實來源）帶入初始值，
+      // 之後雙向同步；長按身分鈕換一個匿名名時（identityReroll）把預覽 placeholder 換過來。
+      const modalName = document.getElementById('modalName');
+      if (modalName) {
+        modalName.value = document.getElementById('myName').value;
+        modalName.setAttribute('placeholder', this.mapApp.anonName());
+        modalName.oninput = e => { document.getElementById('myName').value = e.target.value; localStorage.setItem('myName', e.target.value); };
+        this.mapApp.onHook('identityReroll', () => {
+          modalName.value = '';
+          modalName.setAttribute('placeholder', this.mapApp.anonName());
+        });
+      }
       // 供核心 view.php 內嵌的 onclick="MapApp.closeModal()" 呼叫（HTML 屬性只能呼叫掛在 MapApp 上的方法，無法用 hook）
       this.mapApp.closeModal = () => this.closeModal();
 
