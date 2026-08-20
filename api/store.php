@@ -8,11 +8,6 @@
 function project_dir(array $cfg, string $project): string {
     return rtrim($cfg['projects_dir'], '/\\') . '/' . $project;
 }
-function state_dir(array $cfg): string {
-    $d = $cfg['state_dir'];
-    if (!is_dir($d)) { @mkdir($d, 0775, true); }
-    return $d;
-}
 function store_file(array $cfg, string $project): string {
     return project_dir($cfg, $project) . '/data.jsonl';
 }

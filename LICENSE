@@ -64,7 +64,7 @@ their own sources and terms:
 
 ## 隨程式碼一起發佈 · Bundled with the source
 
-### qrcode-generator  (assets/vendor/qrcode-generator.js)
+### qrcode-generator  (assets/js/vendor/qrcode-generator.js)
 
 用途：後台邀請 QR 與全螢幕分享 QR 的產生（本機託管，不依賴 CDN）。
 Purpose: generating invite / share QR codes (self-hosted, no CDN dependency).

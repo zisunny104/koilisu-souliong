@@ -4,8 +4,12 @@
 // 只補「沒有 thumb」的原始投稿，不動已有縮圖的紀錄與照片原檔。
 require __DIR__ . '/store.php';
 require __DIR__ . '/security.php';
+require __DIR__ . '/i18n.php';
 $cfg = require __DIR__ . '/config.php';
 rate_limit($cfg, 'admin');
+[$LANG, $DICT] = i18n_init();
+$t  = fn(string $key, array $vars = []): string => htmlspecialchars(i18n_t($DICT, $key, $vars), ENT_QUOTES);
+$tr = fn(string $key, array $vars = []): string => i18n_t($DICT, $key, $vars);
 $esc = fn($s) => htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8');
 
 // 還原 app 掛載根目錄，組「回後台」連結用（理由同 exiffix.php：不能用相對的 ?api=admin）
@@ -14,18 +18,20 @@ $reqPathOnly = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH);
 $appMarkerPos = strpos($reqPathOnly, '/' . $appName);
 $basePath = $appMarkerPos !== false ? rtrim(substr($reqPathOnly, 0, $appMarkerPos + strlen($appName) + 1), '/') . '/' : '/';
 $origin = ((!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http') . '://' . ($_SERVER['HTTP_HOST'] ?? '');
-$adminUrl = $esc($origin . $basePath . '?api=admin');
+// 從哪個專案點進來就回哪個專案（後台工具連結會帶 ?project=），沒帶就回全站總覽，不硬塞一個專案；一律回工具分頁（#tools）
+$backProject = preg_replace('/[^a-z0-9_-]/', '', $_GET['project'] ?? '');
+$adminUrl = $esc($origin . $basePath . '?api=admin' . ($backProject !== '' ? '&project=' . urlencode($backProject) : '') . '#tools');
 
 if (!admin_authed($cfg)) {
     http_response_code(401);
     header('Content-Type: text/html; charset=utf-8');
-    echo '<p>需要主要管理者登入。請先到 <a href="' . $adminUrl . '">後台</a> 登入後再回到這頁。</p>';
+    echo '<p>' . $tr('master_login_required_msg', ['url' => $adminUrl]) . '</p>';
     exit;
 }
 $csrf = admin_derived($cfg);
 
 /** 這個專案裡「有照片、還沒有縮圖」的原始投稿（編輯版本 photo 為 null，天然不在名單裡） */
-function thumbfix_missing(array $cfg, string $project): array {
+function thumbfix_missing(array $cfg, array $dict, string $project): array {
     $out = [];
     foreach (store_all($cfg, $project) as $r) {
         if (($r['kind'] ?? 'photo') !== 'photo') continue;
@@ -35,7 +41,11 @@ function thumbfix_missing(array $cfg, string $project): array {
         $out[] = [
             'id'    => (string)$r['id'],
             'photo' => (string)$r['photo'],
-            'label' => '第 ' . ($r['item_num'] ?? '?') . ' 號・' . ($r['name'] ?? '匿名') . '・' . substr((string)($r['photo_time'] ?? $r['created_at'] ?? ''), 0, 16),
+            'label' => i18n_t($dict, 'item_label_full', [
+                'n'    => $r['item_num'] ?? '?',
+                'name' => $r['name'] ?? i18n_t($dict, 'anon_fallback'),
+                'time' => substr((string)($r['photo_time'] ?? $r['created_at'] ?? ''), 0, 16),
+            ]),
         ];
     }
     return $out;
@@ -44,19 +54,19 @@ function thumbfix_missing(array $cfg, string $project): array {
 // ── 待補名單（POST，JSON 回應） ──
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'list') {
     if (!hash_equals($csrf, (string)($_POST['csrf'] ?? ''))) {
-        json_out(['error' => '憑證失效，請重新整理頁面'], 403);
+        json_out(['error' => $tr('csrf_invalid_ajax_msg')], 403);
     }
     $project = preg_replace('/[^a-z0-9_-]/', '', $_POST['project'] ?? '');
     if ($project === '' || !is_dir($cfg['projects_dir'] . '/' . $project)) {
         json_out(['error' => 'bad project'], 400);
     }
-    json_out(['ok' => true, 'items' => thumbfix_missing($cfg, $project)]);
+    json_out(['ok' => true, 'items' => thumbfix_missing($cfg, $DICT, $project)]);
 }
 
 // ── 存回單張縮圖（POST，JSON 回應） ──
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save') {
     if (!hash_equals($csrf, (string)($_POST['csrf'] ?? ''))) {
-        json_out(['error' => '憑證失效，請重新整理頁面'], 403);
+        json_out(['error' => $tr('csrf_invalid_ajax_msg')], 403);
     }
     $project = preg_replace('/[^a-z0-9_-]/', '', $_POST['project'] ?? '');
     $id = (string)($_POST['id'] ?? '');
@@ -68,7 +78,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save'
         if ((string)($r['id'] ?? '') === $id) { $rec = $r; break; }
     }
     if (!$rec || empty($rec['photo'])) { json_out(['error' => 'not found'], 404); }
-    if (!empty($rec['thumb'])) { json_out(['error' => '這筆已經有縮圖，不重複產生'], 409); }
+    if (!empty($rec['thumb'])) { json_out(['error' => $tr('thumbfix_already_has_thumb')], 409); }
     if (!isset($_FILES['thumb']) || $_FILES['thumb']['error'] !== UPLOAD_ERR_OK) {
         json_out(['error' => 'need thumb file'], 400);
     }
@@ -100,14 +110,18 @@ $allProjects = store_projects($cfg);
 $reqProject = preg_replace('/[^a-z0-9_-]/', '', $_GET['project'] ?? ($allProjects[0] ?? ''));
 ?>
 <!doctype html>
-<html lang="zh-Hant">
+<html lang="<?= $LANG === 'en' ? 'en' : 'zh-Hant' ?>">
 
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="robots" content="noindex">
-  <title>補產照片縮圖 · Souliong</title>
+  <title><?= $t('thumbfix_title') ?></title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
   <style>
+    .langsw{position:fixed;top:16px;right:16px;z-index:3;display:flex;gap:2px;font-size:0.75rem}
+    .langsw a{color:var(--muted);text-decoration:none;padding:4px 8px;border-radius:999px}
+    .langsw a.on{color:var(--fg);font-weight:700;background:var(--card);border:1px solid var(--line)}
     :root {
       --bg: #f6f5f2;
       --fg: #1c1a17;
@@ -148,7 +162,10 @@ $reqProject = preg_replace('/[^a-z0-9_-]/', '', $_GET['project'] ?? ($allProject
     }
 
     h1 {
-      font-size: 1.125rem
+      font-size: 1.125rem;
+      display: flex;
+      align-items: center;
+      gap: 8px
     }
 
     .warn {
@@ -237,24 +254,43 @@ $reqProject = preg_replace('/[^a-z0-9_-]/', '', $_GET['project'] ?? ($allProject
 </head>
 
 <body>
+  <div class="langsw">
+    <a href="?<?= $backProject !== '' ? 'project=' . rawurlencode($backProject) . '&' : '' ?>lang=zh_TW" class="<?= $LANG === 'zh_TW' ? 'on' : '' ?>">中文</a>
+    <a href="?<?= $backProject !== '' ? 'project=' . rawurlencode($backProject) . '&' : '' ?>lang=en" class="<?= $LANG === 'en' ? 'on' : '' ?>">English</a>
+  </div>
   <div class="wrap">
-    <h1>補產照片縮圖</h1>
-    <div class="warn">正常情況不需要用這頁：舊投稿的縮圖會在第一次被瀏覽時自動產生。這裡是自動產生失敗（例如主機不支援 WebP）時的備援，或想一次先補齊全部縮圖時使用。只會替「還沒有縮圖」的投稿產生縮圖（原始照片檔與所有欄位都不會被改動）；已有縮圖的一律略過。縮圖在這台裝置的瀏覽器產生後回存，過程視照片數量可能需要一點時間，請保持此分頁開啟。</div>
+    <h1><i class="fa-solid fa-images"></i> <?= $t('thumbfix_h1') ?></h1>
+    <div class="warn"><?= $t('thumbfix_warn') ?></div>
 
     <div class="card">
-      <label>選擇專案</label>
+      <label><?= $t('tool_select_project_label') ?></label>
       <select id="project">
         <?php foreach ($allProjects as $p): ?><option value="<?= $esc($p) ?>" <?= $p === $reqProject ? 'selected' : '' ?>><?= $esc($p) ?></option><?php endforeach; ?>
       </select>
-      <button id="go">掃描並補產縮圖</button>
+      <button id="go"><?= $t('thumbfix_scan_btn') ?></button>
       <div class="hint" id="status" style="margin-top:8px"></div>
       <ul id="results"></ul>
     </div>
 
-    <p><a href="<?= $adminUrl ?>">&larr; 回後台</a></p>
+    <p><a href="<?= $adminUrl ?>">&larr; <?= $t('back_to_admin') ?></a></p>
   </div>
 
   <script>
+    // 未套變數的原始字串（含 {var} 佔位符），前端用 fmt() 自行代換——因為進度／計數只有 JS 迴圈裡才知道
+    const I18N = <?= json_encode([
+      'scanning'     => i18n_t($DICT, 'thumbfix_scanning_msg'),
+      'error_prefix' => i18n_t($DICT, 'error_prefix_label'),
+      'no_items'     => i18n_t($DICT, 'thumbfix_no_items_msg'),
+      'progress'     => i18n_t($DICT, 'thumbfix_progress_msg'),
+      'rate_limited' => i18n_t($DICT, 'thumbfix_rate_limited_msg'),
+      'item_done'    => i18n_t($DICT, 'thumbfix_item_done_reason'),
+      'fail_prefix'  => i18n_t($DICT, 'thumbfix_fail_prefix'),
+      'complete'     => i18n_t($DICT, 'thumbfix_complete_summary'),
+      'fail_suffix'  => i18n_t($DICT, 'thumbfix_fail_suffix'),
+      'conn_failed'  => i18n_t($DICT, 'connection_failed_retry_msg'),
+      'orig_load_failed' => i18n_t($DICT, 'thumbfix_orig_load_failed'),
+    ], JSON_UNESCAPED_UNICODE) ?>;
+    const fmt = (str, vars) => str.replace(/\{(\w+)\}/g, (_, k) => (vars[k] != null ? vars[k] : ''));
     const csrf = <?= json_encode($csrf) ?>;
     // 跨端點請求一律用絕對 base：這頁可能是從 <base>/thumbfix 路徑進來的，相對 ?api= 會被路徑路由搶走
     const BASE = <?= json_encode($origin . $basePath) ?>;
@@ -291,7 +327,7 @@ $reqProject = preg_replace('/[^a-z0-9_-]/', '', $_GET['project'] ?? ($allProject
     go.addEventListener('click', async () => {
       go.disabled = true;
       resultsEl.innerHTML = '';
-      statusEl.textContent = '掃描中…';
+      statusEl.textContent = I18N.scanning;
       const project = document.getElementById('project').value;
       try {
         const fd = new FormData();
@@ -300,15 +336,15 @@ $reqProject = preg_replace('/[^a-z0-9_-]/', '', $_GET['project'] ?? ($allProject
         fd.append('project', project);
         const res = await fetch(BASE + '?api=thumbfix', { method: 'POST', body: fd });
         const j = await res.json();
-        if (!res.ok || !j.ok) { statusEl.textContent = '錯誤：' + (j.error || res.status); go.disabled = false; return; }
+        if (!res.ok || !j.ok) { statusEl.textContent = I18N.error_prefix + (j.error || res.status); go.disabled = false; return; }
         const items = j.items || [];
-        if (!items.length) { statusEl.textContent = '這個專案的投稿都已經有縮圖，不需要補'; go.disabled = false; return; }
+        if (!items.length) { statusEl.textContent = I18N.no_items; go.disabled = false; return; }
         let done = 0, fail = 0;
         for (const it of items) {
-          statusEl.textContent = '補產中… ' + (done + fail + 1) + ' / ' + items.length;
+          statusEl.textContent = fmt(I18N.progress, { i: done + fail + 1, total: items.length });
           try {
             const pr = await fetch(BASE + '?api=photo&f=' + encodeURIComponent(it.photo));
-            if (!pr.ok) throw new Error('原圖載入失敗（HTTP ' + pr.status + '）');
+            if (!pr.ok) throw new Error(fmt(I18N.orig_load_failed, { status: pr.status }));
             const thumb = await makeThumb(await pr.blob());
             const sfd = new FormData();
             sfd.append('action', 'save');
@@ -322,21 +358,21 @@ $reqProject = preg_replace('/[^a-z0-9_-]/', '', $_GET['project'] ?? ($allProject
               sr = await fetch(BASE + '?api=thumbfix', { method: 'POST', body: sfd });
               if (sr.status !== 429) break;
               const wait = parseInt(sr.headers.get('Retry-After') || '10', 10) || 10;
-              statusEl.textContent = '流量限制，等 ' + wait + ' 秒後續傳… ' + (done + fail + 1) + ' / ' + items.length;
+              statusEl.textContent = fmt(I18N.rate_limited, { wait, i: done + fail + 1, total: items.length });
               await new Promise(r => setTimeout(r, wait * 1000));
             }
             sj = await sr.json().catch(() => ({}));
             if (!sr.ok || !sj.ok) throw new Error(sj.error || ('HTTP ' + sr.status));
             done++;
-            addResult(it.label, true, '已補上縮圖');
+            addResult(it.label, true, I18N.item_done);
           } catch (e) {
             fail++;
-            addResult(it.label, false, '失敗：' + (e.message || e));
+            addResult(it.label, false, I18N.fail_prefix + (e.message || e));
           }
         }
-        statusEl.textContent = '完成：成功 ' + done + ' 張' + (fail ? '、失敗 ' + fail + ' 張（可重新掃描再試，已成功的不會重做）' : '');
+        statusEl.textContent = fmt(I18N.complete, { done }) + (fail ? fmt(I18N.fail_suffix, { fail }) : '');
       } catch (e) {
-        statusEl.textContent = '連線失敗，請稍後再試';
+        statusEl.textContent = I18N.conn_failed;
       }
       go.disabled = false;
     });

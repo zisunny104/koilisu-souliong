@@ -22,6 +22,12 @@ if (!admin_perm($cfg, $project, 'edit_points')) {
     json_out(['error' => '沒有權限編輯定位點（僅限主要管理者，或已被授權的專案管理者）'], 403);
 }
 
+// CSRF：值＝同一支登入身分在 view.php 才拿得到的衍生值（見 $APP.csrf），跨站請求讀不到頁面內容故無法偽造
+$csrfExpected = admin_authed($cfg) ? admin_derived($cfg) : padm_derived($cfg, $project, (string)padm_pin_id($cfg, $project));
+if (!hash_equals($csrfExpected, (string)($_POST['csrf'] ?? ''))) {
+    json_out(['error' => '憑證失效，請重新整理頁面後再操作一次'], 403);
+}
+
 function clean_str_ep(?string $s, int $max): ?string {
     if ($s === null) return null;
     $s = preg_replace('/[\x00-\x08\x0B\x0C\x0E-\x1F]/u', '', $s);

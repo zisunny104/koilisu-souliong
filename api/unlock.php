@@ -5,7 +5,7 @@ require __DIR__ . '/security.php';
 $cfg = require __DIR__ . '/config.php';
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') { json_out(['error' => 'POST only'], 405); }
-rate_limit($cfg, 'write');
+rate_limit($cfg, 'unlock');
 
 $project = preg_replace('/[^a-z0-9_-]/', '', $_POST['project'] ?? '');
 if ($project === '' || !is_dir($cfg['projects_dir'] . '/' . $project)) { json_out(['error' => 'bad request'], 400); }

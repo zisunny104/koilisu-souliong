@@ -4,6 +4,7 @@
  * 無外部相依；限流本身失敗時「放行」而非拒服務（避免自我 DoS）。
  * 位於 Nginx 反代後，需在 config 開 trust_forwarded 才會用 X-Forwarded-For。
  */
+require_once __DIR__ . '/accounts.php';   // admin_authed/admin_can/admin_perm 疊加帳號登入判斷，需要 account_current() 等函式
 
 function client_ip(array $cfg): string {
     if (!empty($cfg['trust_forwarded']) && !empty($_SERVER['HTTP_X_FORWARDED_FOR'])) {
@@ -29,7 +30,13 @@ function padm_cookie_name(string $project): string { return 'souliong_padm_' . p
 // 才能做到權限旗標可個別下放到特定專案 PIN（而非只要有登入任一把就視為同權）。
 function padm_derived(array $cfg, string $project, string $pinId): string { return hash_hmac('sha256', 'souliong-padm', $project . '|' . $pinId . '|' . (string)($cfg['ip_salt'] ?? '')); }
 
-function admin_authed(array $cfg): bool { return hash_equals(admin_derived($cfg), (string)($_COOKIE[ADMIN_COOKIE] ?? '')); }
+// PIN 登入與帳號登入（見檔尾「帳號系統」）並存：只要任一種通過就算通過，帳號是 PIN 之上疊加的
+// 一層，不取代——舊 PIN 在完成「轉換為帳號」前持續有效，不會有人被迫中斷登入。
+function admin_authed(array $cfg): bool {
+    if (hash_equals(admin_derived($cfg), (string)($_COOKIE[ADMIN_COOKIE] ?? ''))) return true;
+    $acc = account_current($cfg);
+    return $acc !== null && ($acc['role'] ?? '') === 'master';
+}
 
 /** 解析目前這個專案的 padm cookie，回傳驗證通過的 pinId；未登入或簽章不符回傳 null。 */
 function padm_pin_id(array $cfg, string $project): ?string {
@@ -43,15 +50,23 @@ function padm_pin_id(array $cfg, string $project): ?string {
 }
 function admin_can(array $cfg, string $project): bool {
     if (admin_authed($cfg)) return true;
-    return padm_pin_id($cfg, $project) !== null;
+    if (padm_pin_id($cfg, $project) !== null) return true;
+    $acc = account_current($cfg);
+    return $acc !== null && project_admin_perms($cfg, $project, (string)$acc['id']) !== null;
 }
-/** 權限式判斷：主 PIN 永遠通過；專案 PIN 則需該把 PIN 的 perms[$permKey] 已被主 PIN 開啟才通過。 */
+/** 權限式判斷：主 PIN／master 帳號永遠通過；專案 PIN 或專案帳號則需 perms[$permKey] 已被開啟才通過。 */
 function admin_perm(array $cfg, string $project, string $permKey): bool {
     if (admin_authed($cfg)) return true;
     $pinId = padm_pin_id($cfg, $project);
-    if ($pinId === null) return false;
-    foreach (pins_load($cfg)['projects'][$project] ?? [] as $e) {
-        if ((string)($e['id'] ?? '') === $pinId) return !empty($e['perms'][$permKey]);
+    if ($pinId !== null) {
+        foreach (pins_load($cfg)['projects'][$project] ?? [] as $e) {
+            if ((string)($e['id'] ?? '') === $pinId) return !empty($e['perms'][$permKey]);
+        }
+    }
+    $acc = account_current($cfg);
+    if ($acc !== null) {
+        $perms = project_admin_perms($cfg, $project, (string)$acc['id']);
+        if ($perms !== null) return !empty($perms[$permKey]);
     }
     return false;
 }

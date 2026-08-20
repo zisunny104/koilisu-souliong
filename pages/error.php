@@ -8,26 +8,29 @@
  *   require __DIR__ . '/../pages/error.php';
  *   error_page(403, '沒有權限', '這個區域需要對應的鑰匙。', $homeUrl);   // 會 echo 並 exit
  */
-function error_page(int $code = 404, ?string $title = null, ?string $msg = null, string $home = '/', string $homeLabel = '返回地圖'): void {
+function error_page(int $code = 404, ?string $title = null, ?string $msg = null, string $home = '/', ?string $homeLabel = null): void {
+    require_once __DIR__ . '/../api/i18n.php';
+    [$lang, $dict] = i18n_init();
     http_response_code($code);
     $preset = [
-        400 => ['請求有誤', '這個請求我看不太懂，換個方式再試一次。', 'dot'],
-        401 => ['需要登入', '先證明您是誰，才能繼續往前走。', 'lock'],
-        403 => ['沒有權限', '這個區域需要對應的鑰匙，您目前的身分還打不開。', 'lock'],
-        404 => ['找不到這個地方', '這條路好像走到底了，地圖上沒有這個點。', 'pin'],
-        405 => ['方法不對', '這扇門不是這樣開的。', 'dot'],
-        413 => ['檔案太大了', '這張照片超過可接受的大小，換張小一點的。', 'dot'],
-        429 => ['太快了，喘口氣', '您在很短時間內來了很多次，稍等一下再繼續。', 'timer'],
-        500 => ['伺服器絆倒了', '我們這邊出了點狀況，椅子翻倒了，正在扶起來。', 'chair'],
-        503 => ['暫時休息中', '服務正在維護或稍微過載，等一下再回來。', 'chair'],
+        400 => [i18n_t($dict, 'error_400_title'), i18n_t($dict, 'error_400_msg'), 'dot'],
+        401 => [i18n_t($dict, 'error_401_title'), i18n_t($dict, 'error_401_msg'), 'lock'],
+        403 => [i18n_t($dict, 'error_403_title'), i18n_t($dict, 'error_403_msg'), 'lock'],
+        404 => [i18n_t($dict, 'error_404_title'), i18n_t($dict, 'error_404_msg'), 'pin'],
+        405 => [i18n_t($dict, 'error_405_title'), i18n_t($dict, 'error_405_msg'), 'dot'],
+        413 => [i18n_t($dict, 'error_413_title'), i18n_t($dict, 'error_413_msg'), 'dot'],
+        429 => [i18n_t($dict, 'error_429_title'), i18n_t($dict, 'error_429_msg'), 'timer'],
+        500 => [i18n_t($dict, 'error_500_title'), i18n_t($dict, 'error_500_msg'), 'chair'],
+        503 => [i18n_t($dict, 'error_503_title'), i18n_t($dict, 'error_503_msg'), 'chair'],
     ];
-    [$dt, $dm, $anim] = $preset[$code] ?? ['發生錯誤', '出了一點狀況。', 'dot'];
+    [$dt, $dm, $anim] = $preset[$code] ?? [i18n_t($dict, 'error_fallback_title'), i18n_t($dict, 'error_fallback_msg'), 'dot'];
     $title = $title ?? $dt;
     $msg = $msg ?? $dm;
+    $homeLabel = $homeLabel ?? i18n_t($dict, 'error_back_to_map_label');
     $e = fn($s) => htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8');
     $glyph = error__glyph($anim);
     header('Content-Type: text/html; charset=utf-8');
-    echo '<!DOCTYPE html><html lang="zh-Hant"><head><meta charset="utf-8">'
+    echo '<!DOCTYPE html><html lang="' . ($lang === 'en' ? 'en' : 'zh-Hant') . '"><head><meta charset="utf-8">'
        . '<meta name="viewport" content="width=device-width, initial-scale=1">'
        . '<title>' . $e($code . ' · ' . $title) . ' · Souliong</title>'
        . '<script>try{var t=localStorage.getItem("theme");if(t&&t!=="system")document.documentElement.dataset.theme=t;}catch(e){}</script>'

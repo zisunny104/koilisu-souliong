@@ -3,6 +3,12 @@
  * Souliong 地圖清單首頁。背景為隨機一張地圖（不可互動），內容浮在其上。
  */
 $cfg = include __DIR__ . '/../config.php';
+require __DIR__ . '/../api/settings.php';
+require __DIR__ . '/../api/i18n.php';
+$apiCfg = require __DIR__ . '/../api/config.php';
+$randomExplore = souliong_random_explore_on($apiCfg);
+[$LANG, $DICT] = i18n_init();
+$t = fn(string $key, array $vars = []): string => htmlspecialchars(i18n_t($DICT, $key, $vars), ENT_QUOTES);
 $appName = $_APP['name'] ?? basename(dirname(__DIR__));
 $path = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH);
 $i = strpos($path, '/' . $appName);
@@ -28,11 +34,11 @@ $b = htmlspecialchars($base, ENT_QUOTES);
 $esc = fn($s) => htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8');
 $bg = $maps ? $maps[array_rand($maps)] : ['center' => [23.9, 120.7], 'zoom' => 14];
 ?><!DOCTYPE html>
-<html lang="zh-Hant">
+<html lang="<?= $LANG === 'en' ? 'en' : 'zh-Hant' ?>">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Souliong 循跡</title>
+<title><?= $t('app_title') ?></title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
 <style>
@@ -62,6 +68,9 @@ header .tag{color:var(--muted);font-size:0.875rem;margin-top:10px;line-height:1.
 .empty{text-align:center;color:var(--muted);padding:50px;font-size:0.875rem}
 footer{text-align:center;color:var(--muted);font-size:0.75rem;padding:22px;line-height:1.8}
 footer a{color:inherit}
+.langsw{position:fixed;top:16px;right:16px;z-index:3;display:flex;gap:2px;font-size:0.75rem}
+.langsw a{color:var(--muted);text-decoration:none;padding:4px 8px;border-radius:999px}
+.langsw a.on{color:var(--fg);font-weight:700;background:var(--card);border:1px solid var(--line)}
 .cr-line{display:flex;align-items:center;justify-content:center;flex-wrap:wrap}
 .cr-sep{width:1px;align-self:stretch;background:var(--line);margin:0 .5em}
 @media (max-width:560px){
@@ -71,20 +80,24 @@ footer a{color:inherit}
 </style>
 </head>
 <body>
+<div class="langsw">
+  <a href="?lang=zh_TW" class="<?= $LANG === 'zh_TW' ? 'on' : '' ?>">中文</a>
+  <a href="?lang=en" class="<?= $LANG === 'en' ? 'on' : '' ?>">English</a>
+</div>
 <div id="bgmap"></div>
 <div class="scrim"></div>
 <div class="page">
 <header>
-  <div class="logo" id="logo">Souliong 循跡<span id="logoShape" class="logo-shape"></span></div>
-  <div class="tag">循著地方留下的痕跡，用地圖探索、記錄一座城市。<br>每個地方都留下痕跡，每一道痕跡都有故事。</div>
+  <div class="logo" id="logo"><?= $t('app_title') ?><span id="logoShape" class="logo-shape"></span></div>
+  <div class="tag"><?= $t('landing_tagline_1') ?><br><?= $t('landing_tagline_2') ?></div>
   <div class="bar">
-    <?php if ($maps): ?><a class="btn primary" id="randomBtn"><i class="fa-solid fa-shuffle"></i> 隨機探索</a><?php endif; ?>
-    <a class="btn" href="https://github.com/zisunny104/koilisu-souliong" target="_blank" rel="noopener"><i class="fa-brands fa-github"></i> 原始碼</a>
+    <?php if ($maps && $randomExplore): ?><a class="btn primary" id="randomBtn"><i class="fa-solid fa-shuffle"></i> <?= $t('random_explore_btn') ?></a><?php endif; ?>
+    <a class="btn" href="https://github.com/zisunny104/koilisu-souliong" target="_blank" rel="noopener"><i class="fa-brands fa-github"></i> <?= $t('source_code_btn') ?></a>
   </div>
 </header>
 <div class="wrap">
   <?php if (!$maps): ?>
-    <div class="empty">尚未有地圖。<a href="<?= $b ?>manager">建立第一張地圖</a>，或請洽主要管理者。</div>
+    <div class="empty"><?= $t('no_maps_yet') ?><a href="<?= $b ?>manager"><?= $t('create_first_map_link') ?></a><?= $t('or_contact_admin_suffix') ?></div>
   <?php else: ?>
     <div class="grid">
       <?php foreach ($maps as $m): ?>
@@ -99,7 +112,7 @@ footer a{color:inherit}
 <footer>
   <div class="cr-line">
     <span class="cr-ext">
-      &copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> 貢獻者
+      &copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> <?= $t('osm_contributors') ?>
       ・ <a href="https://carto.com/attributions" target="_blank" rel="noopener">CARTO</a>
       ・ <a href="https://leafletjs.com" target="_blank" rel="noopener">Leaflet</a>
     </span>
@@ -110,7 +123,7 @@ footer a{color:inherit}
       ・ <a href="https://toka.dev" target="_blank" rel="noopener">prjToka</a>
     </span>
   </div>
-  開放的地方探索地圖平台 ・ <a href="<?= $b ?>privacy">隱私與資料說明</a>
+  <?= $t('platform_tagline_footer') ?> ・ <a href="<?= $b ?>privacy"><?= $t('privacy_link_text') ?></a>
 </footer>
 </div>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>

@@ -9,8 +9,12 @@
 //     伺服器用「時間 + 座標」比對現有缺 exif 的投稿，找不到相符的就略過、絕不亂猜配對。
 require __DIR__ . '/store.php';
 require __DIR__ . '/security.php';
+require __DIR__ . '/i18n.php';
 $cfg = require __DIR__ . '/config.php';
 rate_limit($cfg, 'admin');
+[$LANG, $DICT] = i18n_init();
+$t  = fn(string $key, array $vars = []): string => htmlspecialchars(i18n_t($DICT, $key, $vars), ENT_QUOTES);
+$tr = fn(string $key, array $vars = []): string => i18n_t($DICT, $key, $vars);
 $esc = fn($s) => htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8');
 
 // 還原 app 掛載根目錄，組「回後台」連結用──不能用相對的 ?api=admin：
@@ -21,12 +25,15 @@ $reqPathOnly = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH);
 $appMarkerPos = strpos($reqPathOnly, '/' . $appName);
 $basePath = $appMarkerPos !== false ? rtrim(substr($reqPathOnly, 0, $appMarkerPos + strlen($appName) + 1), '/') . '/' : '/';
 $origin = ((!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http') . '://' . ($_SERVER['HTTP_HOST'] ?? '');
-$adminUrl = $esc($origin . $basePath . '?api=admin');
+// 從哪個專案點進來就回哪個專案（後台工具連結會帶 ?project=），沒帶就回全站總覽，不硬塞一個專案；
+// 一律回工具分頁（#tools），不是回後台第一頁的「總覽」──不然等於又是一次「跳到別的地方」。
+$backProject = preg_replace('/[^a-z0-9_-]/', '', $_GET['project'] ?? '');
+$adminUrl = $esc($origin . $basePath . '?api=admin' . ($backProject !== '' ? '&project=' . urlencode($backProject) : '') . '#tools');
 
 if (!admin_authed($cfg)) {
     http_response_code(401);
     header('Content-Type: text/html; charset=utf-8');
-    echo '<p>需要主要管理者登入。請先到 <a href="' . $adminUrl . '">後台</a> 登入後再回到這頁。</p>';
+    echo '<p>' . $tr('master_login_required_msg', ['url' => $adminUrl]) . '</p>';
     exit;
 }
 $csrf = admin_derived($cfg);
@@ -51,7 +58,7 @@ function exiffix_clean_str(?string $s, int $max): ?string {
 // 這是最主要的修復路徑：多數「編輯後相機資訊不見」的案例，資料本來就沒真的丟，只是編輯版本自己那筆沒有而已。
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'autofix') {
     if (!hash_equals($csrf, (string)($_POST['csrf'] ?? ''))) {
-        json_out(['error' => '憑證失效，請重新整理頁面'], 403);
+        json_out(['error' => $tr('csrf_invalid_ajax_msg')], 403);
     }
     $project = preg_replace('/[^a-z0-9_-]/', '', $_POST['project'] ?? '');
     if ($project === '' || !is_dir($cfg['projects_dir'] . '/' . $project)) {
@@ -72,10 +79,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'autof
         if ($merged == $cur) continue;           // 沒有可補的欄位就不動
         $patched = store_patch($cfg, $project, (string)$r['id'], ['exif' => $merged]);
         $results[] = [
-            'name' => '第 ' . ($r['item_num'] ?? '?') . ' 號・' . substr((string)($r['created_at'] ?? ''), 0, 16),
+            'name' => i18n_t($DICT, 'item_label_short', ['n' => $r['item_num'] ?? '?', 'time' => substr((string)($r['created_at'] ?? ''), 0, 16)]),
             'ok' => (bool)$patched,
             'item_num' => $r['item_num'] ?? null,
-            'reason' => $patched ? ($cur ? '已補齊缺少的相機欄位' : '已從原始投稿複製相機資訊') : '修補失敗（寫入錯誤）',
+            'reason' => $patched ? ($cur ? $tr('exiffix_filled_missing_reason') : $tr('exiffix_copied_from_orig_reason')) : $tr('exiffix_patch_failed_reason'),
         ];
     }
     json_out(['ok' => true, 'results' => $results]);
@@ -84,7 +91,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'autof
 // ── 方式二：上傳原始檔比對並修補（POST，JSON 回應） ──
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'match') {
     if (!hash_equals($csrf, (string)($_POST['csrf'] ?? ''))) {
-        json_out(['error' => '憑證失效，請重新整理頁面'], 403);
+        json_out(['error' => $tr('csrf_invalid_ajax_msg')], 403);
     }
     $project = preg_replace('/[^a-z0-9_-]/', '', $_POST['project'] ?? '');
     if ($project === '' || !is_dir($cfg['projects_dir'] . '/' . $project)) {
@@ -110,7 +117,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'match
         $lat = isset($c['lat']) && is_numeric($c['lat']) ? (float)$c['lat'] : null;
         $lon = isset($c['lon']) && is_numeric($c['lon']) ? (float)$c['lon'] : null;
         if ($t === false) {
-            $results[] = ['name' => $name, 'ok' => false, 'reason' => '這張檔案沒有可用的拍攝時間，已略過'];
+            $results[] = ['name' => $name, 'ok' => false, 'reason' => $tr('exiffix_no_time_reason')];
             continue;
         }
 
@@ -134,7 +141,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'match
         }
 
         if (!$best) {
-            $results[] = ['name' => $name, 'ok' => false, 'reason' => '找不到時間／座標相符的投稿，已略過'];
+            $results[] = ['name' => $name, 'ok' => false, 'reason' => $tr('exiffix_no_match_reason')];
             continue;
         }
 
@@ -150,7 +157,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'match
         }
         if (isset($c['iso']) && is_numeric($c['iso'])) $exif['iso'] = (int)$c['iso'];
         if (!$exif) {
-            $results[] = ['name' => $name, 'ok' => false, 'reason' => '這張原始檔沒有可用的相機資訊，已略過'];
+            $results[] = ['name' => $name, 'ok' => false, 'reason' => $tr('exiffix_no_exif_reason')];
             continue;
         }
 
@@ -158,7 +165,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'match
         $merged = $cur + $exif;   // 現有欄位優先、只補缺少的欄位，絕不覆蓋既有值
         if ($merged == $cur) {
             // 沒有可補的欄位：不動資料、也不從池中移除（讓它仍可被其他更相符的檔案比對）
-            $results[] = ['name' => $name, 'ok' => false, 'item_num' => $best['item_num'] ?? null, 'reason' => '比對到第 ' . ($best['item_num'] ?? '?') . ' 號，但相機資訊已完整，無需修補'];
+            $results[] = ['name' => $name, 'ok' => false, 'item_num' => $best['item_num'] ?? null, 'reason' => $tr('exiffix_already_complete_reason', ['n' => $best['item_num'] ?? '?'])];
             continue;
         }
 
@@ -170,7 +177,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'match
             'name' => $name,
             'ok' => (bool)$patched,
             'item_num' => $best['item_num'] ?? null,
-            'reason' => $patched ? ($cur ? '已補齊缺少的相機欄位' : '已修補相機資訊') : '修補失敗（寫入錯誤）',
+            'reason' => $patched ? ($cur ? $tr('exiffix_filled_missing_reason') : $tr('exiffix_patched_reason')) : $tr('exiffix_patch_failed_reason'),
         ];
     }
     json_out(['ok' => true, 'results' => $results]);
@@ -181,14 +188,18 @@ $allProjects = store_projects($cfg);
 $reqProject = preg_replace('/[^a-z0-9_-]/', '', $_GET['project'] ?? ($allProjects[0] ?? ''));
 ?>
 <!doctype html>
-<html lang="zh-Hant">
+<html lang="<?= $LANG === 'en' ? 'en' : 'zh-Hant' ?>">
 
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="robots" content="noindex">
-  <title>修復相機資訊 · Souliong</title>
+  <title><?= $t('exiffix_title') ?></title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
   <style>
+    .langsw{position:fixed;top:16px;right:16px;z-index:3;display:flex;gap:2px;font-size:0.75rem}
+    .langsw a{color:var(--muted);text-decoration:none;padding:4px 8px;border-radius:999px}
+    .langsw a.on{color:var(--fg);font-weight:700;background:var(--card);border:1px solid var(--line)}
     :root {
       --bg: #f6f5f2;
       --fg: #1c1a17;
@@ -229,7 +240,10 @@ $reqProject = preg_replace('/[^a-z0-9_-]/', '', $_GET['project'] ?? ($allProject
     }
 
     h1 {
-      font-size: 1.125rem
+      font-size: 1.125rem;
+      display: flex;
+      align-items: center;
+      gap: 8px
     }
 
     .warn {
@@ -319,35 +333,53 @@ $reqProject = preg_replace('/[^a-z0-9_-]/', '', $_GET['project'] ?? ($allProject
 </head>
 
 <body>
+  <div class="langsw">
+    <a href="?<?= $backProject !== '' ? 'project=' . rawurlencode($backProject) . '&' : '' ?>lang=zh_TW" class="<?= $LANG === 'zh_TW' ? 'on' : '' ?>">中文</a>
+    <a href="?<?= $backProject !== '' ? 'project=' . rawurlencode($backProject) . '&' : '' ?>lang=en" class="<?= $LANG === 'en' ? 'on' : '' ?>">English</a>
+  </div>
   <div class="wrap">
-    <h1><i></i> 修復相機資訊</h1>
-    <div class="warn">只會補上「缺少的相機資訊欄位」（整組遺失或只缺光圈／焦段等部分欄位都能補），絕不覆蓋已有的值；找不到相符對象就會略過，不會亂猜配對。</div>
+    <h1><i class="fa-solid fa-kit-medical"></i> <?= $t('exiffix_h1') ?></h1>
+    <div class="warn"><?= $t('exiffix_warn') ?></div>
 
     <div class="card">
-      <label>選擇專案</label>
+      <label><?= $t('tool_select_project_label') ?></label>
       <select id="project">
         <?php foreach ($allProjects as $p): ?><option value="<?= $esc($p) ?>" <?= $p === $reqProject ? 'selected' : '' ?>><?= $esc($p) ?></option><?php endforeach; ?>
       </select>
-      <div class="hint" style="margin-bottom:10px">方式一：多數「編輯後相機資訊不見」的情況，資料其實還在——原始投稿本身沒被動過，只是它的編輯版本自己那筆是空的。按下面按鈕會直接從原始投稿複製過去，不需要上傳任何檔案，立即生效。</div>
-      <button id="goAuto">直接由原始版本修復（不需上傳檔案）</button>
+      <div class="hint" style="margin-bottom:10px"><?= $t('exiffix_method1_hint') ?></div>
+      <button id="goAuto"><?= $t('exiffix_method1_btn') ?></button>
       <div class="hint" id="statusAuto" style="margin-top:8px"></div>
       <ul id="resultsAuto"></ul>
     </div>
 
     <div class="card">
-      <div class="hint" style="margin-bottom:10px">方式二（備援）：只有在原始投稿本身就沒有相機資訊時才需要——上傳當初的原始照片檔（僅在瀏覽器本機讀取 EXIF 時間／座標／相機資訊做比對，不會上傳整張照片、也不會新增投稿），伺服器用「時間 + 座標」比對現有缺 exif 的投稿。</div>
-      <label>選擇當初的原始照片檔（可一次選多張）</label>
+      <div class="hint" style="margin-bottom:10px"><?= $t('exiffix_method2_hint') ?></div>
+      <label><?= $t('exiffix_choose_files_label') ?></label>
       <input type="file" id="files" accept="image/*" multiple>
-      <button id="go" disabled>開始比對並修補</button>
+      <button id="go" disabled><?= $t('exiffix_match_btn') ?></button>
       <div class="hint" id="status" style="margin-top:8px"></div>
       <ul id="results"></ul>
     </div>
 
-    <p><a href="<?= $adminUrl ?>">&larr; 回後台</a></p>
+    <p><a href="<?= $adminUrl ?>">&larr; <?= $t('back_to_admin') ?></a></p>
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/exifr/dist/full.umd.js"></script>
   <script>
+    // 未套變數的原始字串（含 {var} 佔位符），前端用 fmt() 自行代換
+    const I18N = <?= json_encode([
+      'fixing'          => i18n_t($DICT, 'exiffix_fixing_msg'),
+      'error_prefix'    => i18n_t($DICT, 'error_prefix_label'),
+      'autofix_done'    => i18n_t($DICT, 'exiffix_autofix_done_msg'),
+      'autofix_done_none' => i18n_t($DICT, 'exiffix_autofix_done_none_msg'),
+      'conn_failed'     => i18n_t($DICT, 'connection_failed_retry_msg'),
+      'picked_files'    => i18n_t($DICT, 'exiffix_picked_files_msg'),
+      'reading_exif'    => i18n_t($DICT, 'exiffix_reading_exif_msg'),
+      'matching'        => i18n_t($DICT, 'exiffix_matching_msg'),
+      'match_done'      => i18n_t($DICT, 'exiffix_match_done_msg'),
+      'item_num_suffix' => i18n_t($DICT, 'exiffix_item_num_suffix'),
+    ], JSON_UNESCAPED_UNICODE) ?>;
+    const fmt = (str, vars) => str.replace(/\{(\w+)\}/g, (_, k) => (vars[k] != null ? vars[k] : ''));
     const csrf = <?= json_encode($csrf) ?>;
     function renderResults(el, list) {
       el.innerHTML = '';
@@ -357,7 +389,7 @@ $reqProject = preg_replace('/[^a-z0-9_-]/', '', $_GET['project'] ?? ($allProject
         label.textContent = r.name;
         const state = document.createElement('span');
         state.className = r.ok ? 'ok' : 'no';
-        state.textContent = r.ok ? ('✓ ' + r.reason + (r.item_num != null ? '（第 ' + r.item_num + ' 號）' : '')) : ('— ' + r.reason);
+        state.textContent = r.ok ? ('✓ ' + r.reason + (r.item_num != null ? fmt(I18N.item_num_suffix, { n: r.item_num }) : '')) : ('— ' + r.reason);
         li.appendChild(label);
         li.appendChild(state);
         el.appendChild(li);
@@ -369,7 +401,7 @@ $reqProject = preg_replace('/[^a-z0-9_-]/', '', $_GET['project'] ?? ($allProject
     const resultsAutoEl = document.getElementById('resultsAuto');
     goAuto.addEventListener('click', async () => {
       goAuto.disabled = true;
-      statusAutoEl.textContent = '修復中…';
+      statusAutoEl.textContent = I18N.fixing;
       resultsAutoEl.innerHTML = '';
       try {
         const fd = new FormData();
@@ -378,11 +410,11 @@ $reqProject = preg_replace('/[^a-z0-9_-]/', '', $_GET['project'] ?? ($allProject
         fd.append('project', document.getElementById('project').value);
         const res = await fetch('?api=exiffix', { method: 'POST', body: fd });
         const j = await res.json();
-        if (!res.ok || !j.ok) { statusAutoEl.textContent = '錯誤：' + (j.error || res.status); goAuto.disabled = false; return; }
-        statusAutoEl.textContent = j.results.length ? ('完成，共處理 ' + j.results.length + ' 筆') : '沒有需要修復的編輯版本（原始投稿有 exif 但編輯版本沒有的情況）';
+        if (!res.ok || !j.ok) { statusAutoEl.textContent = I18N.error_prefix + (j.error || res.status); goAuto.disabled = false; return; }
+        statusAutoEl.textContent = j.results.length ? fmt(I18N.autofix_done, { n: j.results.length }) : I18N.autofix_done_none;
         renderResults(resultsAutoEl, j.results);
       } catch (e) {
-        statusAutoEl.textContent = '連線失敗，請稍後再試';
+        statusAutoEl.textContent = I18N.conn_failed;
       }
       goAuto.disabled = false;
     });
@@ -396,13 +428,13 @@ $reqProject = preg_replace('/[^a-z0-9_-]/', '', $_GET['project'] ?? ($allProject
     filesInput.addEventListener('change', () => {
       picked = Array.from(filesInput.files || []);
       go.disabled = picked.length === 0;
-      statusEl.textContent = picked.length ? ('已選 ' + picked.length + ' 張，按下方按鈕開始讀取比對') : '';
+      statusEl.textContent = picked.length ? fmt(I18N.picked_files, { n: picked.length }) : '';
     });
 
     go.addEventListener('click', async () => {
       go.disabled = true;
       resultsEl.innerHTML = '';
-      statusEl.textContent = '讀取 EXIF 中…';
+      statusEl.textContent = I18N.reading_exif;
       const candidates = [];
       for (const file of picked) {
         try {
@@ -427,7 +459,7 @@ $reqProject = preg_replace('/[^a-z0-9_-]/', '', $_GET['project'] ?? ($allProject
           candidates.push({ name: file.name, time: null });
         }
       }
-      statusEl.textContent = '比對並修補中…';
+      statusEl.textContent = I18N.matching;
       try {
         const fd = new FormData();
         fd.append('action', 'match');
@@ -436,11 +468,11 @@ $reqProject = preg_replace('/[^a-z0-9_-]/', '', $_GET['project'] ?? ($allProject
         fd.append('candidates', JSON.stringify(candidates));
         const res = await fetch('?api=exiffix', { method: 'POST', body: fd });
         const j = await res.json();
-        if (!res.ok || !j.ok) { statusEl.textContent = '錯誤：' + (j.error || res.status); go.disabled = false; return; }
-        statusEl.textContent = '完成，共 ' + j.results.length + ' 張';
+        if (!res.ok || !j.ok) { statusEl.textContent = I18N.error_prefix + (j.error || res.status); go.disabled = false; return; }
+        statusEl.textContent = fmt(I18N.match_done, { n: j.results.length });
         renderResults(resultsEl, j.results);
       } catch (e) {
-        statusEl.textContent = '連線失敗，請稍後再試';
+        statusEl.textContent = I18N.conn_failed;
       }
       go.disabled = false;
     });
