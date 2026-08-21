@@ -4,6 +4,7 @@ require __DIR__ . '/store.php';
 require __DIR__ . '/security.php';
 require __DIR__ . '/stats.php';
 require __DIR__ . '/features.php';
+require __DIR__ . '/packs.php';
 require __DIR__ . '/settings.php';
 require __DIR__ . '/../pages/error.php';
 require_once __DIR__ . '/i18n.php';
@@ -535,6 +536,15 @@ if (!$authed) {
             }
             $meta['personExplore'] = isset($_POST['personExplore']);
           }
+          // 資源包：只接受目前實際存在的包 id，避免存進一個已刪除／偽造的值
+          if (isset($_POST['pack'])) {
+            $pk = (string)$_POST['pack'];
+            if ($pk === '') {
+              unset($meta['pack']);
+            } elseif (isset(souliong_pack_list($cfg)[$pk])) {
+              $meta['pack'] = $pk;
+            }
+          }
           $json = json_encode($meta, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
           if ($json !== false && is_dir(dirname($mf))) {
             @file_put_contents($mf, $json, LOCK_EX);
@@ -730,6 +740,34 @@ if (!$authed) {
         // ── 備份（ZIP，含照片；純 PHP zip，零擴充依賴） ──
         if (isset($_GET['backup'])) {
           require_once __DIR__ . '/zip.php';
+          // ── 資源包匯出：單一 pack 資料夾打包，路徑內含 <id>/ 前綴（比照 projects/<id>/ 的做法） ──
+          if ($_GET['backup'] === 'pack') {
+            if (!$master) {
+              error_page(403, $t('no_permission_title'), $t('master_only_packs_msg'), '?api=admin#tools', $t('back_to_admin'));
+            }
+            $pid = preg_replace('/[^a-z0-9_-]/', '', $_GET['pack'] ?? '');
+            $packs = souliong_pack_list($cfg);
+            if ($pid === '' || !isset($packs[$pid])) {
+              error_page(404, $t('error_404_title'), $t('pack_not_found_msg'), '?api=admin#tools', $t('back_to_admin'));
+            }
+            $pdir = rtrim($cfg['packs_dir'], '/\\') . '/' . $pid;
+            $files = [];
+            foreach (['pack.json', 'pack.css'] as $fn) {
+              if (is_file($pdir . '/' . $fn)) $files[$pid . '/' . $fn] = $pdir . '/' . $fn;
+            }
+            $name = 'souliong-pack-' . $pid . '-' . date('Ymd-His') . '.zip';
+            $tmp = tempnam(sys_get_temp_dir(), 'skpk');
+            if (!zip_pack($tmp, $files)) {
+              http_response_code(500);
+              exit($t('backup_failed_msg'));
+            }
+            header('Content-Type: application/zip');
+            header('Content-Disposition: attachment; filename="' . $name . '"');
+            header('Content-Length: ' . filesize($tmp));
+            readfile($tmp);
+            @unlink($tmp);
+            exit;
+          }
           $bp = $_GET['backup'] === 'project' ? preg_replace('/[^a-z0-9_-]/', '', $_GET['project'] ?? '') : null;
           if ($bp === null && !$master) {
             error_page(403, $t('no_permission_title'), $t('master_only_backup_all_msg'), '?api=admin' . ($scopeProject !== '' ? '&project=' . urlencode($scopeProject) : '') . '#tools', $t('back_to_admin'));
@@ -822,6 +860,31 @@ if (!$authed) {
               if ($mode === 'replace' || !is_file($dest)) @file_put_contents($dest, $content);
             }
             audit_log($cfg, $auditWho(), 'import', null, $mode . ', +' . $imported . ' 筆');
+          }
+          header('Location: ?api=admin#tools');
+          exit;
+        }
+
+        // ── 資源包匯入：主要管理者限定；zip 內路徑需含 <id>/ 前綴，id 只認資料夾名稱（避免 pack.json 內容偽造） ──
+        if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'packimport') {
+          need_csrf($csrf);
+          if (!$master) {
+            error_page(403, $t('no_permission_title'), $t('master_only_packs_msg'), '?api=admin#tools', $t('back_to_admin'));
+          }
+          require_once __DIR__ . '/zip.php';
+          if (isset($_FILES['pack']) && $_FILES['pack']['error'] === UPLOAD_ERR_OK) {
+            $accept = fn($nm) => strpos(str_replace('\\', '/', (string)$nm), '..') === false
+              && preg_match('#^[a-z0-9_-]+/(pack\.json|pack\.css)$#', str_replace('\\', '/', (string)$nm));
+            $entries = zip_unpack($_FILES['pack']['tmp_name'], $accept);
+            $ids = [];
+            foreach ($entries as $nm => $content) {
+              if (!preg_match('#^([a-z0-9_-]+)/(pack\.json|pack\.css)$#', str_replace('\\', '/', $nm), $mm)) continue;
+              $destDir = rtrim($cfg['packs_dir'], '/\\') . '/' . $mm[1];
+              if (!is_dir($destDir)) @mkdir($destDir, 0775, true);
+              @file_put_contents($destDir . '/' . $mm[2], $content, LOCK_EX);
+              $ids[$mm[1]] = true;
+            }
+            audit_log($cfg, $auditWho(), 'pack_import', null, implode(',', array_keys($ids)));
           }
           header('Location: ?api=admin#tools');
           exit;
@@ -1160,6 +1223,7 @@ if (!$authed) {
     }
 
     .metaform input,
+    .metaform select,
     .metaform textarea {
       border: 1px solid var(--line);
       border-radius: 10px;
@@ -1930,6 +1994,14 @@ if (!$authed) {
               <label><?= $t('field_desc_label') ?><textarea name="desc" rows="2" maxlength="300" placeholder="<?= $t('desc_optional_placeholder') ?>"><?= $esc($meta['desc'] ?? '') ?></textarea></label>
               <label><?= $t('field_source_label') ?><input name="source" maxlength="300" value="<?= $esc($meta['source'] ?? '') ?>" placeholder="<?= $t('source_placeholder') ?>"></label>
               <label><?= $t('field_credit_label') ?><input name="credit" maxlength="300" value="<?= $esc($meta['credit'] ?? '') ?>" placeholder="<?= $t('credit_placeholder') ?>"></label>
+              <label><?= $t('field_pack_label') ?>
+                <select name="pack">
+                  <option value=""><?= $t('no_pack_option') ?></option>
+                  <?php foreach (souliong_pack_list($cfg) as $pid => $pinfo): ?>
+                  <option value="<?= $esc($pid) ?>" <?= (($meta['pack'] ?? '') === $pid) ? 'selected' : '' ?>><?= $esc($pinfo['label'] ?? $pid) ?></option>
+                  <?php endforeach; ?>
+                </select>
+              </label>
               <div class="badge"><?= $tr('sources_field_hint') ?></div>
               <input type="hidden" name="modules_submitted" value="1">
               <div class="modfields">
@@ -2348,6 +2420,30 @@ if (!$authed) {
         <div class="row" style="margin-top:8px"><a class="btn" href="<?= $esc($origin . $basePath . 'exiffix' . $toolQs) ?>"><i class="fa-solid fa-kit-medical"></i> <?= $t('open_exiffix_btn') ?></a>
           <a class="btn" href="<?= $esc($origin . $basePath . 'thumbfix' . $toolQs) ?>"><i class="fa-solid fa-images"></i> <?= $t('open_thumbfix_btn') ?></a>
           <a class="btn" href="?api=admin&backup=all"><i class="fa-solid fa-download"></i> <?= $t('backup_all_btn') ?></a></div>
+      </div>
+      <div class="card section-card">
+        <div class="badge"><i class="fa-solid fa-swatchbook"></i> <?= $t('packs_heading') ?></div>
+        <div class="hint" style="margin-top:6px"><?= $t('packs_hint') ?></div>
+        <?php $installedPacks = souliong_pack_list($cfg); ?>
+        <?php if ($installedPacks): ?>
+        <div style="display:flex;flex-direction:column;gap:6px;margin-top:10px">
+          <?php foreach ($installedPacks as $pid => $pinfo): ?>
+          <div style="display:flex;align-items:center;gap:8px;justify-content:space-between">
+            <span><b><?= $esc($pinfo['label'] ?? $pid) ?></b> <span class="hint mono"><?= $esc($pid) ?></span></span>
+            <a class="btn" href="?api=admin&backup=pack&pack=<?= $esc($pid) ?>"><i class="fa-solid fa-download"></i> <?= $t('pack_export_btn') ?></a>
+          </div>
+          <?php endforeach; ?>
+        </div>
+        <?php else: ?>
+        <div class="hint" style="margin-top:8px"><?= $t('no_packs_msg') ?></div>
+        <?php endif; ?>
+        <form method="post" enctype="multipart/form-data" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:10px">
+          <input type="hidden" name="csrf" value="<?= $esc_csrf ?>"><input type="hidden" name="action" value="packimport">
+          <span class="badge"><i class="fa-solid fa-upload"></i> <?= $t('pack_import_badge') ?></span>
+          <label class="btn" style="cursor:pointer"><i class="fa-solid fa-folder-open"></i> <span data-file><?= $t('choose_zip_btn') ?></span>
+            <input type="file" name="pack" accept=".zip" required hidden onchange="this.parentNode.querySelector('[data-file]').textContent=this.files[0]?this.files[0].name:<?= json_encode(i18n_t($DICT, 'choose_zip_btn'), JSON_UNESCAPED_UNICODE) ?>"></label>
+          <button class="btn"><i class="fa-solid fa-upload"></i> <?= $t('restore_btn') ?></button>
+        </form>
       </div>
     </div><!-- /pane-tools -->
     <?php endif; ?>
