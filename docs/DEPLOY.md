@@ -6,16 +6,32 @@ Souliong 是 KoiLiSu 框架下的一個 app（`apps/souliong`）。純 PHP + 檔
 
 ### 1. ★ 擋掉 `projects/` 與 `state/` 的直接存取
 `projects/<id>/` 裡有：投稿內容、**投稿碼**（`codes.json`）、投稿者名冊、統計——**絕對不能被直接下載**（否則投稿碼外洩＝門檻失效）；照片也在裡面，一律由 PHP（`?api=photo`）輸出，不應該被直接列目錄。
-`state/` 裡有 admin PIN 清單與限流檔，同樣不能外流。
+`state/` 裡有 admin PIN 清單（**明碼**存放，不是雜湊）與限流檔，同樣不能外流。
 
-在 Nginx server 區塊加入（路徑對應你的實際 web root）：
+**這一步是整個部署裡最關鍵的一步。** 程式碼本身完全不會、也不能防這件事——擋人直接下載
+`projects/`、`state/` 底下的檔案，是網頁伺服器（Nginx）的責任，不是 PHP 應用程式的責任。換句話說：
+少了這段 Nginx 設定，任何人不用登入、不用密碼，直接在網址列打
+`https://你的網域/.../projects/100chairs/codes.json`，瀏覽器就會把投稿碼原原本本顯示出來
+（因為 Nginx 預設看到「檔案存在」就會直接送出檔案內容，完全不會經過 `index.php`）。`state/admin_pins.json`
+同理，會把每個專案的管理密碼全部曝光。
+
+在你的 Nginx **server 區塊**（跟 `listen`、`server_name`、`root` 同一層，通常是
+`/etc/nginx/sites-available/你的網域` 或 `nginx.conf` 裡對應的 `server { ... }` 區塊）裡加入：
 ```nginx
-# 擋掉所有 app 的 projects/ 與 state/ 直接存取
-location ~ ^/koilisu/apps/[^/]+/(state|projects)/ { deny all; return 404; }
-# 保險：擋掉 .jsonl / .json / .stats.json 這類資料檔
-location ~ \.(jsonl|sqlite|json)$ { deny all; return 404; }
+# 不管框架用哪種路徑掛載（獨立部署 /souliong/、或框架下 /koilisu/apps/souliong/），
+# 只要網址路徑裡出現 state/ 或 projects/ 這個資料夾名稱就一律擋掉，不依賴猜對確切路徑。
+location ~ /(state|projects)/ { deny all; return 404; }
+# 保險：擋掉 .jsonl 這類原始資料檔（正常照片一律走 ?api=photo，不會被這條擋到）
+location ~ \.jsonl$ { deny all; return 404; }
 ```
-> 驗證：瀏覽器開 `https://你的網域/koilisu/apps/souliong/projects/100chairs/codes.json` 應該是 403/404，不能看到碼。
+把這段貼進去之後：
+```bash
+sudo nginx -t              # 先測設定檔語法有沒有錯，錯了不會重載，安全
+sudo systemctl reload nginx   # 沒錯再套用（reload 不會中斷現有連線）
+```
+> **驗證（一定要實測，不要只看設定檔）**：瀏覽器開
+> `https://你的網域/.../projects/100chairs/codes.json`，應該看到 403 Forbidden 或 404，
+> 而不是投稿碼的 JSON 內容。`state/admin_pins.json` 也照樣測一次。
 
 ### 2. 改掉預設密鑰（`api/config.php`）
 - `admin_pin` → 一組不易猜的 PIN（管理頁登入用；驗證後種 httpOnly cookie，PIN 不進網址）。

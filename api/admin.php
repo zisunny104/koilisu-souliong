@@ -852,11 +852,21 @@ if (!$authed) {
               }
             }
             // 3) 照片（合併只補缺的；覆蓋才蓋）
+            // 內容需經 getimagesize 驗證是真的圖片，副檔名一律改用驗證後的真實類型推算，
+            // 不採信 zip 內原始檔名的副檔名（比照 upload.php 的做法，避免備份 zip 夾帶偽裝成
+            // 照片的可執行檔——單靠內容驗證不夠，因為攻擊者可以做出「內容是合法圖片、檔名卻是
+            // .php」的多型檔案，實際執行與否看的是檔名副檔名，所以副檔名也必須是伺服器端推算）。
             foreach ($entries as $nm => $content) {
               if (!preg_match('#^projects/([a-z0-9_-]+)/photos/([A-Za-z0-9_.-]+)$#', str_replace('\\', '/', $nm), $mm)) continue;
+              $info = @getimagesizefromstring($content);
+              $mime = is_array($info) ? ($info['mime'] ?? '') : '';
+              if (!isset($cfg['allowed_mime'][$mime])) continue;
+              $base = preg_replace('/\.[A-Za-z0-9]+$/', '', $mm[2]);
+              if ($base === '') continue;
+              $fname = $base . '.' . $cfg['allowed_mime'][$mime];
               $destDir = project_dir($cfg, $mm[1]) . '/photos';
               if (!is_dir($destDir)) @mkdir($destDir, 0775, true);
-              $dest = $destDir . '/' . $mm[2];
+              $dest = $destDir . '/' . $fname;
               if ($mode === 'replace' || !is_file($dest)) @file_put_contents($dest, $content);
             }
             audit_log($cfg, $auditWho(), 'import', null, $mode . ', +' . $imported . ' 筆');

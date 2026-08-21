@@ -6,6 +6,11 @@
  *   - CSS/JS/資料由 view.php 內嵌輸出
  * 路徑參數自 REQUEST_URI 解析（不依賴 query string 是否被保留）。
  */
+// 錯誤一律寫進伺服器日誌、不回傳給瀏覽器：各 API 檔案內的例外處理已各自依 debug flag
+// 決定要不要在回應裡帶內部細節，但未被攔到的致命錯誤／警告則完全看 php.ini 預設值，
+// 這裡補上一個不依賴環境設定的底線。
+ini_set('display_errors', '0');
+error_reporting(E_ALL);
 $config = include __DIR__ . '/config.php';
 
 $appName = $_APP['name'] ?? basename(__DIR__);

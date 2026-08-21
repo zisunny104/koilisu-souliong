@@ -366,7 +366,7 @@ window.MapApp = (() => {
     const none = '<option value=""' + (selNum == null ? ' selected' : '') + '>' + esc(t('point_none_option')) + '</option>';
     return none + POINTS.slice().sort((a, b) => a.num - b.num).map(p =>
       '<option value="' + p.num + '"' + (p.num === selNum ? ' selected' : '') +
-      (p.color ? ' style="color:' + p.color + '"' : '') + '>' +
+      (p.color ? ' style="color:' + esc(p.color) + '"' : '') + '>' +
       '● ' + pad2(p.num) + '｜' + esc(p.theme || p.chair || '') + '（' + esc(p.area || '') + '）</option>').join('');
   }
   function haversine(aLat, aLon, bLat, bLon) {
@@ -973,7 +973,10 @@ window.MapApp = (() => {
     var srcLinks = '';
     if (Array.isArray(META.sources) && META.sources.length) {
       srcLinks = '<details class="src-links"><summary>' + esc(t('source_links_summary', { n: META.sources.length })) + '</summary>' +
-        META.sources.map(function (s) { return '<a href="' + esc(s.url) + '" target="_blank" rel="noopener">' + esc(s.label || s.url) + '</a>'; }).join('') +
+        META.sources.map(function (s) {
+          var safeUrl = /^https?:\/\//i.test(s.url || '') ? s.url : '#';
+          return '<a href="' + esc(safeUrl) + '" target="_blank" rel="noopener">' + esc(s.label || s.url) + '</a>';
+        }).join('') +
         '</details>';
     }
     document.getElementById('foot').innerHTML =

@@ -61,8 +61,12 @@ function zip_pack(string $out, array $files): bool {
 /**
  * 讀取 ZIP，回傳 [ 名稱 => 內容 ]，只回傳 $accept($name) 為真者。
  * 為求簡潔會把整個備份讀進記憶體（備份規模不大，足堪使用）。
+ *
+ * $maxEntryBytes／$maxTotalBytes：解壓縮上限（防 zip bomb——中央目錄裡的「解壓後大小」
+ * 是壓縮檔自己宣告的，攻擊者可以隨意謊報，不能拿來當上限依據；真正有效的防護是把上限
+ * 直接傳給 gzinflate() 的 $length，讓 zlib 在解壓過程中途就停手，而不是先信任宣告值）。
  */
-function zip_unpack(string $path, callable $accept): array {
+function zip_unpack(string $path, callable $accept, int $maxEntryBytes = 32 * 1024 * 1024, int $maxTotalBytes = 200 * 1024 * 1024): array {
     $data = @file_get_contents($path);
     if ($data === false || $data === '') return [];
     $eocd = strrpos($data, "PK\x05\x06");
@@ -70,6 +74,7 @@ function zip_unpack(string $path, callable $accept): array {
     $total = unpack('v', substr($data, $eocd + 10, 2))[1];
     $cdoff = unpack('V', substr($data, $eocd + 16, 4))[1];
     $out = [];
+    $used = 0;
     $q = $cdoff;
     for ($i = 0; $i < $total; $i++) {
         if (substr($data, $q, 4) !== "PK\x01\x02") break;
@@ -82,14 +87,24 @@ function zip_unpack(string $path, callable $accept): array {
         $name   = substr($data, $q + 46, $nlen);
         $q += 46 + $nlen + $elen + $clen;
         if (!$accept($name)) continue;
+        if ($used >= $maxTotalBytes) continue;
         if (substr($data, $lho, 4) !== "PK\x03\x04") continue;
         $lnlen = unpack('v', substr($data, $lho + 26, 2))[1];
         $lelen = unpack('v', substr($data, $lho + 28, 2))[1];
         $start = $lho + 30 + $lnlen + $lelen;
         $raw = substr($data, $start, $csize);
-        if ($method === 0) { $out[$name] = $raw; }
-        elseif ($method === 8 && function_exists('gzinflate')) { $out[$name] = gzinflate($raw); }
-        // 其他壓縮法（無 zlib 時的 deflate）跳過
+        if ($method === 0) {
+            if (strlen($raw) > $maxEntryBytes) continue;
+            $content = $raw;
+        } elseif ($method === 8 && function_exists('gzinflate')) {
+            $content = @gzinflate($raw, $maxEntryBytes);
+        } else {
+            continue; // 其他壓縮法（無 zlib 時的 deflate）跳過
+        }
+        if ($content === false) continue; // 超過 $maxEntryBytes 或內容毀損
+        if ($used + strlen($content) > $maxTotalBytes) continue;
+        $out[$name] = $content;
+        $used += strlen($content);
     }
     return $out;
 }
