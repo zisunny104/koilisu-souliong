@@ -72,12 +72,44 @@
 }
 
 .dialog-box {
+  position: relative;
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: var(--r-lg);
   padding: 20px;
   width: min(460px, 92vw);
-  box-shadow: var(--sh-3)
+  box-shadow: var(--sh-3);
+  border-image-source: var(--pack-frame-src, none);
+  border-image-slice: 24 fill;
+  border-image-width: 13px;
+  /* 材質上的文字要用材質自己定義的墨色，理由同 #panel（point-panel.css） */
+  --fg: var(--pack-ink, var(--fg-base));
+  --muted: var(--pack-ink, var(--muted-base));
+}
+
+.dialog-box::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  border-radius: inherit;
+  background: var(--pack-material-bg, none);
+  background-size: var(--pack-material-size, auto);
+  opacity: var(--pack-opacity, 1);
+}
+
+.dialog-box > * {
+  position: relative;
+  z-index: 1;
+}
+
+/* 對話框內本來就是不透明表單控制項的區塊，墨色維持一般主題色，理由同 #panel（point-panel.css） */
+.dialog-box .name-in,
+.dialog-box .btn,
+.dialog-box textarea {
+  --fg: var(--fg-base);
+  --muted: var(--muted-base);
 }
 
 .dialog-head {

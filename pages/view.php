@@ -32,6 +32,7 @@ $gated = is_array($meta) && !empty($meta['gated']);
 require __DIR__ . '/../api/security.php';
 require __DIR__ . '/../api/i18n.php';
 require __DIR__ . '/../api/features.php';
+require __DIR__ . '/../api/packs.php';
 $apiCfg    = require __DIR__ . '/../api/config.php';
 $isManager = admin_can($apiCfg, $proj);
 // 定位點編輯（editpoint.php）走的是這個公開頁面而非後台頁，因此比照 admin.php 的作法，
@@ -43,6 +44,7 @@ $mod = fn(string $key): bool => souliong_module_on($meta, $key);
 // 每個模組解析後（含未來的相依關係）的開關結果，前端 MOD() 直接讀這份、不再自己重算預設值邏輯，
 // 避免 PHP 端 $mod() 與 JS 端各自判斷、日後模組間有相依時兩邊算出不同答案。
 $moduleState = array_combine(array_keys(souliong_modules()), array_map($mod, array_keys(souliong_modules())));
+$pack = souliong_pack_for($apiCfg, $meta);
 
 $APP = [
     'base'        => $base,
@@ -54,6 +56,7 @@ $APP = [
     'isManager'   => $isManager,
     'csrf'        => $csrfTok,
     'moduleState' => $moduleState,
+    'pack'        => $pack,
 ];
 $jsonFlags = JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_APOS;
 ?><!DOCTYPE html>
@@ -68,6 +71,11 @@ $jsonFlags = JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JS
 // 依原本 style.css 的層疊順序拆成多檔（見 assets/css/），新增樣式分類時只要在陣列裡加檔名即可
 foreach (['theme', 'control-card', 'popups', 'map-markers', 'point-panel', 'map-controls', 'lightbox', 'page-frame'] as $f) {
     readfile(__DIR__ . "/../assets/css/$f.css");
+}
+// 資源包接在 base 主題之後,純靠 cascade 順序覆寫 --pack-* 變數；沒選包就不會 readfile,
+// 各面板裡的 var(--pack-*, <預設值>) 全部退回預設值，畫面與拆分之前一致。
+if ($pack) {
+    readfile($apiCfg['packs_dir'] . '/' . $pack['id'] . '/pack.css');
 }
 ?></style>
 <script>try{var t=localStorage.getItem('theme');if(t==='dark'||t==='light')document.documentElement.dataset.theme=t;}catch(e){}</script>

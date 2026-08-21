@@ -14,7 +14,36 @@
   border-radius: 999px;
   box-shadow: var(--sh-2);
   padding: .3rem .45rem;
-  max-width: calc(100vw - 28px)
+  max-width: calc(100vw - 28px);
+  border-image-source: var(--pack-frame-src, none);
+  border-image-slice: 24 fill;
+  border-image-width: 13px;
+  /* 材質上的文字要用材質自己定義的墨色，理由同 #panel（point-panel.css） */
+  --fg: var(--pack-ink, var(--fg-base));
+  --muted: var(--pack-ink, var(--muted-base));
+}
+
+.tr-group::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  border-radius: inherit;
+  background: var(--pack-material-bg, none);
+  background-size: var(--pack-material-size, auto);
+  opacity: var(--pack-opacity, 1);
+}
+
+.tr-group > * {
+  position: relative;
+  z-index: 1;
+}
+
+/* 語言選單清單自己是不透明的 --panel 底色，墨色維持一般主題色，理由同 #panel（point-panel.css） */
+.tr-group .lang-list {
+  --fg: var(--fg-base);
+  --muted: var(--muted-base);
 }
 
 .tr-items {

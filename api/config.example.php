@@ -3,6 +3,7 @@
 return [
     'projects_dir'    => __DIR__ . '/../projects',
     'state_dir'       => __DIR__ . '/../state',
+    'packs_dir'       => __DIR__ . '/../packs',              // 資源包（面板材質／外框／字體），每個子目錄一包
     'max_bytes'       => 12 * 1024 * 1024,
     'allowed_mime'    => ['image/webp' => 'webp', 'image/jpeg' => 'jpg', 'image/png' => 'png'],
     'name_max'        => 60,

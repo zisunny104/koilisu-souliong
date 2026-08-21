@@ -17,7 +17,46 @@
   transform: translateX(calc(100% + 28px));
   opacity: 0;
   pointer-events: none;
-  transition: transform .28s cubic-bezier(.4, 0, .2, 1), opacity .28s, width .28s cubic-bezier(.4, 0, .2, 1)
+  transition: transform .28s cubic-bezier(.4, 0, .2, 1), opacity .28s, width .28s cubic-bezier(.4, 0, .2, 1);
+  /* 資源包外框：沒選包時 --pack-frame-src 退回 none，border-image 不生效，原本的 border 正常顯示 */
+  border-image-source: var(--pack-frame-src, none);
+  border-image-slice: 24 fill;
+  border-image-width: 13px;
+  /* 材質上的文字要用材質自己定義的墨色，不然套用深色格紋時內文會用預設淺色主題的深色字，反而看不清楚；
+     沒選包時 --pack-ink 退回 --fg-base/--muted-base，跟原本的 --fg/--muted 完全同值 */
+  --fg: var(--pack-ink, var(--fg-base));
+  --muted: var(--pack-ink, var(--muted-base));
+}
+
+/* 資源包底圖：獨立圖層放在內容後面，opacity 只影響材質本身，不會連文字一起淡化 */
+#panel::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  border-radius: inherit;
+  background: var(--pack-material-bg, none);
+  background-size: var(--pack-material-size, auto);
+  opacity: var(--pack-opacity, 1);
+}
+
+#panel > * {
+  position: relative;
+  z-index: 1;
+}
+
+/* 面板內本來就是不透明卡片／表單控制項的區塊（自己有 --bg 底色），墨色維持一般主題色，
+   不跟著材質換色——不然淺色材質墨色疊在它們自己的不透明白底上反而看不清楚 */
+#panel .entry,
+#panel .story,
+#panel .name-in,
+#panel .btn,
+#panel .photo-editor,
+#panel .photo-history,
+#panel #descEditor textarea {
+  --fg: var(--fg-base);
+  --muted: var(--muted-base);
 }
 
 #panel.open {

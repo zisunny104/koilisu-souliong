@@ -1,8 +1,13 @@
 :root {
   /* 淺色（預設） */
   --bg: #ffffff;
-  --fg: #1b1b1d;
-  --muted: #6b6b70;
+  /* --fg/--muted 透過 --fg-base/--muted-base 間接引用，讓資源包材質面（#panel/.dialog-box/.tr-group）
+     可以在自己身上局部覆寫 --fg/--muted 成 --pack-ink，其餘地方不受影響；
+     若直接在材質面上寫 --fg: var(--pack-ink, var(--fg))，同名變數自我參照會被視為循環，整個宣告失效 */
+  --fg-base: #1b1b1d;
+  --fg: var(--fg-base);
+  --muted-base: #6b6b70;
+  --muted: var(--muted-base);
   --line: #e7e7ea;
   --panel: #ffffff;
   --accent: #1b1b1d;
@@ -34,8 +39,8 @@
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     --bg: #151517;
-    --fg: #f1f1f3;
-    --muted: #9c9ca3;
+    --fg-base: #f1f1f3;
+    --muted-base: #9c9ca3;
     --line: #323236;
     --panel: #1e1e21;
     --accent: #f1f1f3;
@@ -51,8 +56,8 @@
 
 :root[data-theme="dark"] {
   --bg: #151517;
-  --fg: #f1f1f3;
-  --muted: #9c9ca3;
+  --fg-base: #f1f1f3;
+  --muted-base: #9c9ca3;
   --line: #323236;
   --panel: #1e1e21;
   --accent: #f1f1f3;
