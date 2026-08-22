@@ -1,0 +1,294 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>資源包對比檢查工具</title>
+<style>
+  :root {
+    --bg: #f5f5f4; --panel: #ffffff; --fg: #1b1b1d; --muted: #6b6b70;
+    --line: #e2e2e5; --accent: #1b1b1d; --pass: #1a7f37; --fail: #c4271b;
+    --pass-bg: #e6f4ea; --fail-bg: #fbe9e7;
+  }
+  * { box-sizing: border-box }
+  body {
+    margin: 0; padding: 32px 16px 64px; background: var(--bg); color: var(--fg);
+    font: 15px/1.6 -apple-system, "Segoe UI", "PingFang TC", "Microsoft JhengHei", sans-serif;
+  }
+  main { max-width: 760px; margin: 0 auto }
+  h1 { font-size: 1.35rem; margin: 0 0 4px }
+  .lead { color: var(--muted); font-size: .875rem; margin: 0 0 28px }
+  section {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
+    padding: 20px; margin-bottom: 20px;
+  }
+  h2 { font-size: .9rem; font-weight: 700; margin: 0 0 14px; color: var(--muted); letter-spacing: .02em }
+  .row { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-end }
+  .field { display: flex; flex-direction: column; gap: 4px }
+  .field label { font-size: .75rem; color: var(--muted) }
+  .swatch-input { display: flex; align-items: center; gap: 6px }
+  .swatch-input input[type=color] {
+    width: 34px; height: 34px; padding: 0; border: 1px solid var(--line); border-radius: 8px; cursor: pointer;
+  }
+  .swatch-input input[type=text] {
+    width: 84px; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: .8rem;
+    padding: 7px 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--fg);
+  }
+  .loader-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap }
+  .loader-row input[type=text] {
+    flex: 1; min-width: 160px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px;
+    background: var(--bg); color: var(--fg); font-size: .85rem;
+  }
+  button {
+    padding: 8px 14px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel);
+    color: var(--fg); font-size: .85rem; cursor: pointer; font-weight: 600;
+  }
+  button.primary { background: var(--accent); color: #fff; border-color: var(--accent) }
+  button:hover { opacity: .85 }
+  .loader-msg { font-size: .78rem; color: var(--muted); min-height: 1.2em }
+  .loader-msg.err { color: var(--fail) }
+  .opacity-row input[type=range] { width: 160px }
+  .backdrop-presets { display: flex; gap: 6px }
+  .backdrop-presets button { padding: 6px 10px; font-size: .78rem; font-weight: 500 }
+
+  .preview-wrap { display: flex; justify-content: center; padding: 28px 12px; background: #d8d8d6; border-radius: 12px }
+  .preview-card {
+    position: relative; width: 280px; border-radius: 22px; padding: 22px; overflow: hidden;
+    box-shadow: 0 12px 32px rgba(0,0,0,.22); text-align: center;
+  }
+  .preview-material { position: absolute; inset: 0; z-index: 0; border-radius: inherit }
+  .preview-content { position: relative; z-index: 1 }
+  .preview-title { font-size: 1.05rem; font-weight: 800; margin-bottom: 4px }
+  .preview-hint { font-size: .78rem }
+
+  table { width: 100%; border-collapse: collapse; font-size: .85rem }
+  th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid var(--line) }
+  th { color: var(--muted); font-weight: 600; font-size: .75rem }
+  .ratio { font-family: ui-monospace, Menlo, Consolas, monospace; font-weight: 600 }
+  .badge {
+    display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: .72rem; font-weight: 700;
+  }
+  .badge.pass { background: var(--pass-bg); color: var(--pass) }
+  .badge.fail { background: var(--fail-bg); color: var(--fail) }
+  .verdict { margin-top: 14px; padding: 12px 14px; border-radius: 10px; font-size: .85rem; font-weight: 600 }
+  .verdict.pass { background: var(--pass-bg); color: var(--pass) }
+  .verdict.fail { background: var(--fail-bg); color: var(--fail) }
+  .note { font-size: .75rem; color: var(--muted); margin-top: 10px }
+</style>
+</head>
+<body>
+<main>
+  <h1>資源包對比檢查工具</h1>
+  <p class="lead">
+    純前端運算，離線可用。輸入資源包的材質色（a／b，即 pack.css 裡的 --pack-a／--pack-b）與墨色
+    （ink，即 --pack-ink），計算文字疊在格紋材質上的 WCAG 對比度，並可即時預覽。
+  </p>
+
+  <section>
+    <h2>從現有資源包載入</h2>
+    <p class="note" style="margin-top:0">
+      本專案的路由不供應靜態檔（見 index.php 說明），無法用網址直接抓 packs/ 底下的 pack.json，
+      所以用貼上的方式：打開該資源包的 pack.json，整段複製貼進來即可。
+    </p>
+    <div class="loader-row">
+      <textarea id="packJson" rows="3" placeholder='貼上 pack.json 內容，例如 {"colors":{"a":"#5b6e52","b":"#8c8577","ink":"#f6f5f0"},"opacity":1}'
+        style="flex:1;min-width:260px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--fg);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:.78rem;resize:vertical"></textarea>
+      <button id="loadBtn">解析並套用</button>
+    </div>
+    <div class="loader-msg" id="loaderMsg"></div>
+  </section>
+
+  <section>
+    <h2>顏色與材質透明度</h2>
+    <div class="row">
+      <div class="field">
+        <label>材質色 a</label>
+        <div class="swatch-input">
+          <input type="color" id="colA" value="#5b6e52">
+          <input type="text" id="colAHex" value="#5b6e52">
+        </div>
+      </div>
+      <div class="field">
+        <label>材質色 b</label>
+        <div class="swatch-input">
+          <input type="color" id="colB" value="#8c8577">
+          <input type="text" id="colBHex" value="#8c8577">
+        </div>
+      </div>
+      <div class="field">
+        <label>墨色 ink（文字顏色）</label>
+        <div class="swatch-input">
+          <input type="color" id="colInk" value="#f6f5f0">
+          <input type="text" id="colInkHex" value="#f6f5f0">
+        </div>
+      </div>
+      <div class="field opacity-row">
+        <label>材質不透明度 --pack-opacity：<span id="opacityVal">1</span></label>
+        <input type="range" id="opacity" min="0" max="1" step="0.05" value="1">
+      </div>
+    </div>
+    <div class="row" style="margin-top:14px">
+      <div class="field">
+        <label>底色（材質不透明度 &lt; 1 時，透出的 --panel 底色）</label>
+        <div class="backdrop-presets">
+          <button type="button" data-panel="#ffffff">淺色面板 #fff</button>
+          <button type="button" data-panel="#1e1e21">深色面板 #1e1e21</button>
+        </div>
+      </div>
+      <div class="field">
+        <label>&nbsp;</label>
+        <div class="swatch-input">
+          <input type="color" id="colPanel" value="#ffffff">
+          <input type="text" id="colPanelHex" value="#ffffff">
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>即時預覽（比照 .dialog-box 疊材質的實際畫法）</h2>
+    <div class="preview-wrap">
+      <div class="preview-card" id="previewCard">
+        <div class="preview-material" id="previewMaterial"></div>
+        <div class="preview-content">
+          <div class="preview-title" id="previewTitle">資源包展示</div>
+          <div class="preview-hint" id="previewHint">灰綠格紋材質包</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>WCAG 對比結果</h2>
+    <table>
+      <thead>
+        <tr><th>疊色</th><th>對比度</th><th>AA 一般文字 (4.5:1)</th><th>AA 大字／UI (3:1)</th><th>AAA 一般文字 (7:1)</th></tr>
+      </thead>
+      <tbody id="resultsBody"></tbody>
+    </table>
+    <div class="verdict" id="verdict"></div>
+    <p class="note">
+      文字顏色 ink 疊在格紋材質上時，會同時蓋到 a、b 兩色的格子，兩者都要過門檻才算安全；
+      對比度計算已套用材質不透明度與底色混色，跟畫面實際疊色結果一致。
+    </p>
+  </section>
+</main>
+
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+
+  const hexToRgb = hex => {
+    const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim());
+    if (!m) return null;
+    const n = parseInt(m[1], 16);
+    return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 };
+  };
+  const rgbToHex = ({ r, g, b }) => '#' + [r, g, b].map(v => Math.round(v).toString(16).padStart(2, '0')).join('');
+
+  const relLum = ({ r, g, b }) => {
+    const lin = c => { c /= 255; return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); };
+    return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
+  };
+  const contrast = (c1, c2) => {
+    const l1 = relLum(c1), l2 = relLum(c2);
+    const lighter = Math.max(l1, l2), darker = Math.min(l1, l2);
+    return (lighter + 0.05) / (darker + 0.05);
+  };
+  const blend = (fg, bg, alpha) => ({
+    r: fg.r * alpha + bg.r * (1 - alpha),
+    g: fg.g * alpha + bg.g * (1 - alpha),
+    b: fg.b * alpha + bg.b * (1 - alpha),
+  });
+
+  // 每組色欄位的 color/text input 雙向同步
+  const bindPair = (colorId, textId) => {
+    const c = $(colorId), t = $(textId);
+    c.addEventListener('input', () => { t.value = c.value; recalc(); });
+    t.addEventListener('input', () => { const rgb = hexToRgb(t.value); if (rgb) { c.value = rgbToHex(rgb); recalc(); } });
+  };
+
+  $('opacity').addEventListener('input', () => { $('opacityVal').textContent = $('opacity').value; recalc(); });
+  document.querySelectorAll('.backdrop-presets button').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const hex = btn.dataset.panel;
+      $('colPanel').value = hex; $('colPanelHex').value = hex; recalc();
+    });
+  });
+
+  $('loadBtn').addEventListener('click', () => {
+    const raw = $('packJson').value.trim();
+    const msg = $('loaderMsg');
+    if (!raw) { msg.className = 'loader-msg err'; msg.textContent = '請先貼上 pack.json 內容'; return; }
+    try {
+      const data = JSON.parse(raw);
+      const colors = data.colors || {};
+      if (!colors.a && !colors.b && !colors.ink) throw new Error('找不到 colors 欄位');
+      if (colors.a) { $('colA').value = colors.a; $('colAHex').value = colors.a; }
+      if (colors.b) { $('colB').value = colors.b; $('colBHex').value = colors.b; }
+      if (colors.ink) { $('colInk').value = colors.ink; $('colInkHex').value = colors.ink; }
+      if (typeof data.opacity === 'number') { $('opacity').value = data.opacity; $('opacityVal').textContent = data.opacity; }
+      msg.className = 'loader-msg'; msg.textContent = '已套用貼上的資源包內容';
+      recalc();
+    } catch (e) {
+      msg.className = 'loader-msg err';
+      msg.textContent = '解析失敗（' + e.message + '），請確認貼的是完整合法的 JSON。';
+    }
+  });
+
+  ['colA', 'colB', 'colInk', 'colPanel'].forEach(id => bindPair(id, id + 'Hex'));
+
+  const thresholds = [
+    { label: 'AA 一般文字 (4.5:1)', min: 4.5 },
+    { label: 'AA 大字／UI (3:1)', min: 3 },
+    { label: 'AAA 一般文字 (7:1)', min: 7 },
+  ];
+
+  function recalc() {
+    const a = hexToRgb($('colAHex').value);
+    const b = hexToRgb($('colBHex').value);
+    const ink = hexToRgb($('colInkHex').value);
+    const panel = hexToRgb($('colPanelHex').value);
+    const opacity = parseFloat($('opacity').value);
+    if (!a || !b || !ink || !panel) return;
+
+    const effA = blend(a, panel, opacity);
+    const effB = blend(b, panel, opacity);
+    const ratioA = contrast(ink, effA);
+    const ratioB = contrast(ink, effB);
+
+    const rows = [
+      { label: '墨色 vs 材質色 a', ratio: ratioA },
+      { label: '墨色 vs 材質色 b', ratio: ratioB },
+    ];
+    $('resultsBody').innerHTML = rows.map(row => {
+      const cells = thresholds.map(th => {
+        const pass = row.ratio >= th.min;
+        return `<td><span class="badge ${pass ? 'pass' : 'fail'}">${pass ? '通過' : '未通過'}</span></td>`;
+      }).join('');
+      return `<tr><td>${row.label}</td><td class="ratio">${row.ratio.toFixed(2)}:1</td>${cells}</tr>`;
+    }).join('');
+
+    const worst = Math.min(ratioA, ratioB);
+    const overallPass = worst >= 4.5;
+    const verdict = $('verdict');
+    verdict.className = 'verdict ' + (overallPass ? 'pass' : 'fail');
+    verdict.textContent = overallPass
+      ? `通過：兩種材質格上的一般文字對比皆 ≥ 4.5:1（最差 ${worst.toFixed(2)}:1）。`
+      : `未通過：較弱的一格對比只有 ${worst.toFixed(2)}:1，未達 AA 一般文字 4.5:1，建議調整 ink 使其更亮或更暗以拉開對比。`;
+
+    // 預覽卡片：材質層用跟 pack.css 相同的 conic-gradient 公式，套用不透明度；卡片底色即 --panel
+    $('previewCard').style.background = rgbToHex(panel);
+    $('previewMaterial').style.background =
+      `conic-gradient(${rgbToHex(b)} 90deg, ${rgbToHex(a)} 90deg 180deg, ${rgbToHex(b)} 180deg 270deg, ${rgbToHex(a)} 270deg)`;
+    $('previewMaterial').style.backgroundSize = '22px 22px';
+    $('previewMaterial').style.opacity = opacity;
+    $('previewTitle').style.color = rgbToHex(ink);
+    $('previewHint').style.color = rgbToHex(ink);
+  }
+
+  recalc();
+})();
+</script>
+</body>
+</html>
