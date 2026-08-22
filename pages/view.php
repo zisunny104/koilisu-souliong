@@ -37,7 +37,12 @@ $apiCfg    = require __DIR__ . '/../api/config.php';
 $isManager = admin_can($apiCfg, $proj);
 // 定位點編輯（editpoint.php）走的是這個公開頁面而非後台頁，因此比照 admin.php 的作法，
 // 帶一份「同源才讀得到」的 CSRF 驗證值，只在已登入管理者時計算並輸出。
-$csrfTok   = $isManager ? (admin_authed($apiCfg) ? admin_derived($apiCfg) : padm_derived($apiCfg, $proj, (string)padm_pin_id($apiCfg, $proj))) : null;
+// 管理者三種登入方式都要各自對應到正確的衍生值，否則其中一種身分送出的請求會被誤判成 CSRF 失效。
+$isMasterAuthed = admin_authed($apiCfg);
+$acctForCsrf    = ($isManager && !$isMasterAuthed) ? account_current($apiCfg) : null;
+$csrfTok   = !$isManager ? null : ($isMasterAuthed
+    ? admin_derived($apiCfg)
+    : ($acctForCsrf !== null ? account_derived($apiCfg, (string)$acctForCsrf['id']) : padm_derived($apiCfg, $proj, (string)padm_pin_id($apiCfg, $proj))));
 [$LANG, $DICT] = i18n_init();
 $t = fn(string $key, array $vars = []): string => htmlspecialchars(i18n_t($DICT, $key, $vars), ENT_QUOTES);
 $mod = fn(string $key): bool => souliong_module_on($meta, $key);

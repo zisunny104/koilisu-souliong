@@ -357,9 +357,9 @@ window.MapApp = (() => {
   }
   function pointSub(p) {
     const bits = [];
-    if (p.area || p.chair) bits.push([p.area, p.chair].filter(Boolean).join(' ・ '));
-    else if (p.sub) bits.push(p.sub);
-    if (p.material) bits.push(p.material);
+    if (p.area || p.chair) bits.push(esc([p.area, p.chair].filter(Boolean).join(' ・ ')));
+    else if (p.sub) bits.push(esc(p.sub));
+    if (p.material) bits.push(esc(p.material));
     return bits.join('<br>');
   }
   function chairOptionsHtml(selNum) {
@@ -546,7 +546,7 @@ window.MapApp = (() => {
     const legend = document.getElementById('legend'); legend.innerHTML = '';
     CATS.forEach(c => {
       const el = document.createElement('div'); el.className = 'chip' + (active[c.key] === false ? ' off' : '');
-      el.innerHTML = '<span class="dot" style="background:' + c.color + '"></span>' + c.label;
+      el.innerHTML = '<span class="dot" style="background:' + esc(c.color) + '"></span>' + esc(c.label);
       el.onclick = () => { active[c.key] = active[c.key] === false ? true : false; el.classList.toggle('off', active[c.key] === false); renderChairs(); };
       legend.appendChild(el);
     });
@@ -798,6 +798,7 @@ window.MapApp = (() => {
       fd.append('name', displayName());
       fd.append('owner', ownerToken());
       const ct = contribToken(); if (ct) fd.append('ctoken', ct);
+      if (APP.isManager) fd.append('csrf', APP.csrf || '');
       const res = await fetch(apiUrl('editentry'), { method: 'POST', body: fd });
       const j = await res.json();
       if (!res.ok || j.error) throw new Error(j.error || ('HTTP ' + res.status));
