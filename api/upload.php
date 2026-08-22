@@ -59,6 +59,12 @@ $photo_time = clean_str($_POST['photo_time'] ?? null, 40);
 if ($lat !== null && ($lat < -90 || $lat > 90)) $lat = null;
 if ($lon !== null && ($lon < -180 || $lon > 180)) $lon = null;
 
+// 授權：CC BY（姓名標示）只對已建立身分（有 ctoken）的投稿者開放，沒有穩定身分就沒有名字可標示，
+// 一律以伺服器端這裡認定的身分為準，不採信前端畫面上勾選框當下是否可見。
+$hasIdentity = !empty($_POST['ctoken']);
+$license     = ($hasIdentity && ($_POST['license'] ?? '') === 'cc-by') ? 'cc-by' : 'cc0';
+$wikidataOk  = !empty($_POST['wikidata_ok']);
+
 $photoRel = null;
 $thumbRel = null;
 if (isset($_FILES['photo']) && $_FILES['photo']['error'] === UPLOAD_ERR_OK) {
@@ -152,6 +158,8 @@ try {
         'lat'        => $lat,
         'lon'        => $lon,
         'loc_source' => $loc_source,
+        'license'    => $license,
+        'wikidata_ok'=> $wikidataOk,
         'exif'       => $exif,
         'owner_hash' => $ownerHash,                                       // 用於「只刪自己的」與同源追蹤
         'src_hash'   => $srcHash,                                        // 冒名鑑識用，不外流

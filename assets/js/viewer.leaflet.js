@@ -1339,6 +1339,7 @@ window.MapApp = (() => {
     getMap: () => map, getFilterPerson: () => filterPerson, isPhotoLayerOn: () => photoLayerOn,
     getCurrentPoint: () => current,
     isUnlocked, isEmbedMode: () => EMBED,
+    hasIdentity: () => !!contribToken(),
     trackFeature: feature, currentScopeParams, getProjectId: () => PROJECT,
     effectivePhotos, personColor, toast,
     displayName, anonName: () => SESSION_ANON, submitContribution,

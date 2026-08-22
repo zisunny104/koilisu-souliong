@@ -178,6 +178,8 @@ return [
     'ext_link_hint'          => '這個連結會前往外部網站：',
     'ext_link_cancel_btn'    => '取消',
     'ext_link_confirm_btn'   => '繼續前往',
+    'license_ccby_label'     => '保留姓名標示權利（CC BY：之後任何人引用這則投稿都必須標示我的暱稱；不勾選則以 CC0／公眾領域方式提供）',
+    'wikidata_consent_label' => '同意將這次投稿提供給 Wikidata 等開放資料庫使用',
     'copied'                 => '已複製',
     'invite_unlock_success'  => '已用邀請連結解鎖',
     'app_tagline'            => '循著地方留下的痕跡，用地圖探索一座城市。',

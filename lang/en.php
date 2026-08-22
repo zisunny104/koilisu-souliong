@@ -179,6 +179,8 @@ return [
     'ext_link_hint'          => 'This link goes to an external site: ',
     'ext_link_cancel_btn'    => 'Cancel',
     'ext_link_confirm_btn'   => 'Continue',
+    'license_ccby_label'     => 'Keep attribution rights (CC BY: anyone reusing this submission must credit my name; unchecked means CC0 / public domain)',
+    'wikidata_consent_label' => 'I consent to this submission being shared with Wikidata and other open data platforms',
     'copied'                 => 'Copied',
     'invite_unlock_success'  => 'Unlocked via invite link',
     'app_tagline'            => 'Trace the marks a place leaves behind — explore a city through its map.',
