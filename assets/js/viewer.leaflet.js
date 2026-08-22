@@ -1298,9 +1298,40 @@ window.MapApp = (() => {
   }
   function closePin() { const dlg = document.getElementById('pinDialog'); if (dlg) dlg.classList.remove('open'); }
 
+  // ── 外部連結離站確認：任何連到不同網域的連結，先跳確認框才真的開新分頁 ──
+  // （同一分頁工作階段內，同網域點過一次後不再重複詢問，避免每次點資料來源都要按兩下；
+  //   Ctrl/Cmd/中鍵點擊等瀏覽器原生「開背景分頁」手勢不攔截，尊重使用者原本習慣）
+  let extLinkPending = null;
+  function extLinkOkHosts() {
+    try { return JSON.parse(sessionStorage.getItem('extLinkOk') || '[]'); } catch (e) { return []; }
+  }
+  document.addEventListener('click', (e) => {
+    if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    const a = e.target.closest && e.target.closest('a[href]');
+    if (!a) return;
+    let url;
+    try { url = new URL(a.href, location.href); } catch (err) { return; }
+    if (url.origin === location.origin || extLinkOkHosts().includes(url.host)) return;
+    e.preventDefault();
+    extLinkPending = url.href;
+    document.getElementById('extLinkHost').textContent = url.host;
+    document.getElementById('extLinkDialog').classList.add('open');
+  });
+  function extLinkProceed() {
+    if (!extLinkPending) return;
+    try {
+      const host = new URL(extLinkPending).host, hosts = extLinkOkHosts();
+      if (!hosts.includes(host)) { hosts.push(host); sessionStorage.setItem('extLinkOk', JSON.stringify(hosts)); }
+    } catch (e) {}
+    window.open(extLinkPending, '_blank', 'noopener');
+    closeExtLinkDialog();
+  }
+  function closeExtLinkDialog() { extLinkPending = null; const dlg = document.getElementById('extLinkDialog'); if (dlg) dlg.classList.remove('open'); }
+
   boot();
   return {
     closePanel, togglePanelSize, openLightbox, closeLightbox, closePin, closeUnlock, closeAdminRedeem,
+    extLinkProceed, closeExtLinkDialog,
     // ---- 選用插件掛勾點 API（見 souliong/docs/EXTENDING.md）----
     onHook, registerPhotoFilter, registerEntriesHint, registerScopeParam,
     personTimeline, pointTitle, photoFullUrl, openPanel, openUnlock, refreshEntries: renderEntries,

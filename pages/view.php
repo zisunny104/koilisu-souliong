@@ -210,6 +210,18 @@ if ($pack) {
 
 <div id="lb" onclick="MapApp.closeLightbox()"><img id="lbImg" alt=""><div class="cap" id="lbCap"></div><div class="photo-editor" id="lbEditor" style="display:none" onclick="event.stopPropagation()"></div></div>
 
+<div id="extLinkDialog" class="dialog">
+  <div class="dialog-box">
+    <div class="dialog-head"><b><?= $t('ext_link_title') ?></b><button class="icon-btn" onclick="MapApp.closeExtLinkDialog()" aria-label="<?= $t('close') ?>"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button></div>
+    <div class="hint"><?= $t('ext_link_hint') ?><b id="extLinkHost"></b></div>
+    <div class="dialog-actions">
+      <span class="spacer"></span>
+      <button class="btn" onclick="MapApp.closeExtLinkDialog()"><?= $t('ext_link_cancel_btn') ?></button>
+      <button class="btn primary" onclick="MapApp.extLinkProceed()"><?= $t('ext_link_confirm_btn') ?></button>
+    </div>
+  </div>
+</div>
+
 <script>window.APP = <?= json_encode($APP, $jsonFlags) ?>; window.I18N = <?= json_encode($DICT, $jsonFlags) ?>; window.LANG = <?= json_encode($LANG, $jsonFlags) ?>;</script>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/exifr/dist/full.umd.js"></script>
