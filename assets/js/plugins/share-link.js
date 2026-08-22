@@ -16,6 +16,7 @@
 
     mount() {
       this.returnFocus = null;
+      this.injectStyle();
       this.injectDialog();
       this.injectButton();
       this.mapApp.onHook('closeAll', () => this.close());
@@ -27,18 +28,32 @@
       });
     }
 
+    // 比照 embed-code.js：只補「分享卡片獨有」的樣式，遮罩／卡片本體／關閉鈕／按鈕
+    // 都直接沿用核心 .dialog／.dialog-box／.icon-btn／.btn，才能一併吃到資源包材質換色
+    injectStyle() {
+      const style = document.createElement('style');
+      style.textContent = `
+        .share-box { text-align: center }
+        .share-close { position: absolute; top: 10px; right: 10px }
+        .share-qr { width: 180px; height: 180px; margin: 8px auto 14px; background: #fff; border-radius: var(--r-md); padding: 12px; box-sizing: border-box; overflow: hidden }
+        .share-qr svg { width: 100%; height: 100%; display: block }
+        .share-title { font-size: 1.0625rem; font-weight: 800; margin-bottom: 2px; color: var(--fg) }
+        .share-url { font-family: ui-monospace, Menlo, Consolas, monospace; word-break: break-all }
+      `;
+      document.head.appendChild(style);
+    }
+
     injectDialog() {
       const scr = document.createElement('div');
       scr.id = 'shareScreen';
-      scr.className = 'sharescreen';
-      scr.setAttribute('aria-hidden', 'true');
+      scr.className = 'dialog';
       scr.innerHTML = `
-        <div class="share-card">
+        <div class="dialog-box share-box">
           <button class="icon-btn share-close" aria-label="${esc(t('close'))}"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>
           <div class="share-qr" id="shareQr" aria-hidden="true"></div>
           <div class="share-title" id="shareTitle"></div>
-          <div class="share-sub" id="shareSub"></div>
-          <div class="share-url" id="shareUrl"></div>
+          <div class="hint" id="shareSub"></div>
+          <div class="hint share-url" id="shareUrl"></div>
           <div class="dialog-actions" style="justify-content:center">
             <button class="btn primary" id="shareCopyBtn"><i class="fa-solid fa-link"></i> ${esc(t('copy_link'))}</button>
             <span id="shareCopyMsg" class="hint"></span>
@@ -82,7 +97,6 @@
       catch (e) { box.textContent = t('qr_generate_failed'); }
       this.returnFocus = document.activeElement;
       const scr = document.getElementById('shareScreen');
-      scr.removeAttribute('aria-hidden');   // 先解除 aria-hidden，才能把焦點移進去（避免 aria-hidden 蓋住有焦點的子元素）
       scr.classList.add('open');
       const closeBtn = scr.querySelector('.share-close'); if (closeBtn) closeBtn.focus();
     }
@@ -90,10 +104,8 @@
     close() {
       const scr = document.getElementById('shareScreen');
       if (!scr) return;
-      // 先把焦點移出這個容器，再設回 aria-hidden，避免「aria-hidden 蓋住仍保有焦點的子元素」的衝突
       const restore = (this.returnFocus && document.body.contains(this.returnFocus)) ? this.returnFocus : document.getElementById('shareBtn');
       if (restore && typeof restore.focus === 'function') restore.focus();
-      scr.setAttribute('aria-hidden', 'true');
       scr.classList.remove('open');
       this.returnFocus = null;
     }
