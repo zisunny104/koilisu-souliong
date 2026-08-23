@@ -18,9 +18,12 @@
   border-image-source: var(--pack-frame-src, none);
   border-image-slice: 24 fill;
   border-image-width: 13px;
-  /* 材質上的文字要用材質自己定義的墨色，理由同 #panel（point-panel.css） */
+  /* 材質上的文字要用材質自己定義的墨色，理由同 #panel（point-panel.css）。
+     color 是繼承屬性，只改 --fg 這個變數不會讓底下沒自己宣告 color 的文字重新對到新值，
+     一定要在這裡明講一次 color: var(--fg)，子層繼承才會是新值。 */
   --fg: var(--pack-ink, var(--fg-base));
   --muted: var(--pack-ink, var(--muted-base));
+  color: var(--fg);
 }
 
 .tr-group::before {
@@ -38,6 +41,20 @@
 .tr-group > * {
   position: relative;
   z-index: 1;
+}
+
+/* 資源包外框覆蓋層：理由同 #panel（point-panel.css），這層鋪滿容器、疊在內容最上面，
+   預設 none 不畫東西，pointer-events:none 不擋點擊。 */
+.tr-group::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+  border-radius: inherit;
+  background-image: var(--pack-frame-overlay-src, none);
+  background-size: 100% 100%;
+  background-repeat: no-repeat;
 }
 
 /* 語言選單清單自己是不透明的 --panel 底色，墨色維持一般主題色，理由同 #panel（point-panel.css） */

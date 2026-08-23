@@ -14,7 +14,60 @@
   max-height: calc(100dvh - 28px);
   display: flex;
   flex-direction: column;
-  overflow: hidden
+  overflow: hidden;
+  /* 資源包外框：沒選包時 --pack-frame-src 退回 none，border-image 不生效，原本的 border 正常顯示。
+     理由同 #panel（point-panel.css） */
+  border-image-source: var(--pack-frame-src, none);
+  border-image-slice: 24 fill;
+  border-image-width: 13px;
+  /* 材質上的文字要用材質自己定義的墨色，理由同 #panel（point-panel.css）。
+     color 是繼承屬性，只改 --fg 這個變數不會讓底下沒自己宣告 color 的文字重新對到新值，
+     一定要在這裡明講一次 color: var(--fg)，子層繼承才會是新值。 */
+  --fg: var(--pack-ink, var(--fg-base));
+  --muted: var(--pack-ink, var(--muted-base));
+  color: var(--fg);
+}
+
+/* 資源包底圖：獨立圖層放在內容後面，理由同 #panel（point-panel.css） */
+.floatcard::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  border-radius: inherit;
+  background: var(--pack-material-bg, none);
+  background-size: var(--pack-material-size, auto);
+  opacity: var(--pack-opacity, 1);
+}
+
+.floatcard > * {
+  position: relative;
+  z-index: 1;
+}
+
+/* 資源包外框覆蓋層：理由同 #panel（point-panel.css），這層鋪滿容器、疊在內容最上面，
+   預設 none 不畫東西，pointer-events:none 不擋點擊。 */
+.floatcard::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+  border-radius: inherit;
+  background-image: var(--pack-frame-overlay-src, none);
+  background-size: 100% 100%;
+  background-repeat: no-repeat;
+}
+
+/* 卡片內本來就是不透明表單控制項的區塊（自己有 --bg 底色），墨色維持一般主題色，
+   理由同 #panel（point-panel.css）。.btn 不在這份排除名單裡——按鈕改用專屬的
+   --pack-btn-bg/--pack-btn-ink 這組變數（見 .btn 規則），不跟著材質墨色走 */
+.floatcard .name-in,
+.floatcard .chip,
+.floatcard .ctl-row select {
+  --fg: var(--fg-base);
+  --muted: var(--muted-base);
 }
 
 .ctl-head {
@@ -189,14 +242,22 @@
   transition: border-color var(--t)
 }
 
+/* 按鈕背景／文字色改吃專屬的 --pack-btn-bg/--pack-btn-ink，不是材質區共用的 --pack-ink：
+   按鈕自己是不透明底色，跟材質底圖的對比需求不一樣，材質調好看的墨色不代表跟按鈕底色也過得了對比，
+   所以獨立一組變數自己調。兩個變數沒宣告就退回原本的 --bg/--fg-base，沒選包或包沒特別設定
+   按鈕色時，長得跟改版前完全一樣。這兩個變數在 :root 宣告（pack.css 裡跟其他 --pack-* 同一層），
+   所以不只材質區裡的按鈕會變色，同一頁面任何地方的 .btn（例如批次上傳視窗）也會一起套用，
+   讓整包資源包的視覺風格是全站一致的，不會出現「同一頁按鈕顏色不一樣」的違和感。
+   .on/.primary/.danger 這幾個帶語意的狀態（使用中／主要動作／危險動作）維持用 --accent／
+   固定色，不開放給資源包蓋，避免使用者認不出哪顆是主要或危險按鈕。 */
 .btn {
   border: 1px solid var(--line);
   border-radius: var(--r-md);
   padding: 8px 13px;
   font-size: 0.8125rem;
   font-weight: 500;
-  background: var(--bg);
-  color: var(--fg);
+  background: var(--pack-btn-bg, var(--bg));
+  color: var(--pack-btn-ink, var(--fg-base));
   cursor: pointer;
   white-space: nowrap;
   display: inline-flex;
@@ -205,6 +266,9 @@
   transition: background var(--t), border-color var(--t), transform var(--t), box-shadow var(--t)
 }
 
+/* hover 底色維持原本的 --hover 半透明疊色（跟 .p-close:hover 同一個理由，見 point-panel.css）：
+   --hover 是低透明度的黑/白疊層，疊在任何 --pack-btn-bg 上都只會讓底色變深/變淺一點，
+   不需要跟著按鈕底色重新調配，天生就是安全的 */
 .btn:hover {
   background: var(--hover)
 }

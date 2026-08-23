@@ -26,6 +26,10 @@
      沒選包時 --pack-ink 退回 --fg-base/--muted-base，跟原本的 --fg/--muted 完全同值 */
   --fg: var(--pack-ink, var(--fg-base));
   --muted: var(--pack-ink, var(--muted-base));
+  /* 重新定義 --fg 只是換了變數的值，不會自動讓底下沒特別寫 color 的文字重新對到新值——
+     color 是繼承屬性，子層若沒自己宣告 color: var(--fg)，就會直接沿用從更外層（body）
+     算好的舊值，看不到這裡的覆寫。這裡明講一次 color: var(--fg)，子層繼承才會是新值。 */
+  color: var(--fg);
 }
 
 /* 資源包底圖：獨立圖層放在內容後面，opacity 只影響材質本身，不會連文字一起淡化 */
@@ -41,17 +45,38 @@
   opacity: var(--pack-opacity, 1);
 }
 
-#panel > * {
+/* 排除 .p-close/.p-expand：它們自己宣告 position:absolute + z-index:2 才能貼齊面板角落，
+   這條規則若直接套用到它們，#panel 的 ID 優先權會蓋掉 .p-close/.p-expand 的 class 規則，
+   position 被迫變成 relative，兩顆按鈕就掉回排版流、跑位到面板左上角 */
+#panel > *:not(.p-close):not(.p-expand) {
   position: relative;
   z-index: 1;
 }
 
+/* 資源包外框覆蓋層：跟上面 border-image 外框（畫在邊框那圈、不覆蓋內容）不是同一個東西——
+   這層是整片鋪滿容器的圖，z-index 比內容（1）、關閉／展開鈕（2）都高，故意疊在最上面，
+   讓資源包可以做「蓋到內容上」的裝飾，例如轉角徽章、撕紙邊緣、印章圖案。
+   預設 --pack-frame-overlay-src 是 none，沒指定就完全不畫，兩種外框機制互不影響；
+   pointer-events:none 讓底下的按鈕、連結照常可以點，不會被這層擋住點擊。 */
+#panel::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+  border-radius: inherit;
+  background-image: var(--pack-frame-overlay-src, none);
+  background-size: 100% 100%;
+  background-repeat: no-repeat;
+}
+
 /* 面板內本來就是不透明卡片／表單控制項的區塊（自己有 --bg 底色），墨色維持一般主題色，
-   不跟著材質換色——不然淺色材質墨色疊在它們自己的不透明白底上反而看不清楚 */
+   不跟著材質換色——不然淺色材質墨色疊在它們自己的不透明白底上反而看不清楚。
+   .btn 不在這份排除名單裡——按鈕改用專屬的 --pack-btn-bg/--pack-btn-ink（見 control-card.css），
+   不跟著這裡的 --fg/--muted 走 */
 #panel .entry,
 #panel .story,
 #panel .name-in,
-#panel .btn,
 #panel .photo-editor,
 #panel .photo-history,
 #panel #descEditor textarea {
@@ -160,8 +185,14 @@
   transition: background var(--t), color var(--t)
 }
 
+/* hover 底色改沿用跟預設同一個 --hover（淺色系透明疊色，深淺主題各自方向已經是對的），
+   不再跳去 --line：--line 是不透明淺灰、死值，遇到材質把墨色換成白色（例如 checker-moss）
+   時，底色幾乎全白、文字也是白的，等於整顆按鈕直接消失。
+   另外加一圈用 --fg 混色的細外框當作「有 hover 到」的視覺回饋——細框不像整片底色那樣需要
+   跟文字拼對比，比較不會被材質顏色吃掉。 */
 .p-close:hover {
-  background: var(--line);
+  background: var(--hover);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--fg) 35%, transparent);
   color: var(--fg)
 }
 
@@ -186,7 +217,8 @@
 }
 
 .p-expand:hover {
-  background: var(--line);
+  background: var(--hover);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--fg) 35%, transparent);
   color: var(--fg)
 }
 

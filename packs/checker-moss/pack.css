@@ -9,6 +9,14 @@
   --pack-ink: #ffffff;
   --pack-opacity: 1;
 
+  /* 按鈕背景／文字色（獨立於材質墨色，理由見 control-card.css 的 .btn 規則）：
+   * 直接借用材質色跟墨色，不額外定新色號；#5b6e52 對白字的對比約 5.5:1，過 AA。
+   * 沒宣告 --pack-frame-overlay-src——這包刻意示範「只開材質＋外框環＋按鈕色，
+   * 不開頂層覆蓋圖」這個組合，想看頂層覆蓋圖的示範參考 demo-loud。
+   */
+  --pack-btn-bg: var(--pack-a);
+  --pack-btn-ink: var(--pack-ink);
+
   /* 22px 格紋,兩色交錯,靠 --pack-a/--pack-b 即時變色,不需額外圖檔 */
   --pack-material-bg: conic-gradient(var(--pack-b) 90deg, var(--pack-a) 90deg 180deg, var(--pack-b) 180deg 270deg, var(--pack-a) 270deg);
   --pack-material-size: 22px 22px;
