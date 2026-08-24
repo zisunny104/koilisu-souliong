@@ -13,12 +13,23 @@
   z-index: 1100;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  /* 用 overflow:clip 而不是 hidden，才能配 overflow-clip-margin 放行主題包角標
+     （見下面 #panel::after）。這裡的 overflow 從來就只是「把內容裁在圓角內」用的，
+     真正的捲動區是 .p-body 自己的 overflow-y:auto，所以換成 clip 不影響捲動。
+     26px 不是「外掛距離 10px 加一點餘裕」那麼直覺——overflow-clip-margin 放大出來的
+     裁切區域「仍然是圓角矩形」，圓角半徑會跟著一起變大（22px + 放行距離），不是變成
+     直角。角標掛在右下角、又往外推 10px，它的外角是整塊圖裡離圓角圓心最遠的一點，
+     所以要算對角線：圓心在容器角落內側 (22,22)，角標外角在角落外側 (10,10)，
+     兩點距離 √((22+10)²×2) ≈ 45.3px，裁切半徑 22+放行距離 要大於這個值，
+     放行距離就得 ≥ 24px。取 26px 留一點餘裕。
+     這個放行是四面都開的，但面板內容都關在 .p-body 的捲動區裡，實際會探出來的只有角標。 */
+  overflow: clip;
+  overflow-clip-margin: 26px;
   transform: translateX(calc(100% + 28px));
   opacity: 0;
   pointer-events: none;
   transition: transform .28s cubic-bezier(.4, 0, .2, 1), opacity .28s, width .28s cubic-bezier(.4, 0, .2, 1);
-  /* 資源包外框：沒選包時 --pack-frame-src 退回 none，border-image 不生效，原本的 border 正常顯示 */
+  /* 主題包外框：沒選包時 --pack-frame-src 退回 none，border-image 不生效，原本的 border 正常顯示 */
   border-image-source: var(--pack-frame-src, none);
   border-image-slice: 24 fill;
   border-image-width: 13px;
@@ -32,7 +43,7 @@
   color: var(--fg);
 }
 
-/* 資源包底圖：獨立圖層放在內容後面，opacity 只影響材質本身，不會連文字一起淡化 */
+/* 主題包底圖：獨立圖層放在內容後面，opacity 只影響材質本身，不會連文字一起淡化 */
 #panel::before {
   content: '';
   position: absolute;
@@ -53,27 +64,61 @@
   z-index: 1;
 }
 
-/* 資源包外框覆蓋層：跟上面 border-image 外框（畫在邊框那圈、不覆蓋內容）不是同一個東西——
-   這層是整片鋪滿容器的圖，z-index 比內容（1）、關閉／展開鈕（2）都高，故意疊在最上面，
-   讓資源包可以做「蓋到內容上」的裝飾，例如轉角徽章、撕紙邊緣、印章圖案。
+/* 主題包外框覆蓋層：跟上面 border-image 外框（畫在邊框那圈、不覆蓋內容）不是同一個東西——
+   這層是鋪在容器右下角的圖，z-index 比內容（1）、關閉／展開鈕（2）都高，故意疊在最上面，
+   讓主題包可以做「蓋到內容上」的裝飾，例如轉角徽章、撕紙邊緣、印章圖案。
    預設 --pack-frame-overlay-src 是 none，沒指定就完全不畫，兩種外框機制互不影響；
-   pointer-events:none 讓底下的按鈕、連結照常可以點，不會被這層擋住點擊。 */
+   pointer-events:none 讓底下的按鈕、連結照常可以點，不會被這層擋住點擊。
+
+   角標是「掛在容器右下角外面」的貼紙，會超出圓角、有一部分浮在容器輪廓之外，
+   不是規規矩矩貼在容器裡面。要做到這件事有三個條件，缺一個角標就會被裁回容器形狀：
+   - 這層不能寫 border-radius: inherit：那會把自己的背景裁成跟容器一樣的圓角矩形，
+     探到弧線外面的部分直接消失。
+   - inset 要用負值（-10px）：背景圖只畫得到自己這個盒子裡面，盒子不先往外撐開，
+     background-position 再怎麼調都出不去。撐開 10px 就等於角標最多可以外掛 10px。
+     這個值不能再加大：#panel 跟 .tr-group 都貼在畫面右緣 right:14px，外掛距離一超過
+     14px，角標就會頂到瀏覽器視窗邊緣被切掉——那是視窗在裁，不是 CSS 裁得到的。
+     圓角本身有 22px 半徑，外掛 10px 時角標露在輪廓外的面積已經很明顯，不需要更多。
+   - 容器自己不能有 overflow:hidden，有的話子元素一律被裁回圓角形狀。#panel 跟
+     .floatcard 需要裁內容，所以改用 overflow:clip + overflow-clip-margin 放行（見上面
+     #panel 的 overflow 說明）；.dialog-box 跟 .tr-group 本來就沒有 overflow，不用處理。
+
+   下面這三行（40px 正方形、bottom right、no-repeat）在四個套用覆蓋層的容器
+   （#panel、.floatcard、.dialog-box、.tr-group）必須完全一致，改一個就要四個一起改，
+   不然同一張角標在不同容器會長得不一樣大、位置也對不齊：
+   - background-size 用「固定像素正方形」而不是 100% 100%：圖是正方形 viewBox，
+     100% 100% 會被容器的高寬比拉成長方形——瘦高的容器（控制卡）角標會被拉得又細又長，
+     扁寬的容器（右上資訊列）則被壓扁，兩邊都不是設計時的比例。
+   - 40px 是「最矮的容器（右上資訊列，約 42px 高）也塞得下」的尺寸，角標不會被容器
+     邊界裁掉一半。
+   - background-position 一定要跟圖裡圖案所在的角落一致：角標圖的 viewBox 被圖案填滿、
+     四周沒有留白，配 bottom right 才會落在盒子右下角；若圖四周有留白，或這裡改成其他
+     位置關鍵字，圖案就會被留白推離角落、看起來飄在容器中間。配上面的 inset:-10px，
+     bottom right 指的是「撐開後的盒子」的右下角，也就是容器右下角再往外 10px。
+
+   圖片來源是「先看這個容器專屬的變數，沒有才退回四個容器共用的那個」兩層 fallback：
+   主題包想讓四個容器各掛各的角標，就分別宣告 --pack-frame-overlay-panel-src（這裡）、
+   -card-src（控制卡）、-dialog-src（對話框）、-chrome-src（右上資訊列）；想四個容器
+   共用同一張，就只宣告 --pack-frame-overlay-src 一個。兩個都沒宣告時退回 none，不畫東西。 */
 #panel::after {
   content: '';
   position: absolute;
-  inset: 0;
+  inset: -10px;
   z-index: 3;
   pointer-events: none;
-  border-radius: inherit;
-  background-image: var(--pack-frame-overlay-src, none);
-  background-size: 100% 100%;
+  background-image: var(--pack-frame-overlay-panel-src, var(--pack-frame-overlay-src, none));
+  background-size: 40px 40px;
+  background-position: bottom right;
   background-repeat: no-repeat;
 }
 
 /* 面板內本來就是不透明卡片／表單控制項的區塊（自己有 --bg 底色），墨色維持一般主題色，
    不跟著材質換色——不然淺色材質墨色疊在它們自己的不透明白底上反而看不清楚。
    .btn 不在這份排除名單裡——按鈕改用專屬的 --pack-btn-bg/--pack-btn-ink（見 control-card.css），
-   不跟著這裡的 --fg/--muted 走 */
+   不跟著這裡的 --fg/--muted 走。
+   一定要在這裡也明講 color: var(--fg)：只重設 --fg 這個變數的值，不會讓底下沒自己宣告
+   color 的文字（例如 .story-body、.entry .who/.txt）重新對到新值——它們會直接沿用從
+   #panel 算好的舊 color（材質墨色），沒改到就整段文字變成跟自己底色一樣的顏色、看不見。 */
 #panel .entry,
 #panel .story,
 #panel .name-in,
@@ -82,6 +127,7 @@
 #panel #descEditor textarea {
   --fg: var(--fg-base);
   --muted: var(--muted-base);
+  color: var(--fg);
 }
 
 #panel.open {
@@ -185,13 +231,14 @@
   transition: background var(--t), color var(--t)
 }
 
-/* hover 底色改沿用跟預設同一個 --hover（淺色系透明疊色，深淺主題各自方向已經是對的），
-   不再跳去 --line：--line 是不透明淺灰、死值，遇到材質把墨色換成白色（例如 checker-moss）
-   時，底色幾乎全白、文字也是白的，等於整顆按鈕直接消失。
+/* hover 底色用加強版的半透明疊色 --hover-strong，不用不透明的 --line：--line 是不透明淺灰、
+   死值，遇到材質把墨色換成白色（例如 checker-moss）時，底色幾乎全白、文字也是白的，
+   等於整顆按鈕直接消失。也不能沿用跟預設同一個 --hover——這顆按鈕平常的底色本來就是
+   --hover，hover 再給同一個值等於完全沒變化，看不出有沒有 hover 到。
    另外加一圈用 --fg 混色的細外框當作「有 hover 到」的視覺回饋——細框不像整片底色那樣需要
    跟文字拼對比，比較不會被材質顏色吃掉。 */
 .p-close:hover {
-  background: var(--hover);
+  background: var(--hover-strong);
   box-shadow: 0 0 0 1px color-mix(in srgb, var(--fg) 35%, transparent);
   color: var(--fg)
 }
@@ -217,7 +264,7 @@
 }
 
 .p-expand:hover {
-  background: var(--hover);
+  background: var(--hover-strong);
   box-shadow: 0 0 0 1px color-mix(in srgb, var(--fg) 35%, transparent);
   color: var(--fg)
 }
@@ -269,6 +316,105 @@
   margin-top: 6px;
   white-space: pre-wrap;
   line-height: 1.55
+}
+
+/* ---------- 投稿卡片的預覽區（照片以外的型別） ----------
+   類名一律加 sl- 前綴：這幾個字（play、dur、prev）太通用，不掛前綴很容易跟主題包
+   或第三方樣式撞名。只有預覽區依型別換長相，底下的 .meta／.entry-actions 全型別共用。 */
+.sl-prev {
+  position: relative;
+  display: block;
+  background: var(--hover)
+}
+
+.sl-prev-video {
+  cursor: pointer
+}
+
+/* .entry img 的 zoom-in 是給照片放大用的；影片點下去是播放，游標要換掉 */
+.sl-prev-video img {
+  cursor: pointer
+}
+
+/* 主機沒有 GD、抽不出封面時的替代版面（保持一樣的方塊比例，不讓卡片高度忽高忽低） */
+.sl-prev-blank {
+  aspect-ratio: 4/3;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 2rem;
+  color: var(--muted)
+}
+
+.sl-play {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none
+}
+
+.sl-play i {
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, .55);
+  color: #fff;
+  font-size: 1.05rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding-left: 3px;
+  /* 三角形的視覺重心偏左，補回來才看起來置中 */
+  box-shadow: 0 2px 10px rgba(0, 0, 0, .35)
+}
+
+.sl-dur {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  padding: 1px 6px;
+  border-radius: var(--r-sm);
+  background: rgba(0, 0, 0, .62);
+  color: #fff;
+  font-size: 0.6875rem;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none
+}
+
+/* 音訊直接在卡片上聽：沒有東西好放大，開燈箱反而多一步 */
+.sl-prev-audio {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px;
+  background: var(--hover)
+}
+
+.sl-prev-audio .sl-dur {
+  position: static;
+  background: none;
+  color: var(--muted);
+  padding: 0
+}
+
+.sl-prev-ico {
+  font-size: 1.1rem;
+  color: var(--muted);
+  flex: none
+}
+
+.sl-prev-audio audio {
+  flex: 1;
+  min-width: 0;
+  height: 34px
+}
+
+/* 文字投稿沒有預覽區，那則文字本身就是內容，不該用留言的尺寸 */
+.sl-kind-text .txt {
+  font-size: 0.875rem;
+  margin-top: 4px
 }
 
 .empty {
@@ -474,228 +620,8 @@
   color: var(--muted)
 }
 
-/* ---------- 批次上傳視窗 ---------- */
-#modal {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, .5);
-  -webkit-backdrop-filter: blur(3px);
-  backdrop-filter: blur(3px);
-  display: none;
-  align-items: center;
-  justify-content: center;
-  z-index: 1500;
-  padding: 16px
-}
-
-#modal.open {
-  display: flex
-}
-
-.modal-box {
-  background: var(--panel);
-  width: 100%;
-  max-width: 620px;
-  max-height: 92dvh;
-  display: flex;
-  flex-direction: column;
-  border-radius: var(--r-lg);
-  overflow: hidden;
-  box-shadow: var(--sh-3)
-}
-
-@media (max-width:640px) {
-  #modal {
-    align-items: flex-end;
-    padding: 0
-  }
-
-  .modal-box {
-    max-width: none;
-    max-height: 90dvh;
-    border-radius: var(--r-lg) var(--r-lg) 0 0
-  }
-}
-
-.modal-head {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 16px 18px;
-  border-bottom: 1px solid var(--line)
-}
-
-.modal-head h3 {
-  margin: 0;
-  font-size: 1rem;
-  font-weight: 800;
-  flex: 1
-}
-
-.modal-body {
-  flex: 1;
-  overflow-y: auto;
-  padding: 16px 18px
-}
-
-.queue-empty {
-  text-align: center;
-  padding: 36px 16px
-}
-
-.queue-empty .hint {
-  font-size: 0.75rem;
-  color: var(--muted);
-  margin-top: 10px
-}
-
-.modal-consent {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 10px 18px;
-  border-top: 1px solid var(--line);
-  font-size: 0.78rem;
-  color: var(--muted)
-}
-
-.modal-consent label {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  cursor: pointer;
-  line-height: 1.4
-}
-
-.modal-consent input[type="checkbox"] {
-  margin-top: 2px;
-  flex-shrink: 0
-}
-
-.modal-foot {
-  display: flex;
-  gap: 10px;
-  align-items: center;
-  padding: 14px 18px;
-  border-top: 1px solid var(--line)
-}
-
-.card {
-  border: 1px solid var(--line);
-  border-radius: var(--r-md);
-  padding: 12px;
-  margin-bottom: 14px;
-  display: grid;
-  grid-template-columns: 100px 1fr;
-  gap: 14px;
-  background: var(--bg);
-  transition: opacity var(--t)
-}
-
-.card.done {
-  opacity: .6
-}
-
-.card .thumb {
-  width: 100px;
-  height: 100px;
-  border-radius: var(--r-sm);
-  background: var(--hover) center/cover no-repeat;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 0.6875rem;
-  color: var(--muted);
-  text-align: center
-}
-
-.card .fields {
-  min-width: 0
-}
-
-.card .time {
-  font-size: 0.6875rem;
-  color: var(--muted);
-  margin-bottom: 6px;
-  display: flex;
-  align-items: center;
-  gap: 5px
-}
-
-.card input[type=text],
-.card textarea {
-  width: 100%;
-  border: 1px solid var(--line);
-  border-radius: var(--r-sm);
-  padding: 8px 10px;
-  font-size: 0.8125rem;
-  background: var(--bg);
-  color: var(--fg);
-  font-family: inherit;
-  margin-bottom: 8px
-}
-
-.card textarea {
-  min-height: 48px;
-  resize: vertical;
-  line-height: 1.5
-}
-
-.card .c-lab {
-  font-size: 0.6875rem;
-  color: var(--muted);
-  margin: 4px 0 4px;
-  display: block;
-  font-weight: 600
-}
-
-.card .c-chair {
-  flex: 1;
-  min-width: 0;
-  border: 1px solid var(--line);
-  border-radius: var(--r-sm);
-  padding: 8px 10px;
-  font-size: 0.8125rem;
-  background: var(--bg);
-  color: var(--fg)
-}
-
-.card .row .btn.small {
-  flex: none
-}
-
-.card .mini {
-  height: 140px;
-  border-radius: var(--r-sm);
-  overflow: hidden;
-  margin-bottom: 8px;
-  border: 3px solid var(--line);
-  transition: border-color var(--t)
-}
-
-.card .mini.src-ok {
-  border-color: #2e9e5b
-}
-
-.card .mini.src-warn {
-  border-color: #e8922b
-}
-
-.card .mini.src-info {
-  border-color: #2f7ec6
-}
-
-.card .mini.src-muted {
-  border-color: var(--line)
-}
-
-.card .loc {
-  font-size: 0.6875rem;
-  color: var(--muted);
-  margin-bottom: 10px;
-  line-height: 1.6
-}
-
+/* 定位來源標示（.loc-src／.loc-hint）：卡片與這裡的地點編輯器共用同一組樣式，
+   所以留在這個檔案；投稿對話框自己的樣式全部在 contrib.css。 */
 .loc-src {
   display: inline-flex;
   align-items: center;
@@ -730,32 +656,5 @@
   .loc-src.warn {
     color: #e8a54a
   }
-
-  .card .mini.src-warn {
-    border-color: #e8a54a
-  }
-}
-
-.card .row {
-  display: flex;
-  gap: 8px;
-  align-items: center
-}
-
-.card .status {
-  font-size: 0.75rem;
-  font-weight: 600
-}
-
-.card .status.ok {
-  color: #2e9e5b
-}
-
-.card .status.err {
-  color: #c0392b
-}
-
-.card .status.warn {
-  color: #b7791f
 }
 

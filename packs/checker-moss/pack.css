@@ -1,4 +1,4 @@
-/* 資源包：灰綠格紋（checker-moss）
+/* 主題包：灰綠格紋（checker-moss）
  * 只在專案 meta.json 選了這包時才會被 readfile() 進頁面,接在 base 主題 CSS 之後,
  * 純靠 cascade 順序覆寫 --pack-* 變數,不需要 !important。
  * 顏色定死、不隨明暗模式變動——材質軸線刻意跟深淺主題軸線互相獨立。
@@ -11,8 +11,9 @@
 
   /* 按鈕背景／文字色（獨立於材質墨色，理由見 control-card.css 的 .btn 規則）：
    * 直接借用材質色跟墨色，不額外定新色號；#5b6e52 對白字的對比約 5.5:1，過 AA。
-   * 沒宣告 --pack-frame-overlay-src——這包刻意示範「只開材質＋外框環＋按鈕色，
-   * 不開頂層覆蓋圖」這個組合，想看頂層覆蓋圖的示範參考 demo-loud。
+   * 沒宣告 --pack-frame-overlay-src（也沒宣告 -panel-src/-card-src/-dialog-src/-chrome-src
+   * 這組各容器專用的）——這包刻意示範「只開材質＋外框環＋按鈕色，不開頂層覆蓋圖」這個
+   * 組合，想看頂層覆蓋圖、以及四個容器各掛各的圖怎麼寫，參考 demo-loud。
    */
   --pack-btn-bg: var(--pack-a);
   --pack-btn-ink: var(--pack-ink);

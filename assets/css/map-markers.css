@@ -37,6 +37,8 @@
 }
 
 .photo-sq {
+  position: relative;
+  /* 影片的播放角標貼在這上面 */
   width: 32px;
   height: 32px;
   border-radius: var(--r-sm);
@@ -45,6 +47,37 @@
   background-size: cover;
   background-position: center;
   background-color: #999
+}
+
+/* 影片標記的播放角標（縮圖模式才畫，小方塊模式塞不下） */
+.sl-mk-play {
+  position: absolute;
+  right: -3px;
+  bottom: -3px;
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, .72);
+  color: #fff;
+  font-size: 0.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding-left: 1px
+}
+
+/* 沒有縮圖可用的型別（音訊，以及抽不出封面的影片）：同尺寸的圖示方塊 */
+.sl-mk-ico {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: var(--accent);
+  color: var(--accent-fg);
+  font-size: 0.8125rem
+}
+
+.sl-mk-ico.plain {
+  font-size: 0.4375rem
 }
 
 .photo-sq.plain {

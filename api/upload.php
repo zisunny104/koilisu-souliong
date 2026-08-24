@@ -1,6 +1,11 @@
 <?php
 // POST upload.php  (multipart/form-data)
-// 欄位：project, item_num, name, comment, photo_time(ISO), lat, lon, loc_source, photo(檔案)
+// 共同欄位：project, item_num, kind, name, comment, photo_time(ISO), lat, lon, loc_source
+// 依 kind 而不同的檔案欄位（見 features.php 的 souliong_kinds()）：
+//   photo → photo(檔案) + thumb(檔案，選填)
+//   video → media(檔案) + thumb(檔案，選填) + duration(秒)
+//   audio → media(檔案) + duration(秒)
+//   text / desc → 無檔案，只要 comment
 // append-only：本後端無刪除/修改端點。
 require __DIR__ . '/store.php';
 require __DIR__ . '/security.php';
@@ -48,7 +53,25 @@ function num_or_null($v) {
     return is_numeric($v) ? (float)$v : null;
 }
 
-$kind       = array_key_exists($_POST['kind'] ?? '', souliong_kinds()) ? (string)$_POST['kind'] : 'photo';
+// kind 白名單看的是 postable 而不是「註冊表裡有沒有這個 key」——point／newpoint 也在註冊表裡，
+// 但它們只能由 editpoint.php／newpoint.php 在權限檢查後寫入，放行等於開後門讓任何人偽造
+// 座標覆蓋紀錄（詳見 features.php 的 souliong_kinds() 說明）。
+// 沒送 kind ＝照片（多型別上線前的客戶端就是這樣送的，維持相容）；送了但不可 POST 或根本不認識，
+// 直接 400 擋掉——不要默默改判成照片存一筆進去，那會把「被拒絕的請求」變成一筆真的紀錄。
+$kindIn = trim((string)($_POST['kind'] ?? ''));
+if ($kindIn !== '' && !souliong_kind_postable($kindIn)) {
+    json_out(['error' => 'bad kind'], 400);
+}
+$kind    = $kindIn !== '' ? $kindIn : 'photo';
+$kindDef = souliong_kinds()[$kind];
+
+// 再確認這張地圖有沒有開放這個內容種類（meta.json 的 contrib.kinds）。desc 不在對話框的種類
+// 清單裡、由 story 模組自己把關，所以不受這條限制。沒設定 contrib 的舊地圖解析出來就是
+// ['photo']，前端不送 kind 時的預設值也是 photo，因此既有投稿流程完全不受影響。
+$contribCfg = souliong_contrib_cfg($metaU);
+if (in_array($kind, souliong_contrib_kinds(), true) && !in_array($kind, $contribCfg['kinds'], true)) {
+    json_out(['error' => '這張地圖沒有開放這種投稿：' . souliong_kind_label($kind)], 403);
+}
 $name       = clean_str($_POST['name'] ?? null, $cfg['name_max']) ?? '匿名';
 $comment    = clean_str($_POST['comment'] ?? null, $cfg['comment_max']);
 $item_num   = (isset($_POST['item_num']) && $_POST['item_num'] !== '') ? (int)$_POST['item_num'] : null;
@@ -56,6 +79,10 @@ $lat        = num_or_null($_POST['lat'] ?? null);
 $lon        = num_or_null($_POST['lon'] ?? null);
 $loc_source = clean_str($_POST['loc_source'] ?? null, 16);
 $photo_time = clean_str($_POST['photo_time'] ?? null, 40);
+// 影音長度（秒，前端從 <video>/<audio> 的 metadata 讀）。上限 24 小時純粹是防止塞離譜的值進資料，
+// 真正限制長度的是檔案大小。取不到長度（串流式 webm 常見）就存 null，顯示端自己 fallback。
+$duration = is_numeric($_POST['duration'] ?? null) ? round((float)$_POST['duration'], 2) : null;
+if ($duration !== null && ($duration <= 0 || $duration > 86400)) $duration = null;
 if ($lat !== null && ($lat < -90 || $lat > 90)) $lat = null;
 if ($lon !== null && ($lon < -180 || $lon > 180)) $lon = null;
 
@@ -65,42 +92,67 @@ $hasIdentity = !empty($_POST['ctoken']);
 $license     = ($hasIdentity && ($_POST['license'] ?? '') === 'cc-by') ? 'cc-by' : 'cc0';
 $wikidataOk  = !empty($_POST['wikidata_ok']);
 
-$photoRel = null;
-$thumbRel = null;
-if (isset($_FILES['photo']) && $_FILES['photo']['error'] === UPLOAD_ERR_OK) {
-    $f = $_FILES['photo'];
-    if ($f['size'] > $cfg['max_bytes']) {
+/**
+ * 判斷上傳檔的實際 MIME。圖片優先用 getimagesize()（不依賴 fileinfo 擴充，較可攜）；
+ * 影音沒有等價的可攜函式，只能靠 finfo，主機沒裝 fileinfo 擴充時影音就一律收不了。
+ * 這是刻意的：絕對不能改用 $_FILES['type']，那個值由瀏覽器（也就是投稿者）說了算、可任意偽造，
+ * 拿它當白名單等於沒有白名單。
+ */
+function detect_mime(string $tmp): string {
+    $info = @getimagesize($tmp);
+    if (is_array($info) && !empty($info['mime'])) return (string)$info['mime'];
+    if (class_exists('finfo')) {
+        $m = (new finfo(FILEINFO_MIME_TYPE))->file($tmp);
+        if (is_string($m) && $m !== '') return $m;
+    }
+    return '';
+}
+
+// 照片沿用歷史的 photo/thumb 欄位與 photos/ 目錄，影音走新的 media 欄位與 media/ 目錄。
+// 這樣切是為了讓既有的 exiffix.php／thumbfix.php／editentry.php／photo.php 與前端的
+// photoFullUrl() 一行都不用改，舊資料與舊流程完全不受影響（見 features.php 的 file 欄位說明）。
+$photoRel  = null;
+$thumbRel  = null;
+$mediaRel  = null;
+$mediaMime = null;
+
+$fileField = $kindDef['file'] ?? null;
+$isPhoto   = ($fileField === 'photo');
+if ($fileField !== null && isset($_FILES[$fileField]) && $_FILES[$fileField]['error'] === UPLOAD_ERR_OK) {
+    $f = $_FILES[$fileField];
+    $maxBytes = (int)($cfg['max_bytes_' . $kind] ?? $kindDef['max_bytes'] ?? $cfg['max_bytes']);
+    if ($f['size'] > $maxBytes) {
         json_out(['error' => 'file too large'], 413);
     }
-    // 以 getimagesize 判斷實際影像類型（不依賴 fileinfo 擴充，較可攜）
-    $info = @getimagesize($f['tmp_name']);
-    $mime = is_array($info) ? ($info['mime'] ?? '') : '';
-    if ($mime === '' && class_exists('finfo')) {
-        $mime = (new finfo(FILEINFO_MIME_TYPE))->file($f['tmp_name']);
+    // 照片維持吃 config 的 allowed_mime（部署端本來就能調的旋鈕），其他種類用註冊表的 mimes
+    $mimes = ($isPhoto && !empty($cfg['allowed_mime'])) ? $cfg['allowed_mime'] : ($kindDef['mimes'] ?? []);
+    $mime  = detect_mime($f['tmp_name']);
+    if (!isset($mimes[$mime])) {
+        json_out(['error' => 'unsupported type: ' . ($mime === '' ? '(unknown)' : $mime)], 415);
     }
-    if (!isset($cfg['allowed_mime'][$mime])) {
-        json_out(['error' => 'unsupported type: ' . $mime], 415);
-    }
-    $ext = $cfg['allowed_mime'][$mime];
-    $destDir = project_dir($cfg, $project) . '/photos';
+    $ext = $mimes[$mime];
+    $destDir = project_dir($cfg, $project) . '/' . ($isPhoto ? 'photos' : 'media');
     if (!is_dir($destDir)) { @mkdir($destDir, 0775, true); }
-    // 檔名用「照片實際拍攝時間」（EXIF／裝置時間），不是伺服器收到上傳的時間，方便直接依檔名辨識拍攝先後
+    // 檔名用「內容實際的時間」（照片 EXIF／檔案修改時間），不是伺服器收到上傳的時間，方便直接依檔名辨識先後
     $shotTs = $photo_time !== null ? strtotime($photo_time) : false;
     $fbase = date('Ymd_His', $shotTs !== false ? $shotTs : time()) . '_' . bin2hex(random_bytes(4));
     $fname = $fbase . '.' . $ext;
-    $destAbs = $destDir . '/' . $fname;
-    if (!move_uploaded_file($f['tmp_name'], $destAbs)) {
+    if (!move_uploaded_file($f['tmp_name'], $destDir . '/' . $fname)) {
         json_out(['error' => 'save failed'], 500);
     }
-    $photoRel = $project . '/' . $fname;
+    if ($isPhoto) { $photoRel = $project . '/' . $fname; }
+    else { $mediaRel = $project . '/' . $fname; $mediaMime = $mime; }
 
-    // 顯示用縮圖（前端隨主圖一起產生；沒有或存失敗都不影響投稿本身，顯示端會 fallback 用原圖）
-    if (isset($_FILES['thumb']) && $_FILES['thumb']['error'] === UPLOAD_ERR_OK) {
+    // 顯示用縮圖（照片由前端隨主圖一起轉、影片由前端抽第一幀；沒有或存失敗都不影響投稿本身）。
+    // 縮圖永遠是圖片，所以驗證一律走照片那組 mime，跟主檔是什麼種類無關。
+    if (!empty($kindDef['thumb']) && isset($_FILES['thumb']) && $_FILES['thumb']['error'] === UPLOAD_ERR_OK) {
         $tf = $_FILES['thumb'];
-        $tinfo = @getimagesize($tf['tmp_name']);
-        $tmime = is_array($tinfo) ? ($tinfo['mime'] ?? '') : '';
-        if ($tf['size'] <= 1024 * 1024 && isset($cfg['allowed_mime'][$tmime])) {
-            $tname = $fbase . '_t.' . $cfg['allowed_mime'][$tmime];
+        $timgs = !empty($cfg['allowed_mime']) ? $cfg['allowed_mime'] : souliong_kinds()['photo']['mimes'];
+        $tmime = detect_mime($tf['tmp_name']);
+        if ($tf['size'] <= 1024 * 1024 && isset($timgs[$tmime])) {
+            // 縮圖跟主檔放同一個目錄，命名規則 <主檔名>_t.<副檔名>——photo.php 的 photo_thumb_of()
+            // 就是照這個規則找檔的，影音的縮圖也沿用同一套，media.php 才不用另外發明一種規則。
+            $tname = $fbase . '_t.' . $timgs[$tmime];
             if (@move_uploaded_file($tf['tmp_name'], $destDir . '/' . $tname)) {
                 $thumbRel = $project . '/' . $tname;
             }
@@ -112,6 +164,11 @@ if ($kind === 'desc') {
     // 說明版本：必須有文字與所屬點位
     if ($comment === null) { json_out(['error' => 'need comment'], 400); }
     if ($item_num === null) { json_out(['error' => 'need item_num'], 400); }
+} elseif ($kind === 'text') {
+    if ($comment === null) { json_out(['error' => 'need comment'], 400); }
+} elseif (!$isPhoto && $fileField !== null) {
+    // 影片／音訊投稿沒有檔案就沒有意義（照片可以只留一段話，那是既有行為，維持不變）
+    if ($mediaRel === null) { json_out(['error' => 'need media file'], 400); }
 } elseif ($photoRel === null && $comment === null) {
     json_out(['error' => 'need photo or comment'], 400);
 }
@@ -154,6 +211,9 @@ try {
         'comment'    => $comment,
         'photo'      => $photoRel,
         'thumb'      => $thumbRel,
+        'media'      => $mediaRel,                                        // 影音檔（照片不用這欄，見上面的目錄切分說明）
+        'media_mime' => $mediaMime,
+        'duration'   => $duration,
         'photo_time' => $photo_time,
         'lat'        => $lat,
         'lon'        => $lon,
@@ -178,6 +238,7 @@ try {
     $out = $record;
     unset($out['src_hash'], $out['contrib_hash']);                      // 不外流 IP 雜湊與身分驗刪雜湊
     $out['photo_url'] = $photoRel ? ('photos/' . $photoRel) : null;
+    $out['media_url'] = $mediaRel ? ('media/' . $mediaRel) : null;
     json_out(['ok' => true, 'item' => $out]);
 } catch (Throwable $e) {
     error_log('souliong upload: ' . $e->getMessage());

@@ -38,6 +38,10 @@ switch ($action) {
         $_GET['f'] = count($seg) > 1 ? implode('/', array_slice($seg, 1)) : ($_GET['f'] ?? '');
         require __DIR__ . '/api/photo.php';
         return;
+    case 'media':
+        $_GET['f'] = count($seg) > 1 ? implode('/', array_slice($seg, 1)) : ($_GET['f'] ?? '');
+        require __DIR__ . '/api/media.php';   // 影片／音訊，支援 Range（見該檔說明）
+        return;
     case 'delete':
         require __DIR__ . '/api/delete.php';
         return;
@@ -46,6 +50,9 @@ switch ($action) {
         return;
     case 'editpoint':
         require __DIR__ . '/api/editpoint.php';
+        return;
+    case 'newpoint':
+        require __DIR__ . '/api/newpoint.php';   // 訪客／管理者建立新地點（權限見 meta.json 的 contrib.newPoint）
         return;
     case 'unlock':
         require __DIR__ . '/api/unlock.php';

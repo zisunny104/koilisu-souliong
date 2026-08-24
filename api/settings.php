@@ -26,6 +26,15 @@ function souliong_random_explore_on(array $cfg): bool
     return (bool)($s['random_explore'] ?? true);
 }
 
+// 全站預設主題包（包 id；空字串＝沒設，維持黑白預設）。
+// 主題包「以專案為主」：地圖自己的 meta.json 選了什麼就是什麼，沒選過的才落到這個全站預設。
+// 完整解析順序寫在 packs.php 的 souliong_pack_for()。
+function souliong_site_pack(array $cfg): string
+{
+    $s = souliong_settings_load($cfg);
+    return is_string($s['pack'] ?? null) ? $s['pack'] : '';
+}
+
 // 帳號自助註冊開關：預設關閉（只能靠 master 產生的一次性轉換/邀請連結建帳號），
 // 避免公開註冊表單被拿去暴力灌帳號；master 需要時才手動開，用完建議關回去。
 function souliong_registration_open(array $cfg): bool

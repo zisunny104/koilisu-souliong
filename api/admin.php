@@ -4,8 +4,8 @@ require __DIR__ . '/store.php';
 require __DIR__ . '/security.php';
 require __DIR__ . '/stats.php';
 require __DIR__ . '/features.php';
-require __DIR__ . '/packs.php';
-require __DIR__ . '/settings.php';
+require_once __DIR__ . '/packs.php';
+require_once __DIR__ . '/settings.php';   // packs.php 內部也會載它，兩邊都用 require_once 才不會重複宣告
 require __DIR__ . '/../pages/error.php';
 require_once __DIR__ . '/i18n.php';
 $cfg = require __DIR__ . '/config.php';
@@ -302,7 +302,7 @@ if (!$authed) {
         display: flex;
         align-items: center;
         justify-content: center;
-        gap: 3px;
+        gap: 9px;
         overflow: hidden;
         pointer-events: none;
         color: var(--fg)
@@ -310,6 +310,15 @@ if (!$authed) {
 
       .pin-mask-dot.pop {
         animation: pinpop .2s ease
+      }
+
+      /* 還沒填的格子（見 pin-input.js 的 data-pin-slots），理由同 popups.css 那份 */
+      .pin-mask-dot.pin-blank {
+        opacity: .5
+      }
+
+      .pin-mask-dot.pin-blank.pin-next {
+        opacity: .85
       }
 
       @keyframes pinpop {
@@ -490,15 +499,7 @@ if (!$authed) {
           if ($p !== '' && $id !== '' && ($master || admin_perm($cfg, $p, 'delete_others'))) {
             $removed = store_delete($cfg, $p, $id);
             if ($removed) audit_log($cfg, $auditWho(), 'delete_others', $p, $id);
-            if ($removed && !empty($removed['photo'])) {
-              $pp = photo_abs_path($cfg, $removed['photo']);
-              if ($pp) {
-                @unlink($pp);
-                // 縮圖（上傳附帶或 photo.php 自動產生的）一律叫 <照片檔名>_t.*，跟著原圖一起清
-                $ppBase = preg_replace('/\.[A-Za-z0-9]+$/', '', $pp);
-                foreach (['webp', 'jpg', 'png'] as $te) @unlink($ppBase . '_t.' . $te);
-              }
-            }
+            store_purge_files($cfg, $removed);   // 照片與影音的主檔＋縮圖一起清（見 store.php）
           }
           header('Location: ?api=admin' . ($scopeProject !== '' ? '&project=' . urlencode($scopeProject) : '') . '#records');
           exit;
@@ -536,11 +537,35 @@ if (!$authed) {
             }
             $meta['personExplore'] = isset($_POST['personExplore']);
           }
-          // 資源包：只接受目前實際存在的包 id，避免存進一個已刪除／偽造的值
+          // 投稿設定（meta.json 的 contrib 區塊）。同樣是 checkbox，沒勾就不會出現在 $_POST，
+          // 所以靠 hidden 旗標分辨「這次有送出這一區」與「這張表單根本沒有這一區」。
+          if (isset($_POST['contrib_submitted'])) {
+            $want = is_array($_POST['contrib_kinds'] ?? null) ? array_keys($_POST['contrib_kinds']) : [];
+            // 依註冊表順序過濾，順便擋掉表單送來的任何非法 key（tab 為 null 的 desc／point 不在其中）
+            $kinds = array_values(array_intersect(souliong_contrib_kinds(), $want));
+            if (!$kinds) $kinds = ['photo'];   // 一種都不留＝這張地圖不能投稿，那是「上傳投稿」模組的職責，不是這裡
+            $meta['contrib'] = [
+              'kinds' => $kinds,
+              'default' => (string)($_POST['contrib_default'] ?? ''),
+              'newPoint' => (string)($_POST['contrib_newpoint'] ?? 'off'),
+            ];
+            // 存檔前先讓 souliong_contrib_cfg() 收斂一次：預設分頁若不在啟用型別的分頁裡會被換掉、
+            // 權限值不在白名單裡會退回 off。寫進 meta.json 的就是前端實際拿到的東西，不留對不上的設定。
+            $ccfg = souliong_contrib_cfg($meta);
+            $meta['contrib']['default'] = $ccfg['default'];
+            $meta['contrib']['newPoint'] = $ccfg['newPoint'];
+          }
+          // 主題包：只接受目前實際存在的包 id，避免存進一個已刪除／偽造的值。三態——
+          //   ''      ＝跟隨全站預設 → 移除欄位（沒有欄位就是「沒指定」，見 packs.php）
+          //   '!none' ＝這張地圖明確不套用 → 寫空字串，全站設了包也不跟
+          //   包 id   ＝指定這一包
+          // 用 '!none' 當標記是因為包 id 必須符合 ^[a-z0-9_-]+$，驚嘆號不可能是真的資料夾名稱，不會撞號。
           if (isset($_POST['pack'])) {
             $pk = (string)$_POST['pack'];
             if ($pk === '') {
               unset($meta['pack']);
+            } elseif ($pk === '!none') {
+              $meta['pack'] = '';
             } elseif (isset(souliong_pack_list($cfg)[$pk])) {
               $meta['pack'] = $pk;
             }
@@ -561,6 +586,9 @@ if (!$authed) {
           $s = souliong_settings_load($cfg);
           $s['random_explore'] = isset($_POST['random_explore']);
           $s['registration_open'] = isset($_POST['registration_open']);
+          // 全站預設主題包：同樣只收實際存在的包 id，其餘（含「無」）一律存成空字串
+          $sp = (string)($_POST['site_pack'] ?? '');
+          $s['pack'] = isset(souliong_pack_list($cfg)[$sp]) ? $sp : '';
           souliong_settings_save($cfg, $s);
           header('Location: ?api=admin' . ($scopeProject !== '' ? '&project=' . urlencode($scopeProject) : '') . '#tools');
           exit;
@@ -723,14 +751,7 @@ if (!$authed) {
           if ($p !== '' && $key !== '' && ($master || admin_perm($cfg, $p, 'delete_others'))) {
             $removedList = store_delete_by($cfg, $p, $field, $key);
             foreach ($removedList as $removed) {
-              if (!empty($removed['photo'])) {
-                $pp = photo_abs_path($cfg, $removed['photo']);
-                if ($pp) {
-                  @unlink($pp);
-                  $ppBase = preg_replace('/\.[A-Za-z0-9]+$/', '', $pp);
-                  foreach (['webp', 'jpg', 'png'] as $te) @unlink($ppBase . '_t.' . $te);
-                }
-              }
+              store_purge_files($cfg, $removed);
             }
             if ($removedList) audit_log($cfg, $auditWho(), 'delete_by_' . $field, $p, $key . ' (' . count($removedList) . ')');
           }
@@ -740,7 +761,7 @@ if (!$authed) {
         // ── 備份（ZIP，含照片；純 PHP zip，零擴充依賴） ──
         if (isset($_GET['backup'])) {
           require_once __DIR__ . '/zip.php';
-          // ── 資源包匯出：單一 pack 資料夾打包，路徑內含 <id>/ 前綴（比照 projects/<id>/ 的做法） ──
+          // ── 主題包匯出：單一 pack 資料夾打包，路徑內含 <id>/ 前綴（比照 projects/<id>/ 的做法） ──
           if ($_GET['backup'] === 'pack') {
             if (!$master) {
               error_page(403, $t('no_permission_title'), $t('master_only_packs_msg'), '?api=admin#tools', $t('back_to_admin'));
@@ -869,13 +890,35 @@ if (!$authed) {
               $dest = $destDir . '/' . $fname;
               if ($mode === 'replace' || !is_file($dest)) @file_put_contents($dest, $content);
             }
+            // 3b) 影音（media/）：跟照片同一套規則，副檔名一律由伺服器依驗證過的內容推算。
+            // 這裡多收一種情況——影片封面圖是張圖片，卻跟主檔一起放在 media/，所以圖片型別也放行。
+            // 沒有 finfo 擴充就整段跳過（比照 upload.php，影音的型別驗證非它不可，寧可不還原也不能亂收）。
+            if (class_exists('finfo')) {
+              $mediaExt = [];
+              foreach (souliong_kinds() as $kInfo) {
+                if (($kInfo['file'] ?? null) === 'media') $mediaExt += ($kInfo['mimes'] ?? []);
+              }
+              $fi = new finfo(FILEINFO_MIME_TYPE);
+              foreach ($entries as $nm => $content) {
+                if (!preg_match('#^projects/([a-z0-9_-]+)/media/([A-Za-z0-9_.-]+)$#', str_replace('\\', '/', $nm), $mm)) continue;
+                $mime = (string)$fi->buffer($content);
+                $ext = $mediaExt[$mime] ?? ($cfg['allowed_mime'][$mime] ?? null);
+                if ($ext === null) continue;
+                $base = preg_replace('/\.[A-Za-z0-9]+$/', '', $mm[2]);
+                if ($base === '') continue;
+                $destDir = project_dir($cfg, $mm[1]) . '/media';
+                if (!is_dir($destDir)) @mkdir($destDir, 0775, true);
+                $dest = $destDir . '/' . $base . '.' . $ext;
+                if ($mode === 'replace' || !is_file($dest)) @file_put_contents($dest, $content);
+              }
+            }
             audit_log($cfg, $auditWho(), 'import', null, $mode . ', +' . $imported . ' 筆');
           }
           header('Location: ?api=admin#tools');
           exit;
         }
 
-        // ── 資源包匯入：主要管理者限定；zip 內路徑需含 <id>/ 前綴，id 只認資料夾名稱（避免 pack.json 內容偽造） ──
+        // ── 主題包匯入：主要管理者限定；zip 內路徑需含 <id>/ 前綴，id 只認資料夾名稱（避免 pack.json 內容偽造） ──
         if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'packimport') {
           need_csrf($csrf);
           if (!$master) {
@@ -929,9 +972,8 @@ if (!$authed) {
   <title><?= $t('app_title') ?> · <?= $t('admin_panel_suffix') ?></title>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
   <style>
-    .langsw{position:fixed;top:16px;right:16px;z-index:3;display:flex;gap:2px;font-size:0.75rem}
-    .langsw a{color:var(--muted);text-decoration:none;padding:4px 8px;border-radius:999px}
-    .langsw a.on{color:var(--fg);font-weight:700;background:var(--card);border:1px solid var(--line)}
+    /* 間距、字級、點擊區一律用 rem：使用者把瀏覽器預設字級調大時，留白會跟著放大，
+       版面不會因為字變大就擠成一團。只有不該縮放的東西留 px：1px 框線、藥丸圓角、陰影。 */
     :root {
       color-scheme: light dark;
       --bg: #f6f6f7;
@@ -941,10 +983,21 @@ if (!$authed) {
       --card: #fff;
       --accent: #1b1b1d;
       --accent-fg: #fff;
-      --r-lg: 20px;
-      --r-md: 13px;
+      --r-lg: 1.25rem;
+      --r-md: 0.8125rem;
+      --r-sm: 0.625rem;
       --sh: 0 6px 24px rgba(0, 0, 0, .08);
-      --danger: #c0392b
+      --danger: #c0392b;
+      --t: .18s ease;
+      /* 間距級距：同一層級用同一格，避免每處各寫一個數字 */
+      --sp-1: 0.25rem;
+      --sp-2: 0.5rem;
+      --sp-3: 0.75rem;
+      --sp-4: 1rem;
+      --sp-5: 1.5rem;
+      --sp-6: 2rem;
+      /* 最小點擊區：WCAG 2.2 SC 2.5.8 下限是 24px，取 1.75rem（28px）留餘裕 */
+      --tap: 1.75rem
     }
 
     @media (prefers-color-scheme:dark) {
@@ -968,31 +1021,66 @@ if (!$authed) {
     body {
       margin: 0;
       font-family: system-ui, sans-serif;
+      /* 中文在 line-height:normal（約 1.2）下字行會黏在一起；1.6 是這頁的基準行距 */
+      line-height: 1.6;
       background: var(--bg);
       color: var(--fg);
       -webkit-font-smoothing: antialiased
     }
 
+    /* 語言切換：原本是 position:fixed 貼右上角，但 .wrap 只有 62.5rem 寬且置中，
+       視窗窄於約 1192px 時就會壓在「登出」按鈕上。改成跟著版面走的一列，任何寬度都不會疊到。 */
+    .langsw {
+      display: flex;
+      justify-content: flex-end;
+      gap: var(--sp-1);
+      font-size: 0.75rem;
+      margin-bottom: var(--sp-2)
+    }
+
+    .langsw a {
+      display: inline-flex;
+      align-items: center;
+      min-height: var(--tap);
+      color: var(--muted);
+      text-decoration: none;
+      padding: 0 var(--sp-3);
+      border-radius: 999px;
+      border: 1px solid transparent
+    }
+
+    .langsw a.on {
+      color: var(--fg);
+      font-weight: 700;
+      background: var(--card);
+      border-color: var(--line)
+    }
+
+    .langsw a:not(.on):hover {
+      background: var(--card)
+    }
+
     .wrap {
-      max-width: 1000px;
+      max-width: 62.5rem;
       margin: 0 auto;
-      padding: 24px 20px 60px
+      padding: var(--sp-5) var(--sp-4) var(--sp-6)
     }
 
     .top {
       display: flex;
       align-items: center;
-      gap: 10px;
+      gap: var(--sp-3);
       flex-wrap: wrap
     }
 
     h1 {
       font-size: 1.375rem;
+      line-height: 1.3;
       font-weight: 800;
       margin: 0;
       display: flex;
       align-items: center;
-      gap: 10px;
+      gap: var(--sp-2);
       flex: 1
     }
 
@@ -1008,7 +1096,7 @@ if (!$authed) {
       color: var(--muted);
       letter-spacing: .06em;
       text-transform: uppercase;
-      margin: 28px 0 12px
+      margin: var(--sp-6) 0 var(--sp-3)
     }
 
     .card {
@@ -1018,28 +1106,29 @@ if (!$authed) {
       box-shadow: var(--sh)
     }
 
-    /* 投稿碼：一碼一張卡，排成 grid */
+    /* 投稿碼：一碼一張卡，排成 grid。用 auto-fill 不用 auto-fit——只有一張卡時
+       auto-fit 會把它撐滿整列，QR 縮在左邊、右邊一大片空白。 */
     .code-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-      gap: 12px;
-      margin-top: 8px
+      grid-template-columns: repeat(auto-fill, minmax(17rem, 1fr));
+      gap: var(--sp-3);
+      margin-top: var(--sp-2)
     }
 
     .codecard {
       display: flex;
-      gap: 14px;
+      gap: var(--sp-3);
       align-items: flex-start;
-      padding: 14px 16px
+      padding: var(--sp-3) var(--sp-4)
     }
 
     .codecard .qr, .sharenew .qr {
       background: #fff;
-      padding: 6px;
-      border-radius: 12px;
+      padding: 0.375rem;
+      border-radius: var(--r-sm);
       flex: none;
-      width: 84px;
-      height: 84px;
+      width: 5.25rem;
+      height: 5.25rem;
       cursor: zoom-in
     }
 
@@ -1052,14 +1141,14 @@ if (!$authed) {
       align-items: center;
       justify-content: center;
       background: rgba(0, 0, 0, .78);
-      padding: 24px
+      padding: var(--sp-5)
     }
 
     .qr-modal .qr-modal-card {
       background: #fff;
-      border-radius: 28px;
-      padding: 36px 32px;
-      max-width: min(90vw, 440px);
+      border-radius: 1.75rem;
+      padding: var(--sp-6) var(--sp-5);
+      max-width: min(90vw, 27.5rem);
       width: 100%;
       text-align: center;
       box-shadow: 0 24px 70px rgba(0, 0, 0, .45)
@@ -1068,18 +1157,17 @@ if (!$authed) {
     .qr-modal .qr-modal-title {
       font-size: 1.0625rem;
       font-weight: 800;
-      color: #1a1a1a;
-      margin-bottom: 4px
+      color: #1a1a1a
     }
 
     .qr-modal .qr-modal-guide {
       font-size: 0.8125rem;
       color: #666;
-      margin-bottom: 16px
+      margin-bottom: var(--sp-4)
     }
 
     .qr-modal .qr-modal-code {
-      margin-top: 16px;
+      margin-top: var(--sp-4);
       font-family: ui-monospace, Consolas, monospace;
       font-size: 1.75rem;
       font-weight: 700;
@@ -1089,7 +1177,7 @@ if (!$authed) {
 
     .qr-modal .qr-modal-box {
       width: 100%;
-      aspect-ratio: 1;
+      aspect-ratio: 1
     }
 
     .qr-modal .qr-modal-box svg {
@@ -1099,7 +1187,7 @@ if (!$authed) {
     }
 
     .qr-modal .qr-modal-url {
-      margin-top: 14px;
+      margin-top: var(--sp-3);
       font-family: ui-monospace, Consolas, monospace;
       font-size: 0.75rem;
       color: #444;
@@ -1107,7 +1195,7 @@ if (!$authed) {
     }
 
     .qr-modal .qr-modal-hint {
-      margin-top: 10px;
+      margin-top: var(--sp-2);
       font-size: 0.75rem;
       color: #888
     }
@@ -1127,7 +1215,7 @@ if (!$authed) {
       display: flex;
       align-items: center;
       flex-wrap: wrap;
-      gap: 6px
+      gap: var(--sp-2)
     }
 
     .codecard-title .code-main {
@@ -1145,9 +1233,10 @@ if (!$authed) {
     /* 身分管理：投稿者／管理 PIN 並列 */
     .idgrid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-      gap: 16px;
-      margin-top: 8px
+      grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr));
+      gap: var(--sp-5);
+      margin-top: var(--sp-2);
+      align-items: start
     }
 
     .idgroup {
@@ -1159,19 +1248,19 @@ if (!$authed) {
       font-size: 0.75rem;
       color: var(--muted);
       word-break: break-all;
-      margin-top: 8px;
+      margin-top: var(--sp-2);
       background: var(--bg);
-      padding: 8px 10px;
-      border-radius: 10px;
+      padding: var(--sp-2) var(--sp-3);
+      border-radius: var(--r-sm);
       border: 1px solid var(--line)
     }
 
     .row {
       display: flex;
-      gap: 6px;
+      gap: var(--sp-2);
       align-items: center;
       flex-wrap: wrap;
-      margin-top: 8px
+      margin-top: var(--sp-3)
     }
 
     .metaedit {
@@ -1189,7 +1278,7 @@ if (!$authed) {
     .metaform {
       display: flex;
       flex-direction: column;
-      gap: 8px
+      gap: var(--sp-3)
     }
 
     /* 編輯專案描述：原本用 <details> 內嵌展開，但 .projactions 是 flex 排版，
@@ -1200,9 +1289,9 @@ if (!$authed) {
       background: var(--card);
       color: var(--fg);
       box-shadow: var(--sh);
-      padding: 18px 20px;
-      max-width: 480px;
-      width: calc(100% - 40px)
+      padding: var(--sp-5) var(--sp-5);
+      max-width: 30rem;
+      width: calc(100% - 2.5rem)
     }
 
     .metadlg::backdrop {
@@ -1210,25 +1299,25 @@ if (!$authed) {
     }
 
     .metadlg h3 {
-      margin: 0 0 4px;
+      margin: 0 0 var(--sp-3);
       font-size: 0.9375rem;
       display: flex;
       align-items: center;
-      gap: 8px
+      gap: var(--sp-2)
     }
 
     .dlgactions {
       display: flex;
-      gap: 8px;
+      gap: var(--sp-2);
       justify-content: flex-end;
-      margin-top: 4px
+      margin-top: var(--sp-2)
     }
 
     .metaform label {
       display: flex;
       flex-direction: column;
-      gap: 4px;
-      font-size: 0.6875rem;
+      gap: var(--sp-1);
+      font-size: 0.75rem;
       color: var(--muted)
     }
 
@@ -1236,11 +1325,12 @@ if (!$authed) {
     .metaform select,
     .metaform textarea {
       border: 1px solid var(--line);
-      border-radius: 10px;
+      border-radius: var(--r-sm);
       background: var(--bg);
       color: var(--fg);
-      padding: 8px 10px;
+      padding: var(--sp-2) var(--sp-3);
       font-size: 0.8125rem;
+      line-height: 1.5;
       width: 100%;
       resize: vertical
     }
@@ -1248,59 +1338,68 @@ if (!$authed) {
     .modfields {
       display: flex;
       flex-direction: column;
-      gap: 6px;
+      gap: var(--sp-3);
       border: 1px solid var(--line);
-      border-radius: 10px;
-      padding: 10px;
+      border-radius: var(--r-sm);
+      padding: var(--sp-3)
     }
 
     .modfields-head {
-      font-size: 0.6875rem;
+      font-size: 0.75rem;
       color: var(--muted);
-      font-weight: 600;
+      font-weight: 600
+    }
+
+    /* 說明文字要緊跟著它解釋的那一欄；全域 .hint 的上緣留白在這種小方框裡會散掉 */
+    .modfields .hint {
+      margin-top: 0;
+      font-size: 0.75rem;
+      line-height: 1.6
     }
 
     .metaform label.modrow {
       flex-direction: row;
       align-items: flex-start;
-      gap: 8px;
+      gap: var(--sp-2);
       font-size: 0.8125rem;
-      color: var(--fg);
+      color: var(--fg)
     }
 
     .modrow input[type="checkbox"] {
-      width: auto;
-      margin-top: 3px;
-      flex: none;
+      width: 1rem;
+      height: 1rem;
+      margin-top: 0.25rem;
+      flex: none
     }
 
     .row input {
       border: 1px solid var(--line);
-      border-radius: 10px;
+      border-radius: var(--r-sm);
       background: var(--bg);
       color: var(--fg);
-      padding: 7px 10px;
+      padding: var(--sp-2) var(--sp-3);
       font-size: 0.8125rem;
-      flex: 1 1 140px;
-      min-width: 120px
+      line-height: 1.5;
+      flex: 1 1 8.75rem;
+      min-width: 7.5rem
     }
 
     .row input[type="datetime-local"] {
-      flex-basis: 180px
+      flex-basis: 11.25rem
     }
 
     .row input[type="number"] {
-      flex: 0 1 140px
+      flex: 0 1 8.75rem
     }
 
     .row label.fieldlabel {
       display: flex;
       flex-direction: column;
-      gap: 4px;
-      font-size: 0.6875rem;
+      gap: var(--sp-1);
+      font-size: 0.75rem;
       color: var(--muted);
-      flex: 1 1 140px;
-      min-width: 120px
+      flex: 1 1 8.75rem;
+      min-width: 7.5rem
     }
 
     .row label.fieldlabel input {
@@ -1316,16 +1415,16 @@ if (!$authed) {
 
     .pin-toggle-wrap input {
       width: 100%;
-      padding-right: 32px
+      padding-right: 2.25rem
     }
 
     .pin-toggle-btn {
       position: absolute;
-      right: 4px;
+      right: var(--sp-1);
       top: 50%;
       transform: translateY(-50%);
-      width: 24px;
-      height: 24px;
+      width: var(--tap);
+      height: var(--tap);
       border: none;
       background: transparent;
       color: var(--muted);
@@ -1333,7 +1432,7 @@ if (!$authed) {
       display: flex;
       align-items: center;
       justify-content: center;
-      border-radius: 8px
+      border-radius: var(--r-sm)
     }
 
     .pin-toggle-btn:hover {
@@ -1343,23 +1442,31 @@ if (!$authed) {
     .expirywidget {
       display: flex;
       flex-direction: column;
-      gap: 4px
+      gap: var(--sp-2)
     }
 
     .expirychips {
       display: flex;
-      gap: 4px;
+      gap: var(--sp-1);
       flex-wrap: wrap
     }
 
     .chip {
+      display: inline-flex;
+      align-items: center;
+      min-height: var(--tap);
       border: 1px solid var(--line);
       border-radius: 999px;
       background: var(--card);
       color: var(--muted);
-      font-size: 0.6875rem;
-      padding: 3px 9px;
+      font-size: 0.75rem;
+      padding: 0 var(--sp-3);
       cursor: pointer
+    }
+
+    .chip:not(.on):hover {
+      background: var(--bg);
+      color: var(--fg)
     }
 
     .chip.on {
@@ -1375,11 +1482,13 @@ if (!$authed) {
       color: var(--fg);
       font-size: 0.8125rem;
       font-weight: 600;
-      padding: 8px 14px;
+      padding: var(--sp-2) var(--sp-4);
+      min-height: 2.25rem;
       cursor: pointer;
       display: inline-flex;
       align-items: center;
-      gap: 6px;
+      justify-content: center;
+      gap: var(--sp-2);
       text-decoration: none;
       white-space: nowrap
     }
@@ -1400,15 +1509,18 @@ if (!$authed) {
 
     .tabs {
       display: flex;
-      gap: 8px;
+      gap: var(--sp-2);
       flex-wrap: wrap;
-      margin: 16px 0 4px
+      margin: var(--sp-4) 0 var(--sp-1)
     }
 
     .tab {
       font-size: 0.8125rem;
       font-weight: 600;
-      padding: 7px 14px;
+      padding: var(--sp-2) var(--sp-4);
+      min-height: 2.25rem;
+      display: inline-flex;
+      align-items: center;
       border-radius: 999px;
       border: 1px solid var(--line);
       background: var(--card);
@@ -1422,7 +1534,9 @@ if (!$authed) {
       border-color: var(--accent)
     }
 
-    .tab:hover {
+    /* 只有可點的分頁才有 hover。原本寫 .tab:hover，跟 .tab.on 同權重又排在後面，
+       滑過目前所在的「全部」分頁時只有底色被蓋回淺色、字色仍是反白，整顆字就消失了。 */
+    .tab:not(.on):hover {
       background: var(--bg)
     }
 
@@ -1430,8 +1544,8 @@ if (!$authed) {
       background: var(--card);
       border: 1px solid var(--line);
       border-radius: var(--r-md);
-      padding: 14px 16px;
-      margin-bottom: 14px
+      padding: var(--sp-4);
+      margin-bottom: var(--sp-3)
     }
 
     .stat-card>summary {
@@ -1447,7 +1561,8 @@ if (!$authed) {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      margin-bottom: 8px
+      gap: var(--sp-3);
+      margin-bottom: var(--sp-3)
     }
 
     .stat-card-head b {
@@ -1465,33 +1580,41 @@ if (!$authed) {
 
     .stats-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
-      gap: 12px
+      grid-template-columns: repeat(auto-fit, minmax(8.125rem, 1fr));
+      gap: var(--sp-3)
     }
 
     .tile {
       background: var(--bg);
       border: 1px solid var(--line);
       border-radius: var(--r-md);
-      padding: 14px 16px
+      padding: var(--sp-3) var(--sp-4)
     }
 
     .tile .n {
       font-size: 1.625rem;
+      line-height: 1.2;
       font-weight: 800
     }
 
     .tile .l {
       font-size: 0.75rem;
+      color: var(--muted)
+    }
+
+    /* 每格數字底下自己的一句話解釋，取代原本另開一張「這些數字的意思」卡 */
+    .tile .d {
+      font-size: 0.75rem;
       color: var(--muted);
-      margin-top: 2px
+      margin-top: var(--sp-1);
+      padding-top: var(--sp-1);
+      border-top: 1px solid var(--line)
     }
 
     .break {
       font-size: 0.75rem;
       color: var(--muted);
-      margin-top: 10px;
-      line-height: 1.7
+      margin-top: var(--sp-3)
     }
 
     .break b {
@@ -1500,10 +1623,12 @@ if (!$authed) {
 
     .stat-card .cols {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-      gap: 12px;
-      margin-top: 14px;
-      padding-top: 14px;
+      grid-template-columns: repeat(auto-fit, minmax(13.75rem, 1fr));
+      /* 不設 align-items 的話四欄會被拉成等高，只有一行字的那欄下面會空一大片 */
+      align-items: start;
+      gap: var(--sp-3);
+      margin-top: var(--sp-4);
+      padding-top: var(--sp-4);
       border-top: 1px dashed var(--line)
     }
 
@@ -1511,25 +1636,29 @@ if (!$authed) {
       background: var(--bg);
       border: 1px solid var(--line);
       border-radius: var(--r-md);
-      padding: 12px 14px;
+      padding: var(--sp-3) var(--sp-4);
       font-size: 0.75rem
     }
 
     .stat-card .col h4 {
-      margin: 0 0 6px;
+      margin: 0 0 var(--sp-1);
       font-size: 0.75rem
+    }
+
+    /* 排行欄位的副標：講清楚這一欄的數字是什麼，不必回頭查另一張卡 */
+    .stat-card .col .colnote {
+      color: var(--muted);
+      margin: 0 0 var(--sp-2)
     }
 
     .stat-card .col ol {
       margin: 0;
-      padding-left: 18px;
-      line-height: 1.8
+      padding-left: 1.25rem
     }
 
     .stat-card .col p {
-      margin: 4px 0;
-      color: var(--muted);
-      line-height: 1.6
+      margin: var(--sp-1) 0;
+      color: var(--muted)
     }
 
     .tablewrap {
@@ -1543,7 +1672,7 @@ if (!$authed) {
       border-collapse: collapse;
       width: 100%;
       font-size: 0.8125rem;
-      min-width: 820px
+      min-width: 51.25rem
     }
 
     th {
@@ -1553,14 +1682,15 @@ if (!$authed) {
       text-align: left;
       font-weight: 700;
       color: var(--muted);
-      font-size: 0.6875rem;
+      font-size: 0.75rem;
       letter-spacing: .04em;
-      text-transform: uppercase
+      text-transform: uppercase;
+      white-space: nowrap
     }
 
     th,
     td {
-      padding: 10px 12px;
+      padding: var(--sp-2) var(--sp-3);
       border-bottom: 1px solid var(--line);
       vertical-align: top
     }
@@ -1570,34 +1700,35 @@ if (!$authed) {
     }
 
     td img {
-      width: 80px;
-      height: 80px;
+      width: 5rem;
+      height: 5rem;
       object-fit: cover;
-      border-radius: 10px;
+      border-radius: var(--r-sm);
       display: block
     }
 
     .mono {
       font-family: ui-monospace, Consolas, monospace;
-      font-size: 0.6875rem;
+      font-size: 0.75rem;
       color: var(--muted)
     }
 
     .tag {
       display: inline-block;
-      font-size: 0.6875rem;
+      font-size: 0.75rem;
       font-weight: 600;
-      padding: 2px 8px;
+      padding: 0 var(--sp-2);
       border-radius: 999px;
       background: var(--bg);
-      border: 1px solid var(--line)
+      border: 1px solid var(--line);
+      /* 表格「類型」欄被壓窄時，沒有這行中文標籤會一個字一行直排 */
+      white-space: nowrap
     }
 
     .hint {
       font-size: 0.75rem;
       color: var(--muted);
-      margin-top: 14px;
-      line-height: 1.7
+      margin-top: var(--sp-2)
     }
 
     .iconbtn {
@@ -1605,39 +1736,49 @@ if (!$authed) {
       border: none;
       color: var(--danger);
       cursor: pointer;
-      font-size: 0.9375rem
+      font-size: 0.9375rem;
+      width: var(--tap);
+      height: var(--tap);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 999px
+    }
+
+    .iconbtn:hover {
+      background: var(--line)
     }
 
     .badge {
-      font-size: 0.6875rem;
-      color: var(--muted);
-      margin-top: 6px
+      font-size: 0.75rem;
+      color: var(--muted)
     }
 
     .pinlist {
       display: flex;
-      gap: 8px;
+      gap: var(--sp-2);
       flex-wrap: wrap;
-      align-items: center;
-      margin-top: 8px
+      align-items: flex-start;
+      margin-top: var(--sp-2)
     }
 
     .pinchip {
       display: inline-flex;
       align-items: center;
-      gap: 6px;
+      gap: var(--sp-2);
       font-size: 0.75rem;
       background: var(--bg);
       border: 1px solid var(--line);
       border-radius: 999px;
-      padding: 5px 6px 5px 12px
+      padding: var(--sp-1) var(--sp-1) var(--sp-1) var(--sp-3)
     }
 
     .pinchip form {
-      display: inline;
+      display: inline-flex;
       margin: 0
     }
 
+    /* 移除／撤銷。原本 17×16px，遠低於 WCAG 2.2 SC 2.5.8 的 24×24 下限 */
     .x {
       background: none;
       border: none;
@@ -1645,15 +1786,52 @@ if (!$authed) {
       cursor: pointer;
       font-size: 1rem;
       line-height: 1;
-      padding: 0 4px
+      width: var(--tap);
+      height: var(--tap);
+      flex: none;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 999px;
+      padding: 0
+    }
+
+    .x:hover {
+      background: var(--line)
     }
 
     .pinchip-block {
       flex-direction: column;
+      align-items: stretch;
+      border-radius: var(--r-md);
+      padding: var(--sp-3);
+      gap: var(--sp-2)
+    }
+
+    /* 身分那一行：文字會換行，右邊的移除鈕要固定在同一行的開頭而不是被文字推走 */
+    .pinchip-block .idline {
+      display: flex;
       align-items: flex-start;
-      border-radius: 14px;
-      padding: 8px 12px;
-      gap: 4px
+      justify-content: space-between;
+      gap: var(--sp-2)
+    }
+
+    .pinchip-block .idline>span:first-child {
+      min-width: 0;
+      word-break: break-word
+    }
+
+    /* 那一行右側的操作鈕（QR／複製／移除）自成一組，不會被 space-between 拆開分散 */
+    .idacts {
+      display: inline-flex;
+      align-items: center;
+      gap: var(--sp-1);
+      flex: none
+    }
+
+    .idacts form {
+      display: inline-flex;
+      margin: 0
     }
 
     .pinchip-block.blocked {
@@ -1662,19 +1840,28 @@ if (!$authed) {
 
     .permrow {
       display: flex;
-      gap: 4px;
+      gap: var(--sp-2);
       flex-wrap: wrap;
-      margin-top: 2px
+      margin-top: var(--sp-1)
     }
 
     .permtoggle {
+      display: inline-flex;
+      align-items: center;
+      gap: var(--sp-1);
+      min-height: var(--tap);
       border: 1px solid var(--line);
       border-radius: 999px;
       background: var(--card);
       color: var(--muted);
-      font-size: 0.6875rem;
-      padding: 3px 9px;
+      font-size: 0.75rem;
+      padding: 0 var(--sp-3);
       cursor: pointer
+    }
+
+    .permtoggle:not(.on):hover {
+      background: var(--bg);
+      color: var(--fg)
     }
 
     .permtoggle.on {
@@ -1683,32 +1870,47 @@ if (!$authed) {
       border-color: var(--accent)
     }
 
-    /* 存取與權限：投稿碼卡片 grid + 身分管理（投稿者／管理PIN）grid，見下方 .code-grid / .idgrid */
+    /* 存取與權限：投稿碼卡片 grid + 身分管理（投稿者／管理PIN）grid，見上方 .code-grid / .idgrid */
+    /* 用 block 不用 flex：flex 之下「投稿碼」這種短標題會被後面的補充說明擠成一字一行 */
     .sechead {
+      display: block;
       font-size: 0.8125rem;
       font-weight: 700;
-      margin: 2px 0 4px
+      margin: var(--sp-5) 0 var(--sp-2)
+    }
+
+    /* 區塊標題本來就自帶上緣留白，接在專案標題後的第一個不用再加一次 */
+    .projhead+.sechead,
+    .idgroup>.sechead:first-child {
+      margin-top: 0
     }
 
     .sechead .fa-solid {
       color: var(--accent);
-      margin-right: 4px
+      margin-right: var(--sp-2)
+    }
+
+    .sechead .sechint {
+      margin-left: var(--sp-2);
+      font-weight: 400;
+      font-size: 0.75rem;
+      color: var(--muted)
     }
 
     .projhead {
       display: flex;
       align-items: center;
-      gap: 10px;
+      gap: var(--sp-3);
       flex-wrap: wrap;
-      margin: 22px 0 10px
+      margin: var(--sp-6) 0 var(--sp-3)
     }
 
     .projactions {
       display: flex;
       align-items: center;
       justify-content: flex-end;
-      flex: 1 1 240px;
-      gap: 8px;
+      flex: 1 1 15rem;
+      gap: var(--sp-2);
       flex-wrap: wrap
     }
 
@@ -1719,22 +1921,22 @@ if (!$authed) {
 
     /* 剛建立的分享連結（accent 框）：QR＋連結並排 */
     .sharenew {
-      padding: 12px 14px;
-      margin-top: 10px;
+      padding: var(--sp-3) var(--sp-4);
+      margin-top: var(--sp-3);
       border-color: var(--accent)
     }
 
     .sharenew-body {
       display: flex;
-      gap: 14px;
+      gap: var(--sp-3);
       align-items: flex-start;
       flex-wrap: wrap;
-      margin-top: 8px
+      margin-top: var(--sp-2)
     }
 
     .sharenew-info {
       flex: 1;
-      min-width: 220px
+      min-width: 14rem
     }
 
     .sharenew-info .invite {
@@ -1745,7 +1947,7 @@ if (!$authed) {
     .secretwrap {
       display: inline-flex;
       align-items: center;
-      gap: 2px
+      gap: var(--sp-1)
     }
 
     .eyebtn {
@@ -1754,35 +1956,65 @@ if (!$authed) {
       color: var(--muted);
       cursor: pointer;
       font-size: 0.75rem;
-      padding: 0 3px
+      width: var(--tap);
+      height: var(--tap);
+      flex: none;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 999px;
+      padding: 0
     }
 
     .eyebtn:hover {
-      color: var(--fg)
+      color: var(--fg);
+      background: var(--line)
     }
 
-    /* pinchip 內的小型連結按鈕（複製邀請連結等） */
+    /* pinchip 內的小型連結按鈕（複製邀請連結等）。原本 18×14px，點不到 */
     .chipbtn {
       background: none;
       border: none;
       color: var(--accent);
       cursor: pointer;
       font-size: 0.75rem;
-      padding: 0 3px
+      width: var(--tap);
+      height: var(--tap);
+      flex: none;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 999px;
+      padding: 0
+    }
+
+    .chipbtn:hover {
+      background: var(--line)
+    }
+
+    /* 鍵盤操作看得見焦點：所有可點元素統一一個外框 */
+    a:focus-visible,
+    button:focus-visible,
+    summary:focus-visible,
+    input:focus-visible,
+    select:focus-visible,
+    textarea:focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 2px
     }
 
     /* ── 專案總覽（scope=全部）：一張地圖一張精簡卡，細節請點進去 ── */
     .ov-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-      gap: 12px
+      grid-template-columns: repeat(auto-fill, minmax(13.75rem, 1fr));
+      gap: var(--sp-3)
     }
 
     .ovcard {
-      padding: 14px 16px;
+      padding: var(--sp-3) var(--sp-4);
       display: flex;
       flex-direction: column;
-      gap: 8px;
+      gap: var(--sp-2);
       text-decoration: none;
       color: inherit
     }
@@ -1803,7 +2035,7 @@ if (!$authed) {
 
     .ovcard .stat-row {
       display: flex;
-      gap: 12px;
+      gap: var(--sp-3);
       font-size: 0.75rem;
       color: var(--muted)
     }
@@ -1817,13 +2049,13 @@ if (!$authed) {
     /* ── 單一專案工作區：頂端子導覽（分頁），一次只顯示一塊，減少「散落」感 ── */
     .subnav {
       display: flex;
-      gap: 4px;
+      gap: var(--sp-1);
       flex-wrap: wrap;
       background: var(--card);
       border: 1px solid var(--line);
       border-radius: 999px;
-      padding: 4px;
-      margin: 16px 0
+      padding: var(--sp-1);
+      margin: var(--sp-4) 0
     }
 
     .subtab {
@@ -1832,13 +2064,19 @@ if (!$authed) {
       color: var(--muted);
       font-size: 0.8125rem;
       font-weight: 600;
-      padding: 7px 14px;
+      padding: var(--sp-2) var(--sp-4);
+      min-height: 2.25rem;
       border-radius: 999px;
       cursor: pointer;
       display: inline-flex;
       align-items: center;
-      gap: 6px;
+      gap: var(--sp-2);
       white-space: nowrap
+    }
+
+    .subtab:not(.on):hover {
+      background: var(--bg);
+      color: var(--fg)
     }
 
     .subtab.on {
@@ -1855,11 +2093,11 @@ if (!$authed) {
     }
 
     .section-card {
-      padding: 18px 20px
+      padding: var(--sp-5)
     }
 
     .section-card+.section-card {
-      margin-top: 12px
+      margin-top: var(--sp-3)
     }
 
     .danger-zone {
@@ -1869,12 +2107,12 @@ if (!$authed) {
     .searchbar {
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: var(--sp-2);
       background: var(--card);
       border: 1px solid var(--line);
       border-radius: 999px;
-      padding: 8px 14px;
-      margin-bottom: 12px;
+      padding: var(--sp-2) var(--sp-4);
+      margin-bottom: var(--sp-3);
       color: var(--muted)
     }
 
@@ -1884,11 +2122,21 @@ if (!$authed) {
       color: var(--fg);
       font-size: 0.8125rem;
       outline: none;
-      flex: 1
+      flex: 1;
+      min-height: var(--tap)
     }
 
+    /* 空狀態：原本是一行置中文字浮在空白裡，看起來像版面破了。給它虛線框，
+       明確表示「這一格現在是空的」，並把下一步的按鈕就放在框裡。 */
     .emptystate {
-      padding: 32px 20px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: var(--sp-3);
+      padding: var(--sp-5) var(--sp-4);
+      margin-top: var(--sp-2);
+      border: 1px dashed var(--line);
+      border-radius: var(--r-md);
       text-align: center;
       color: var(--muted);
       font-size: 0.8125rem
@@ -1905,6 +2153,13 @@ if (!$authed) {
     </div>
     <div class="top">
       <h1><i class="fa-solid fa-gauge-high"></i> <?= $t('app_title') ?> <span class="sub"><?= $master ? $t('master_admin_label') : $t('project_admin_label', ['project' => $reqProject]) ?> · <?= $t('records_count_suffix', ['n' => count($rows)]) ?></span></h1>
+      <?php
+        // 回到公開網站。有指定專案就直接回那張地圖，沒有（主要管理者的總覽）就回平台首頁。
+        // 一定要用 $origin . $basePath 組絕對網址：後台可能是從 /<project>/manager 這種路徑式網址進來的，
+        // 寫相對連結會被 index.php 的路由當成「同一個專案底下的動作」而回不去。
+        $frontUrl = $scopeProject !== '' ? $mapUrl($scopeProject) : $mapUrl('');
+      ?>
+      <a class="btn" href="<?= $esc($frontUrl) ?>"><i class="fa-solid fa-arrow-left"></i> <?= $t($scopeProject !== '' ? 'back_to_map_btn' : 'back_to_site_btn') ?></a>
       <a class="btn" href="?api=admin&logout=1"><i class="fa-solid fa-right-from-bracket"></i> <?= $t('logout_btn') ?></a>
     </div>
 
@@ -1922,7 +2177,7 @@ if (!$authed) {
       </div>
     <?php elseif ($master): ?>
       <div class="tabs">
-        <a class="tab" href="?api=admin"><i class="fa-solid fa-arrow-left"></i> <?= $t('back_to_main_site') ?></a>
+        <a class="tab" href="?api=admin"><i class="fa-solid fa-arrow-left"></i> <?= $t('back_to_all_projects') ?></a>
       </div>
     <?php elseif ($acct !== null && count($acctProjects) > 1 && $scopeProject === ''): ?>
       <div class="tabs">
@@ -2004,11 +2259,24 @@ if (!$authed) {
               <label><?= $t('field_desc_label') ?><textarea name="desc" rows="2" maxlength="300" placeholder="<?= $t('desc_optional_placeholder') ?>"><?= $esc($meta['desc'] ?? '') ?></textarea></label>
               <label><?= $t('field_source_label') ?><input name="source" maxlength="300" value="<?= $esc($meta['source'] ?? '') ?>" placeholder="<?= $t('source_placeholder') ?>"></label>
               <label><?= $t('field_credit_label') ?><input name="credit" maxlength="300" value="<?= $esc($meta['credit'] ?? '') ?>" placeholder="<?= $t('credit_placeholder') ?>"></label>
+              <?php
+                // 三態下拉（對應上面 action=meta 的 pack 處理）：沒有 pack 欄位＝跟隨全站，
+                // 空字串＝這張地圖明確不套用。順便把全站目前設的是哪一包寫在選項裡，
+                // 才不用切到「工具」分頁才知道「跟隨全站」實際上會長什麼樣。
+                $packList = souliong_pack_list($cfg);
+                $packHas  = is_array($meta) && array_key_exists('pack', $meta) && is_string($meta['pack']);
+                $packSel  = $packHas ? $meta['pack'] : null;
+                $sitePack = souliong_site_pack($cfg);
+                $siteName = ($sitePack !== '' && isset($packList[$sitePack]))
+                  ? ($packList[$sitePack]['label'] ?? $sitePack)
+                  : i18n_t($DICT, 'site_pack_unset_name');
+              ?>
               <label><?= $t('field_pack_label') ?>
                 <select name="pack">
-                  <option value=""><?= $t('no_pack_option') ?></option>
-                  <?php foreach (souliong_pack_list($cfg) as $pid => $pinfo): ?>
-                  <option value="<?= $esc($pid) ?>" <?= (($meta['pack'] ?? '') === $pid) ? 'selected' : '' ?>><?= $esc($pinfo['label'] ?? $pid) ?></option>
+                  <option value="" <?= $packSel === null ? 'selected' : '' ?>><?= $t('pack_follow_site_option', ['pack' => $siteName]) ?></option>
+                  <option value="!none" <?= $packSel === '' ? 'selected' : '' ?>><?= $t('no_pack_option') ?></option>
+                  <?php foreach ($packList as $pid => $pinfo): ?>
+                  <option value="<?= $esc($pid) ?>" <?= $packSel === $pid ? 'selected' : '' ?>><?= $esc($pinfo['label'] ?? $pid) ?></option>
                   <?php endforeach; ?>
                 </select>
               </label>
@@ -2022,6 +2290,45 @@ if (!$authed) {
                   <span><b><?= $esc($minfo['label']) ?></b><br><span class="hint"><?= $esc($minfo['desc']) ?></span></span>
                 </label>
                 <?php endforeach; ?>
+              </div>
+              <?php
+                // 投稿設定。現值一律走 souliong_contrib_cfg() 而不是直接讀 $meta['contrib']，
+                // 沒有 contrib 區塊的舊地圖才會顯示成它實際的行為（只有照片、不能建點），
+                // 而不是全部空白——按下儲存也就不會把「看起來沒設定」變成真的關掉。
+                $ccur = souliong_contrib_cfg($meta);
+                $ckinds = souliong_kinds();
+                $ctabs = [];
+                foreach (souliong_contrib_kinds() as $ck) {
+                  $tb = $ckinds[$ck]['tab'];
+                  if (!in_array($tb, $ctabs, true)) $ctabs[] = $tb;
+                }
+              ?>
+              <input type="hidden" name="contrib_submitted" value="1">
+              <div class="modfields">
+                <div class="modfields-head"><?= $t('contrib_kinds_heading') ?></div>
+                <div class="hint"><?= $t('contrib_kinds_hint') ?></div>
+                <?php foreach (souliong_contrib_kinds() as $ck): ?>
+                <label class="modrow">
+                  <input type="checkbox" name="contrib_kinds[<?= $esc($ck) ?>]" <?= in_array($ck, $ccur['kinds'], true) ? 'checked' : '' ?>>
+                  <span><?= $esc($ckinds[$ck]['label']) ?></span>
+                </label>
+                <?php endforeach; ?>
+                <label><?= $t('contrib_default_tab_label') ?>
+                  <select name="contrib_default">
+                    <?php foreach ($ctabs as $tb): ?>
+                    <option value="<?= $esc($tb) ?>" <?= $ccur['default'] === $tb ? 'selected' : '' ?>><?= $t('tab_' . $tb) ?></option>
+                    <?php endforeach; ?>
+                  </select>
+                </label>
+                <div class="hint"><?= $t('contrib_default_tab_hint') ?></div>
+                <label><?= $t('contrib_newpoint_label') ?>
+                  <select name="contrib_newpoint">
+                    <?php foreach (['off', 'admin', 'contributor'] as $np): ?>
+                    <option value="<?= $np ?>" <?= $ccur['newPoint'] === $np ? 'selected' : '' ?>><?= $t('contrib_newpoint_' . $np) ?></option>
+                    <?php endforeach; ?>
+                  </select>
+                </label>
+                <div class="hint"><?= $t('contrib_newpoint_hint') ?></div>
               </div>
               <div class="dlgactions">
                 <button type="button" class="btn" onclick="this.closest('dialog').close()"><?= $t('cancel') ?></button>
@@ -2072,7 +2379,7 @@ if (!$authed) {
         <?php };
       ?>
         <!-- 投稿碼：一碼一張卡，連結／QR／限制／用量都在同一張卡上 -->
-        <div class="sechead"><i class="fa-solid fa-ticket"></i> <?= $t('contrib_code') ?><?= $gated ? '' : $t('codes_ungated_hint') ?></div>
+        <div class="sechead"><i class="fa-solid fa-ticket"></i> <?= $t('contrib_code') ?><?= $gated ? "" : "<span class=\"sechint\">" . $t("codes_ungated_hint") . "</span>" ?></div>
         <?php if ($codesList): ?>
           <div class="code-grid">
             <?php foreach ($codesList as $ce2): $cc = (string)($ce2['code'] ?? ''); $inviteC = $mapUrl($p) . '?code=' . $cc; ?>
@@ -2120,7 +2427,7 @@ if (!$authed) {
         <?php if ($justHere('code')) $shareNew($justCreatedShare, $t('contrib_code')); ?>
 
         <!-- 身分管理：投稿者（純自助）與管理 PIN 並列 -->
-        <div class="sechead" style="margin-top:24px"><i class="fa-solid fa-users"></i> <?= $t('identity_management_heading') ?></div>
+        <div class="sechead"><i class="fa-solid fa-users"></i> <?= $t('identity_management_heading') ?></div>
         <div class="idgrid">
           <div class="idgroup">
             <div class="sechead"><i class="fa-solid fa-id-badge"></i> <?= $t('contributors_heading') ?></div>
@@ -2131,9 +2438,9 @@ if (!$authed) {
                   $isBlocked = in_array($cid, $blocked['contribs'], true);
                 ?>
                   <div class="pinchip pinchip-block<?= $isBlocked ? ' blocked' : '' ?>">
-                    <div><?= $esc(($ce['label'] ?? '') !== '' ? $ce['label'] : $t('no_nickname_contributor_label')) ?> · <span class="mono"><?= $esc($cid) ?></span> · <?= $t('record_count_suffix', ['n' => $cnt]) ?><?php if ($isBlocked): ?> · <span class="tag"><?= $t('locked_tag') ?></span><?php endif; ?>
+                    <div class="idline"><span><?= $esc(($ce['label'] ?? '') !== '' ? $ce['label'] : $t('no_nickname_contributor_label')) ?> · <span class="mono"><?= $esc($cid) ?></span> · <?= $t('record_count_suffix', ['n' => $cnt]) ?><?php if ($isBlocked): ?> · <span class="tag"><?= $t('locked_tag') ?></span><?php endif; ?></span><span class="idacts">
                       <form method="post" style="display:inline"><input type="hidden" name="csrf" value="<?= $esc_csrf ?>"><input type="hidden" name="action" value="delcontrib"><input type="hidden" name="project" value="<?= $esc($p) ?>"><input type="hidden" name="contrib_id" value="<?= $esc($cid) ?>"><button class="x" title="<?= $t('revoke_contrib_title') ?>">×</button></form>
-                    </div>
+                    </span></div>
                     <div class="permrow">
                       <form method="post" style="display:inline"><input type="hidden" name="csrf" value="<?= $esc_csrf ?>"><input type="hidden" name="action" value="<?= $isBlocked ? 'unblockid' : 'blockid' ?>"><input type="hidden" name="project" value="<?= $esc($p) ?>"><input type="hidden" name="kind" value="contrib"><input type="hidden" name="key" value="<?= $esc($cid) ?>"><button class="permtoggle<?= $isBlocked ? ' on' : '' ?>" title="<?= $t('lock_after_title') ?>"><?= $isBlocked ? $t('locked_btn') : $t('lock_btn') ?></button></form>
                       <?php if ($cnt > 0 && $canDeleteOthers): ?>
@@ -2147,7 +2454,7 @@ if (!$authed) {
                   $nameNote = ($og['last_name'] !== '' && $og['last_name'] !== '匿名') ? $t('used_name_note', ['name' => $og['last_name']]) : $t('anon_contributor_label');
                 ?>
                   <div class="pinchip pinchip-block<?= $isBlocked ? ' blocked' : '' ?>">
-                    <div><?= $nameNote ?> · <span class="mono"><?= $esc(substr($oh, 0, 8)) ?></span> · <?= $t('record_count_suffix', ['n' => $og['count']]) ?><?php if ($isBlocked): ?> · <span class="tag"><?= $t('locked_tag') ?></span><?php endif; ?></div>
+                    <div class="idline"><span><?= $nameNote ?> · <span class="mono"><?= $esc(substr($oh, 0, 8)) ?></span> · <?= $t('record_count_suffix', ['n' => $og['count']]) ?><?php if ($isBlocked): ?> · <span class="tag"><?= $t('locked_tag') ?></span><?php endif; ?></span></div>
                     <div class="permrow">
                       <form method="post" style="display:inline"><input type="hidden" name="csrf" value="<?= $esc_csrf ?>"><input type="hidden" name="action" value="<?= $isBlocked ? 'unblockid' : 'blockid' ?>"><input type="hidden" name="project" value="<?= $esc($p) ?>"><input type="hidden" name="kind" value="owner"><input type="hidden" name="key" value="<?= $esc($oh) ?>"><button class="permtoggle<?= $isBlocked ? ' on' : '' ?>" title="<?= $t('lock_after_owner_title') ?>"><?= $isBlocked ? $t('locked_btn') : $t('lock_btn') ?></button></form>
                       <?php if ($canDeleteOthers): ?>
@@ -2171,13 +2478,13 @@ if (!$authed) {
                   $permLabels = ['delete_others' => $t('perm_delete_others'), 'edit_others' => $t('perm_edit_others'), 'edit_points' => $t('perm_edit_points'), 'delegate_admin' => $t('perm_delegate_admin')];
                   foreach ($realPins as $e): $pid = (string)($e['id'] ?? ''); $perms = $e['perms'] ?? pin_default_perms(); ?>
                   <div class="pinchip pinchip-block">
-                    <div><?= $esc(($e['label'] ?? '') !== '' ? $e['label'] : $t('no_nickname_label')) ?> · <?= $secret($e['pin'] ?? '') ?>
-                      <?php if (!empty($e['via_link'])): ?><span class="tag"><?= $t('invite_redeemed_tag') ?></span><?php endif; ?>
+                    <div class="idline"><span><?= $esc(($e['label'] ?? '') !== '' ? $e['label'] : $t('no_nickname_label')) ?> · <?= $secret($e['pin'] ?? '') ?>
+                      <?php if (!empty($e['via_link'])): ?><span class="tag"><?= $t('invite_redeemed_tag') ?></span><?php endif; ?></span><span class="idacts">
                       <?php if ($pid !== ''): ?>
                       <form method="post" style="display:inline"><input type="hidden" name="csrf" value="<?= $esc_csrf ?>"><input type="hidden" name="action" value="migrate_create"><input type="hidden" name="source" value="project"><input type="hidden" name="project" value="<?= $esc($p) ?>"><input type="hidden" name="legacy_id" value="<?= $esc($pid) ?>"><input type="hidden" name="label" value="<?= $esc($e['label'] ?? '') ?>"><button type="submit" class="chipbtn" title="<?= $t('migrate_to_account_title') ?>"><i class="fa-solid fa-right-left"></i></button></form>
                       <?php endif; ?>
                       <form method="post" style="display:inline"><input type="hidden" name="csrf" value="<?= $esc_csrf ?>"><input type="hidden" name="action" value="delpin"><input type="hidden" name="scope" value="project"><input type="hidden" name="project" value="<?= $esc($p) ?>"><input type="hidden" name="pin_del" value="<?= $esc($e['pin'] ?? '') ?>"><button class="x" title="<?= $t('remove_title') ?>">×</button></form>
-                    </div>
+                    </span></div>
                     <?php if ($pid !== ''): ?>
                     <div class="permrow">
                       <?php foreach ($permLabels as $pk => $ptext): $on = !empty($perms[$pk]); ?>
@@ -2203,15 +2510,15 @@ if (!$authed) {
               </form>
             <?php endif; ?>
             <?php if ($master && $invites): ?>
-              <div class="sechead" style="margin-top:14px;font-size:0.8125rem"><i class="fa-solid fa-envelope-open-text"></i> <?= $t('pending_invites_heading') ?></div>
+              <div class="sechead"><i class="fa-solid fa-envelope-open-text"></i> <?= $t('pending_invites_heading') ?></div>
               <div class="pinlist">
                 <?php foreach ($invites as $e): $inviteId = (string)($e['id'] ?? ''); $inviteUrl = $mapUrl($p) . '#redeem=' . rawurlencode((string)($e['token'] ?? '')) . '&rmode=admin'; ?>
                   <div class="pinchip pinchip-block">
-                    <div><?= $t('pending_invite_label') ?>
+                    <div class="idline"><span><?= $t('pending_invite_label') ?></span><span class="idacts">
                       <button type="button" class="chipbtn qr-trigger" data-url="<?= $esc($inviteUrl) ?>" data-title="<?= $esc($meta['title'] ?? $p) ?>" title="<?= $t('show_qr_title') ?>"><i class="fa-solid fa-qrcode"></i></button>
                       <button type="button" class="chipbtn" data-copy="<?= $esc($inviteUrl) ?>" title="<?= $t('copy_invite_link_title') ?>"><i class="fa-solid fa-link"></i></button>
                       <form method="post" style="display:inline"><input type="hidden" name="csrf" value="<?= $esc_csrf ?>"><input type="hidden" name="action" value="delinvite"><input type="hidden" name="project" value="<?= $esc($p) ?>"><input type="hidden" name="invite_id" value="<?= $esc($inviteId) ?>"><button class="x" title="<?= $t('revoke_invite_title') ?>">×</button></form>
-                    </div>
+                    </span></div>
                     <div class="badge">
                       <?= !empty($e['expires_at']) ? $t('expires_at_label', ['date' => substr((string)$e['expires_at'], 0, 16)]) : $t('no_expiry_label') ?>
                       ・<?= isset($e['max_uses']) && $e['max_uses'] !== null ? $t('redeemed_of_max_label', ['used' => (int)($e['used_count'] ?? 0), 'max' => (int)$e['max_uses']]) : $t('redeemed_unlimited_label', ['used' => (int)($e['used_count'] ?? 0)]) ?>
@@ -2409,6 +2716,16 @@ if (!$authed) {
             <input type="checkbox" name="registration_open" style="width:auto;margin-top:3px" <?= souliong_registration_open($cfg) ? 'checked' : '' ?>>
             <span><b><?= $t('registration_open_toggle_label') ?></b><br><span class="hint"><?= $t('registration_open_toggle_hint') ?></span></span>
           </label>
+          <?php $sitePackCur = souliong_site_pack($cfg); ?>
+          <label style="margin-top:10px;display:block"><b><?= $t('site_pack_label') ?></b>
+            <select name="site_pack">
+              <option value=""><?= $t('no_pack_option') ?></option>
+              <?php foreach (souliong_pack_list($cfg) as $pid => $pinfo): ?>
+              <option value="<?= $esc($pid) ?>" <?= $sitePackCur === $pid ? 'selected' : '' ?>><?= $esc($pinfo['label'] ?? $pid) ?></option>
+              <?php endforeach; ?>
+            </select>
+          </label>
+          <div class="hint"><?= $t('site_pack_hint') ?></div>
           <div class="dlgactions" style="justify-content:flex-start;margin-top:8px"><button class="btn solid"><i class="fa-solid fa-floppy-disk"></i> <?= $t('save_settings_btn') ?></button></div>
         </form>
       </div>

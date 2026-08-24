@@ -29,7 +29,7 @@
     }
 
     // 比照 embed-code.js：只補「分享卡片獨有」的樣式，遮罩／卡片本體／關閉鈕／按鈕
-    // 都直接沿用核心 .dialog／.dialog-box／.icon-btn／.btn，才能一併吃到資源包材質換色
+    // 都直接沿用核心 .dialog／.dialog-box／.icon-btn／.btn，才能一併吃到主題包材質換色
     injectStyle() {
       const style = document.createElement('style');
       style.textContent = `
@@ -74,8 +74,13 @@
       btn.setAttribute('aria-label', t('share_map'));
       btn.innerHTML = '<i class="fa-solid fa-share-nodes" aria-hidden="true"></i>';
       btn.onclick = () => this.open();
+      // 掛在首頁鈕後面，但那顆是可關閉的模組（homeLink）；它不在時往後找下一個固定版位，
+      // 免得少了一顆鈕就讓分享鈕整個不見。依序退到嵌入鈕（embed，也可能被關掉）與主題鈕之前，
+      // 這樣不論首頁鈕在不在，分享鈕跟嵌入鈕的先後順序都一樣。
       const homeBtn = document.getElementById('homeBtn');
+      const anchor = document.getElementById('embedBtn') || document.getElementById('themeBtn');
       if (homeBtn) homeBtn.insertAdjacentElement('afterend', btn);
+      else if (anchor) anchor.insertAdjacentElement('beforebegin', btn);
     }
 
     // 公開地圖網址（不含 embed/code；帶目前篩選狀態，讓分享連結只給對方看你指定的投稿者或主題）

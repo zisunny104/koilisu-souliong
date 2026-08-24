@@ -3,7 +3,7 @@
  * Souliong 地圖清單首頁。背景為隨機一張地圖（不可互動），內容浮在其上。
  */
 $cfg = include __DIR__ . '/../config.php';
-require __DIR__ . '/../api/settings.php';
+require_once __DIR__ . '/../api/settings.php';
 require __DIR__ . '/../api/i18n.php';
 $apiCfg = require __DIR__ . '/../api/config.php';
 $randomExplore = souliong_random_explore_on($apiCfg);
@@ -18,11 +18,18 @@ $base = '/' . trim($base, '/');
 $base = ($base === '/') ? '/' : $base . '/';
 
 $maps = [];
-foreach (glob(__DIR__ . '/../projects/*/meta.json') as $mf) {
+// 用 scandir 而不是 glob()：glob 會把路徑裡的中括號當成「字元集合」樣式，
+// 安裝在含中括號的目錄下（例如 .../亞洲大學[Asia University]/...）時整個樣式一個檔案都對不到，
+// 首頁就會在明明有地圖的情況下顯示「尚未有地圖」。這裡只是逐一列目錄，沒有比對樣式的需要。
+$projectsDir = $apiCfg['projects_dir'];
+foreach (scandir($projectsDir) ?: [] as $entry) {
+    if ($entry === '.' || $entry === '..') continue;
+    $mf = $projectsDir . '/' . $entry . '/meta.json';
+    if (!is_file($mf)) continue;
     $m = json_decode(file_get_contents($mf), true);
     if (!is_array($m)) continue;
     $maps[] = [
-        'id' => $m['id'] ?? basename(dirname($mf)),
+        'id' => $m['id'] ?? $entry,
         'title' => $m['title'] ?? '',
         'subtitle' => $m['subtitle'] ?? '',
         'desc' => $m['desc'] ?? '',

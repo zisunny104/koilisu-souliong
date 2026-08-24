@@ -107,17 +107,20 @@
   z-index: 1;
 }
 
-/* 資源包外框覆蓋層：理由同 #panel（point-panel.css），這層鋪滿容器、疊在內容最上面，
-   預設 none 不畫東西，pointer-events:none 不擋點擊。 */
+/* 主題包外框覆蓋層：理由同 #panel（point-panel.css），這層疊在內容最上面、角標外掛在
+   右下角並超出圓角，預設 none 不畫東西，pointer-events:none 不擋點擊。
+   inset/size/position/repeat 四行要跟 #panel::after 完全一致，改這裡就要一起改那邊；
+   一樣不能寫 border-radius: inherit，寫了角標探出圓角的部分就會被裁掉。
+   .dialog-box 本身沒有 overflow，不需要像 #panel 那樣另外開 overflow-clip-margin。 */
 .dialog-box::after {
   content: '';
   position: absolute;
-  inset: 0;
+  inset: -10px;
   z-index: 3;
   pointer-events: none;
-  border-radius: inherit;
-  background-image: var(--pack-frame-overlay-src, none);
-  background-size: 100% 100%;
+  background-image: var(--pack-frame-overlay-dialog-src, var(--pack-frame-overlay-src, none));
+  background-size: 40px 40px;
+  background-position: bottom right;
   background-repeat: no-repeat;
 }
 
@@ -127,6 +130,7 @@
 .dialog-box textarea {
   --fg: var(--fg-base);
   --muted: var(--muted-base);
+  color: var(--fg);
 }
 
 .dialog-head {
@@ -194,14 +198,26 @@
 }
 
 /* 數字鍵盤／一般鍵盤切換輸入（見 pin-input.js） */
+/* pin-input.js 會在欄位外面包一層這個 wrap。display 用區塊級的 flex、不是 inline-flex：
+   對話框裡的 PIN／投稿碼欄位都寫 width:100%，而 inline-flex 的寬度是被內容撐出來的，
+   於是變成「欄位問外框有多寬、外框問欄位有多寬」，最後欄位只縮成內容寬度、撐不滿對話框。
+   （admin.php 那份同名樣式本來就寫 display:block，沒有這個問題，這裡是補齊一致性。） */
 .pin-toggle-wrap {
   position: relative;
-  display: inline-flex;
-  vertical-align: middle
+  display: flex
 }
 
 .pin-toggle-wrap .name-in {
   padding-right: 34px
+}
+
+/* 遮罩層會把欄位文字設成 transparent（見 pin-input.js），而 placeholder 沒自己的顏色時
+   是跟著 color 走的，會一起變透明、整個看不見，所以這裡一定要明講一次顏色。
+   letter-spacing 歸零：投稿碼欄位為了讓數字排得開有加字距，那個字距套到中文 placeholder
+   上會把「6 位數字」拉成一個字一個字散開。 */
+.pin-toggle-wrap .name-in::placeholder {
+  color: var(--muted);
+  letter-spacing: normal
 }
 
 /* 密碼型 PIN 欄位：用幾何圖案取代瀏覽器原生圓點遮罩（實際輸入仍是原生欄位，見 pin-input.js） */
@@ -212,7 +228,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 3px;
+  gap: 9px;
   overflow: hidden;
   pointer-events: none;
   color: var(--accent)
@@ -220,6 +236,20 @@
 
 .pin-mask-dot.pop {
   animation: brandpop .2s ease
+}
+
+/* 還沒填的格子（見 pin-input.js 的 data-pin-slots）：壓淡當底線用，
+   下一格要填的那個再提亮一點，取代被關掉的原生游標，指出現在填到哪。
+   class 名字一定要加 pin- 前綴，不能用 .empty/.next 這種通用字：point-panel.css 已經有
+   一條沒有任何前綴的 .empty（面板「沒有資料」那種提示文字）在設 color: var(--muted)，
+   而對話框裡的 --muted 是主題包的墨色（深色材質時是白的），空格子的圈圈會被染成白色、
+   在白底輸入框上整個看不見。這裡的規則只設 opacity 不設 color，搶不回來。 */
+.pin-mask-dot.pin-blank {
+  opacity: .5
+}
+
+.pin-mask-dot.pin-blank.pin-next {
+  opacity: .85
 }
 
 .pin-toggle-btn {
@@ -240,8 +270,10 @@
   transition: background var(--t), color var(--t)
 }
 
+/* 平常完全透明、坐在對話框的材質底圖上，hover 用加強版疊色才看得出來，理由同
+   .icon-btn:hover（control-card.css） */
 .pin-toggle-btn:hover {
-  background: var(--hover);
+  background: var(--hover-strong);
   color: var(--fg)
 }
 

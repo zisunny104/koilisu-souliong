@@ -1,5 +1,5 @@
-/* 資源包：誇張示範包（demo-loud）——這包同時是「範本」，複製這個資料夾改名、改值，
- * 就是一個新資源包。跟 packs/checker-moss 一樣示範每個 --pack-* 變數怎麼用，
+/* 主題包：誇張示範包（demo-loud）——這包同時是「範本」，複製這個資料夾改名、改值，
+ * 就是一個新主題包。跟 packs/checker-moss 一樣示範每個 --pack-* 變數怎麼用，
  * 差別是這包刻意把每個軸線都推到最滿、最搶眼，讓「哪塊區域是材質在管」一眼就看得出來，
  * 不用猜、也不用開 DevTools 找。想做低調材質的話，checker-moss 的 --pack-opacity 也可以
  * 壓低到接近 0，那條路已經有示範，這包不重複做。
@@ -53,10 +53,24 @@
    * 是這包故意要修正的地方）。 */
   --pack-frame-src: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 96 96'%3E%3Crect x='2' y='2' width='92' height='92' fill='none' stroke='%23ffd400' stroke-width='3'/%3E%3Cg fill='none' stroke='%23ffffff' stroke-width='6' stroke-linecap='square'%3E%3Cpath d='M2,32 V26 H8 V20 H14 V14 H20 V8 H26 V2'/%3E%3Cpath d='M64,2 H70 V8 H76 V14 H82 V20 H88 V26 H94 V32'/%3E%3Cpath d='M94,64 V70 H88 V76 H82 V82 H76 V88 H70 V94 H64'/%3E%3Cpath d='M32,94 H26 V88 H20 V82 H14 V76 H8 V70 H2 V64'/%3E%3C/g%3E%3C/svg%3E");
 
-  /* 外框覆蓋層（整片鋪滿容器、疊在內容最上面，跟上面的外框環是兩回事，見 point-panel.css
-   * 的 #panel::after 說明）——這包拿它示範「角標可以蓋到內容上」：左上角一塊三角形黃底
-   * 黑邊角標，viewBox 0 0 100 100 配 background-size:100% 100%，角標大小固定佔容器左上角
-   * 約 1/3，容器多大都等比例縮放。pointer-events:none 已經在套用的地方處理過，角標底下
-   * 的文字、按鈕照常可以點，只是視覺上會被蓋住一角——這正是這個機制要展示的效果。 */
-  --pack-frame-overlay-src: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpolygon points='0,0 34,0 0,34' fill='%23ffd400'/%3E%3Cpolygon points='0,0 34,0 0,34' fill='none' stroke='%23141116' stroke-width='2.5'/%3E%3C/svg%3E");
+  /* 外框覆蓋層（疊在內容最上面的角標，跟上面的外框環是兩回事，見 point-panel.css 的
+   * #panel::after 說明）——這包拿它示範「角標可以蓋到內容上」，而且四個容器各掛各的圖：
+   * 地點卡＝黃色三角、控制卡＝青色像素階梯、對話框＝紫色圓形印章、右上資訊列＝白色方塊。
+   * 形狀跟顏色兩個軸線都刻意錯開（只換形狀的話，小尺寸下四個角標還是容易看成同一張），
+   * 一眼就能分辨現在看到的是哪個容器的角標，也順便示範這四個變數是各自獨立的。四個顏色
+   * 都跟材質的深桃紅／近黑有足夠對比，配黑色描邊在深底上才描得出輪廓。四個都不宣告時
+   * 退回 --pack-frame-overlay-src（這包不宣告，故意讓四個容器完全不共用），再沒有就不畫。
+   *
+   * 每張圖的 viewBox 都被圖案填滿、四周沒有留白，套用的地方才好用固定像素尺寸把它擺到
+   * 右下角（見 point-panel.css 的 #panel::after）：圖多大就等於角標多大，不會因為容器
+   * 高寬比不同而變形，也不會有留白把圖案推離角落、飄到容器中間。
+   * 四張圖都是「完整、獨立的一塊圖案」，不是靠容器邊界切一半來成形的半截圖形——套用時
+   * 角標是外掛在容器右下角、有一部分浮在容器輪廓外面的貼紙（見 point-panel.css 的
+   * #panel::after），根本沒有邊界會幫忙裁形狀，靠切一半成形的畫法會直接露出斷面。
+   * pointer-events:none 已經在套用的地方處理過，角標底下的文字、按鈕照常可以點，只是
+   * 視覺上會被蓋住一塊——這正是這個機制要展示的效果。 */
+  --pack-frame-overlay-panel-src: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpolygon points='96,96 4,96 96,4' fill='%23ffd400' stroke='%23141116' stroke-width='6' stroke-linejoin='round'/%3E%3C/svg%3E");
+  --pack-frame-overlay-card-src: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpolygon points='96,96 96,20 74,20 74,44 50,44 50,68 26,68 26,96' fill='%2300d5ff' stroke='%23141116' stroke-width='6' stroke-linejoin='round'/%3E%3C/svg%3E");
+  --pack-frame-overlay-dialog-src: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ccircle cx='50' cy='50' r='47' fill='%23b388ff' stroke='%23141116' stroke-width='6'/%3E%3Ccircle cx='50' cy='50' r='28' fill='none' stroke='%23141116' stroke-width='6'/%3E%3C/svg%3E");
+  --pack-frame-overlay-chrome-src: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect x='5' y='5' width='90' height='90' rx='16' fill='%23ffffff' stroke='%23141116' stroke-width='8'/%3E%3C/svg%3E");
 }

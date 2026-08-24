@@ -18,6 +18,36 @@ function photo_abs_path(array $cfg, string $photoRel): ?string {
     return project_dir($cfg, $m[1]) . '/photos/' . $m[2];
 }
 
+/**
+ * 同 photo_abs_path()，但指向 media/（影片與音訊）。
+ * 影音沒有跟照片共用 photos/ 目錄，是為了讓既有的照片工具（exiffix.php／thumbfix.php、
+ * 以及所有把 photos/ 當「全都是圖檔」在掃的程式）不用學會忽略非圖檔，見 features.php
+ * 的 souliong_kinds() 說明。
+ */
+function media_abs_path(array $cfg, string $mediaRel): ?string {
+    if (!preg_match('#^([a-z0-9_-]+)/([A-Za-z0-9_.-]+)$#', $mediaRel, $m)) return null;
+    return project_dir($cfg, $m[1]) . '/media/' . $m[2];
+}
+
+/**
+ * 刪掉一筆記錄附帶的檔案（主檔 ＋ 縮圖）。刪投稿的地方有三處（delete.php、admin.php 的
+ * 單筆刪除與整批刪某身分），影音上線後每一處都要多記得清 media/ 一次；集中在這裡，
+ * 之後再加新的檔案欄位也只有這一個地方要改。
+ * 縮圖一律是 <主檔名>_t.<ext>（photo.php 自動產生的、上傳附帶的、影片抽幀的都同一套命名）。
+ */
+function store_purge_files(array $cfg, ?array $record): void {
+    if (!$record) return;
+    $paths = [];
+    if (!empty($record['photo'])) $paths[] = photo_abs_path($cfg, (string)$record['photo']);
+    if (!empty($record['media'])) $paths[] = media_abs_path($cfg, (string)$record['media']);
+    foreach ($paths as $abs) {
+        if (!$abs) continue;
+        @unlink($abs);
+        $base = preg_replace('/\.[A-Za-z0-9]+$/', '', $abs);
+        foreach (['webp', 'jpg', 'png'] as $te) @unlink($base . '_t.' . $te);
+    }
+}
+
 function store_all(array $cfg, string $project): array {
     $f = store_file($cfg, $project);
     if (!is_file($f)) return [];
@@ -45,6 +75,41 @@ function store_append(array $cfg, string $project, array $record): array {
     fflush($fp);
     flock($fp, LOCK_UN);
     fclose($fp);
+    return $record;
+}
+
+/**
+ * 「要先看過現有資料才能決定寫什麼」的附加（例如建立地點要配一個沒被用過的 num）。
+ *
+ * 不能用 store_all() + store_append() 兜出來：那是兩段各自上鎖的區間，兩個人同時建點會
+ * 各自讀到同一個 max num、配出重複號碼。這裡把讀與寫包在同一個 LOCK_EX 區間裡，
+ * 後到的那個一定看得到先到的那筆。
+ *
+ * $build(array $records): array —— 收到目前檔案裡的全部記錄，回傳要附加的那一筆。
+ * 想中止就在 $build 裡丟例外（此時什麼都不會寫入）。
+ */
+function store_append_locked(array $cfg, string $project, callable $build): array {
+    $f = store_file($cfg, $project);
+    $fp = fopen($f, 'c+b'); // c+：不存在就建、存在也不截斷（'a+' 在部分平台讀取位置不可靠）
+    if (!$fp) throw new RuntimeException('cannot open store file');
+    flock($fp, LOCK_EX);
+    try {
+        $records = [];
+        rewind($fp);
+        while (($line = fgets($fp)) !== false) {
+            $line = trim($line);
+            if ($line === '') continue;
+            $rec = json_decode($line, true);
+            if (is_array($rec)) $records[] = $rec;
+        }
+        $record = $build($records);
+        fseek($fp, 0, SEEK_END);
+        fwrite($fp, json_encode($record, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) . "\n");
+        fflush($fp);
+    } finally {
+        flock($fp, LOCK_UN);
+        fclose($fp);
+    }
     return $record;
 }
 

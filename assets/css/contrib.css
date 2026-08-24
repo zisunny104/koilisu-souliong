@@ -1,0 +1,404 @@
+/* ---------- 投稿對話框（#contribModal） ----------
+   這一整段原本寄居在 point-panel.css 的尾巴（那個檔案是「地點面板」，批次上傳視窗放在裡面
+   本來就不對）。改成多型別分頁之後樣式又長了一截，索性拆成獨立檔案。
+   例外：.loc-src／.loc-hint 留在 point-panel.css，因為地點面板裡的照片編輯器也用同一組。
+   由 assets/js/plugins/contribution.js 產生 DOM，view.php 只在 upload 模組開啟時才載入。 */
+#contribModal {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, .5);
+  -webkit-backdrop-filter: blur(3px);
+  backdrop-filter: blur(3px);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  z-index: 1500;
+  padding: 16px
+}
+
+#contribModal.open {
+  display: flex
+}
+
+.modal-box {
+  background: var(--panel);
+  width: 100%;
+  max-width: 620px;
+  max-height: 92dvh;
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--r-lg);
+  overflow: hidden;
+  box-shadow: var(--sh-3)
+}
+
+@media (max-width:640px) {
+  #contribModal {
+    align-items: flex-end;
+    padding: 0
+  }
+
+  .modal-box {
+    max-width: none;
+    max-height: 90dvh;
+    border-radius: var(--r-lg) var(--r-lg) 0 0
+  }
+}
+
+.modal-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 18px;
+  border-bottom: 1px solid var(--line)
+}
+
+.modal-head h3 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 800;
+  flex: 1
+}
+
+/* 分頁列：只有一個分頁時整條不渲染（單一型別的地圖跟改版前長得一樣） */
+.sl-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 8px 18px 0;
+  border-bottom: 1px solid var(--line);
+  overflow-x: auto;
+  scrollbar-width: none
+}
+
+.sl-tabs::-webkit-scrollbar {
+  display: none
+}
+
+.sl-tab {
+  flex: none;
+  border: none;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  padding: 8px 12px 9px;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color var(--t), border-color var(--t)
+}
+
+.sl-tab:hover {
+  color: var(--fg)
+}
+
+.sl-tab.on {
+  color: var(--accent);
+  border-bottom-color: var(--accent)
+}
+
+.sl-tab i {
+  margin-right: 5px
+}
+
+.modal-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px 18px
+}
+
+.queue-empty {
+  text-align: center;
+  padding: 36px 16px
+}
+
+.queue-empty .hint {
+  font-size: 0.75rem;
+  color: var(--muted);
+  margin-top: 10px
+}
+
+/* 空狀態可能有兩顆鈕（音訊分頁：選檔 + 現場錄音） */
+.queue-empty .sl-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  flex-wrap: wrap
+}
+
+.sl-rec-btn.recording {
+  border-color: #c0392b;
+  color: #c0392b;
+  animation: sl-rec-pulse 1.4s ease-in-out infinite
+}
+
+@keyframes sl-rec-pulse {
+  50% {
+    opacity: .55
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sl-rec-btn.recording {
+    animation: none
+  }
+}
+
+.modal-consent {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 18px;
+  border-top: 1px solid var(--line);
+  font-size: 0.78rem;
+  color: var(--muted)
+}
+
+.modal-consent label {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  cursor: pointer;
+  line-height: 1.4
+}
+
+.modal-consent input[type="checkbox"] {
+  margin-top: 2px;
+  flex-shrink: 0
+}
+
+.modal-foot {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 14px 18px;
+  border-top: 1px solid var(--line)
+}
+
+/* ---------- 佇列卡片 ----------
+   取消鈕自己佔一欄（而不是絕對定位疊在欄位上），這樣預覽／無預覽兩種版型都不會壓到暱稱輸入框。
+   三個子元素都指名 grid-area，不靠自動排版——少了任一區塊（無預覽的型別沒有 .thumb）
+   自動排版就會把 .fields 擠到第二列的 100px 欄裡去。 */
+.card {
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  padding: 12px;
+  margin-bottom: 14px;
+  display: grid;
+  grid-template-columns: 100px 1fr 30px;
+  grid-template-areas: "thumb fields cancel";
+  gap: 14px;
+  background: var(--bg);
+  transition: opacity var(--t)
+}
+
+/* 沒有預覽區的型別（文字紀錄、建立地點）：欄位佔滿整張卡片，不要留一塊 100px 的空白 */
+.card.sl-noprev {
+  grid-template-columns: 1fr 30px;
+  grid-template-areas: "fields cancel"
+}
+
+.card.done {
+  opacity: .6
+}
+
+.card .c-cancel {
+  grid-area: cancel;
+  align-self: start;
+  justify-self: end;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  background: none;
+  border: 1px solid transparent;
+  color: var(--muted)
+}
+
+.card .c-cancel:hover:not(:disabled) {
+  border-color: var(--line);
+  background: var(--hover);
+  color: #c0392b
+}
+
+.card .thumb {
+  grid-area: thumb;
+  width: 100px;
+  height: 100px;
+  border-radius: var(--r-sm);
+  background: var(--hover) center/cover no-repeat;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.6875rem;
+  color: var(--muted);
+  text-align: center
+}
+
+/* 音訊沒有縮圖可鋪：改成直向的圖示＋播放器＋長度 */
+.card.sl-kind-audio .thumb {
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px
+}
+
+.card .thumb .sl-c-audio {
+  width: 100%;
+  height: 30px
+}
+
+.card .thumb .sl-c-dur {
+  font-variant-numeric: tabular-nums;
+  font-weight: 700
+}
+
+.card .thumb .sl-c-video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: var(--r-sm);
+  background: #000
+}
+
+.card .fields {
+  grid-area: fields;
+  min-width: 0
+}
+
+.card .time {
+  font-size: 0.6875rem;
+  color: var(--muted);
+  margin-bottom: 6px;
+  display: flex;
+  align-items: center;
+  gap: 5px
+}
+
+.card input[type=text],
+.card textarea {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  padding: 8px 10px;
+  font-size: 0.8125rem;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: inherit;
+  margin-bottom: 8px
+}
+
+.card textarea {
+  min-height: 48px;
+  resize: vertical;
+  line-height: 1.5
+}
+
+/* 建立地點的標題：這張卡片最重要的欄位，比其他輸入框醒目一點 */
+.card .c-title {
+  font-size: 0.9375rem !important;
+  font-weight: 700
+}
+
+.card .c-lab {
+  font-size: 0.6875rem;
+  color: var(--muted);
+  margin: 4px 0 4px;
+  display: block;
+  font-weight: 600
+}
+
+.card .c-chair,
+.card .c-cat {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  padding: 8px 10px;
+  font-size: 0.8125rem;
+  background: var(--bg);
+  color: var(--fg)
+}
+
+/* 新分類的標籤與顏色跟下拉選單擠在同一列，各自不要吃掉整行 */
+.card .c-catlabel {
+  flex: 1;
+  min-width: 0;
+  margin-bottom: 0 !important
+}
+
+.card .c-catcolor {
+  flex: none;
+  width: 38px;
+  height: 34px;
+  padding: 2px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--bg)
+}
+
+.card .row .btn.small {
+  flex: none
+}
+
+.card .mini {
+  height: 140px;
+  border-radius: var(--r-sm);
+  overflow: hidden;
+  margin-bottom: 8px;
+  border: 3px solid var(--line);
+  transition: border-color var(--t)
+}
+
+.card .mini.src-ok {
+  border-color: #2e9e5b
+}
+
+.card .mini.src-warn {
+  border-color: #e8922b
+}
+
+.card .mini.src-info {
+  border-color: #2f7ec6
+}
+
+.card .mini.src-muted {
+  border-color: var(--line)
+}
+
+.card .loc {
+  font-size: 0.6875rem;
+  color: var(--muted);
+  margin-bottom: 10px;
+  line-height: 1.6
+}
+
+@media (prefers-color-scheme: dark) {
+  .card .mini.src-warn {
+    border-color: #e8a54a
+  }
+}
+
+.card .row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap
+}
+
+.card .status {
+  font-size: 0.75rem;
+  font-weight: 600
+}
+
+.card .status.ok {
+  color: #2e9e5b
+}
+
+.card .status.err {
+  color: #c0392b
+}
+
+.card .status.warn {
+  color: #b7791f
+}

@@ -43,17 +43,23 @@
   z-index: 1;
 }
 
-/* 資源包外框覆蓋層：理由同 #panel（point-panel.css），這層鋪滿容器、疊在內容最上面，
-   預設 none 不畫東西，pointer-events:none 不擋點擊。 */
+/* 主題包外框覆蓋層：理由同 #panel（point-panel.css），這層疊在內容最上面、角標外掛在
+   右下角並超出容器輪廓，預設 none 不畫東西，pointer-events:none 不擋點擊。
+   一樣不能寫 border-radius: inherit，寫了角標探出輪廓的部分就會被裁掉；這個容器本身
+   沒有 overflow，不需要像 #panel 那樣另外開 overflow-clip-margin。
+   位置跟 #panel::after 一樣是 bottom right，四個容器的角標才會一致地掛在同一個角；
+   唯一刻意不同的是 size：這個容器是膠囊形、高度只有約 42px，40px 的角標會整個蓋掉膠囊，
+   所以縮成 22px。膠囊右端是半徑約 21px 的半圓、沒有真正的直角，角標掛上去會有一部分
+   落在半圓外側——那正是要的效果，它本來就是一塊往外掛的貼紙。 */
 .tr-group::after {
   content: '';
   position: absolute;
-  inset: 0;
+  inset: -10px;
   z-index: 3;
   pointer-events: none;
-  border-radius: inherit;
-  background-image: var(--pack-frame-overlay-src, none);
-  background-size: 100% 100%;
+  background-image: var(--pack-frame-overlay-chrome-src, var(--pack-frame-overlay-src, none));
+  background-size: 22px 22px;
+  background-position: bottom right;
   background-repeat: no-repeat;
 }
 
@@ -91,8 +97,11 @@
   transition: background var(--t)
 }
 
+/* hover 用半透明的 --hover-strong，不用不透明的 --line：這顆晶片坐在 .tr-group 上，
+   套主題包時底下是材質底圖、文字是 --pack-ink（深色材質配白字），--line 是淺灰不透明色，
+   hover 會整塊蓋成一片淺灰白、白字直接看不見。理由詳見 theme.css 的 --hover 說明。 */
 .idchip:hover {
-  background: var(--line)
+  background: var(--hover-strong)
 }
 
 .lang-menu {
@@ -116,12 +125,13 @@
   transition: background var(--t)
 }
 
+/* hover／展開中的底色同樣改用半透明疊色，理由同 .idchip:hover */
 .lang-btn:hover {
-  background: var(--line)
+  background: var(--hover-strong)
 }
 
 .lang-menu.open .lang-btn {
-  background: var(--line)
+  background: var(--hover-strong)
 }
 
 .lang-btn i {

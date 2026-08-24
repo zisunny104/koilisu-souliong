@@ -1,7 +1,7 @@
 :root {
   /* 淺色（預設） */
   --bg: #ffffff;
-  /* --fg/--muted 透過 --fg-base/--muted-base 間接引用，讓資源包材質面（#panel/.dialog-box/.tr-group）
+  /* --fg/--muted 透過 --fg-base/--muted-base 間接引用，讓主題包材質面（#panel/.dialog-box/.tr-group）
      可以在自己身上局部覆寫 --fg/--muted 成 --pack-ink，其餘地方不受影響；
      若直接在材質面上寫 --fg: var(--pack-ink, var(--fg))，同名變數自我參照會被視為循環，整個宣告失效 */
   --fg-base: #1b1b1d;
@@ -12,7 +12,13 @@
   --panel: #ffffff;
   --accent: #1b1b1d;
   --glass: rgba(255, 255, 255, .78);
+  /* hover 疊色一律用半透明、不用不透明色號：這兩個值會疊在各種底上（主題底色、按鈕自己的
+     不透明底色、主題包材質底圖），半透明才會「把底下的顏色壓深／提亮一點」，換成不透明色號
+     就會整塊蓋掉底色——套主題包時最明顯，深色材質上 hover 會突然變成一塊淺灰白。
+     --hover-strong 是同一個疊色的加強版，給本來就用 --hover 當靜態底色的元件（例如右上
+     資訊列的 .idchip/.lang-btn）當 hover 用，才有得比、看得出狀態差別。 */
   --hover: rgba(0, 0, 0, .055);
+  --hover-strong: rgba(0, 0, 0, .13);
   --accent-fg: #ffffff;
   --map-bg: #e9e9ea;
   --sh-1: 0 1px 3px rgba(0, 0, 0, .08);
@@ -46,6 +52,7 @@
     --accent: #f1f1f3;
     --glass: rgba(30, 30, 33, .8);
     --hover: rgba(255, 255, 255, .08);
+    --hover-strong: rgba(255, 255, 255, .18);
     --accent-fg: #151517;
     --map-bg: #0e0e10;
     --sh-1: 0 1px 3px rgba(0, 0, 0, .4);
@@ -63,6 +70,7 @@
   --accent: #f1f1f3;
   --glass: rgba(30, 30, 33, .8);
   --hover: rgba(255, 255, 255, .08);
+  --hover-strong: rgba(255, 255, 255, .18);
   --accent-fg: #151517;
   --map-bg: #0e0e10;
   --sh-1: 0 1px 3px rgba(0, 0, 0, .4);

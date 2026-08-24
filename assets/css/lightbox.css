@@ -30,6 +30,44 @@
   }
 }
 
+/* 影音播放槽：跟 #lb img 同一組尺寸上限，換型別時燈箱的版面不會跳動。
+   游標不繼承 #lb 的 zoom-out——在播放器上點是操作它，不是關燈箱（見 view.php 的 #lbMedia）。 */
+#lbMedia {
+  cursor: default;
+  max-width: 94vw
+}
+
+#lbMedia video {
+  display: block;
+  max-width: 94vw;
+  max-height: 86vh;
+  border-radius: var(--r-md);
+  box-shadow: var(--sh-3);
+  background: #000
+}
+
+#lbMedia .lb-audio {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: min(94vw, 460px);
+  padding: 20px 22px;
+  border-radius: var(--r-md);
+  background: var(--panel);
+  box-shadow: var(--sh-3)
+}
+
+#lbMedia .lb-audio i {
+  font-size: 1.5rem;
+  color: var(--muted);
+  flex: none
+}
+
+#lbMedia .lb-audio audio {
+  flex: 1;
+  min-width: 0
+}
+
 #lb .cap {
   position: absolute;
   bottom: 20px;

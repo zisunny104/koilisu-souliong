@@ -14,8 +14,12 @@
   max-height: calc(100dvh - 28px);
   display: flex;
   flex-direction: column;
-  overflow: hidden;
-  /* 資源包外框：沒選包時 --pack-frame-src 退回 none，border-image 不生效，原本的 border 正常顯示。
+  /* overflow:clip + overflow-clip-margin 而不是 hidden，理由同 #panel（point-panel.css）：
+     要放行外掛在右下角、超出圓角的主題包角標，而真正的捲動區是 .ctl-body 自己的
+     overflow-y:auto，這裡的 overflow 只負責把內容裁在圓角內，換成 clip 不影響捲動。 */
+  overflow: clip;
+  overflow-clip-margin: 26px;
+  /* 主題包外框：沒選包時 --pack-frame-src 退回 none，border-image 不生效，原本的 border 正常顯示。
      理由同 #panel（point-panel.css） */
   border-image-source: var(--pack-frame-src, none);
   border-image-slice: 24 fill;
@@ -28,7 +32,7 @@
   color: var(--fg);
 }
 
-/* 資源包底圖：獨立圖層放在內容後面，理由同 #panel（point-panel.css） */
+/* 主題包底圖：獨立圖層放在內容後面，理由同 #panel（point-panel.css） */
 .floatcard::before {
   content: '';
   position: absolute;
@@ -46,17 +50,19 @@
   z-index: 1;
 }
 
-/* 資源包外框覆蓋層：理由同 #panel（point-panel.css），這層鋪滿容器、疊在內容最上面，
-   預設 none 不畫東西，pointer-events:none 不擋點擊。 */
+/* 主題包外框覆蓋層：理由同 #panel（point-panel.css），這層疊在內容最上面、角標外掛在
+   右下角並超出圓角，預設 none 不畫東西，pointer-events:none 不擋點擊。
+   inset/size/position/repeat 四行要跟 #panel::after 完全一致，改這裡就要一起改那邊；
+   一樣不能寫 border-radius: inherit，寫了角標探出圓角的部分就會被裁掉。 */
 .floatcard::after {
   content: '';
   position: absolute;
-  inset: 0;
+  inset: -10px;
   z-index: 3;
   pointer-events: none;
-  border-radius: inherit;
-  background-image: var(--pack-frame-overlay-src, none);
-  background-size: 100% 100%;
+  background-image: var(--pack-frame-overlay-card-src, var(--pack-frame-overlay-src, none));
+  background-size: 40px 40px;
+  background-position: bottom right;
   background-repeat: no-repeat;
 }
 
@@ -68,6 +74,7 @@
 .floatcard .ctl-row select {
   --fg: var(--fg-base);
   --muted: var(--muted-base);
+  color: var(--fg);
 }
 
 .ctl-head {
@@ -144,8 +151,10 @@
   transition: background var(--t), color var(--t)
 }
 
+/* 這顆按鈕平常是完全透明的，直接坐在材質底圖上，hover 用一般的 --hover（5.5%／8%）
+   幾乎看不出差別。改用加強版疊色，理由同 .idchip:hover（page-frame.css）。 */
 .icon-btn:hover {
-  background: var(--hover);
+  background: var(--hover-strong);
   color: var(--fg)
 }
 
@@ -210,8 +219,11 @@
   transition: background var(--t), border-color var(--t), opacity var(--t)
 }
 
+/* 疊色寫法同 .btn:hover（理由見那條規則）：晶片自己有不透明的 --bg 底色，直接
+   background: var(--hover) 會把它換成一層 8% 的薄膜，整顆晶片變半透明、底下的材質格紋
+   直接透出來。上層 linear-gradient 鋪疊色、下層重新宣告原本的底色才是「疊上去」。 */
 .chip:hover {
-  background: var(--hover)
+  background: linear-gradient(var(--hover), var(--hover)), var(--bg)
 }
 
 .chip .dot {
@@ -247,9 +259,9 @@
    所以獨立一組變數自己調。兩個變數沒宣告就退回原本的 --bg/--fg-base，沒選包或包沒特別設定
    按鈕色時，長得跟改版前完全一樣。這兩個變數在 :root 宣告（pack.css 裡跟其他 --pack-* 同一層），
    所以不只材質區裡的按鈕會變色，同一頁面任何地方的 .btn（例如批次上傳視窗）也會一起套用，
-   讓整包資源包的視覺風格是全站一致的，不會出現「同一頁按鈕顏色不一樣」的違和感。
+   讓整包主題包的視覺風格是全站一致的，不會出現「同一頁按鈕顏色不一樣」的違和感。
    .on/.primary/.danger 這幾個帶語意的狀態（使用中／主要動作／危險動作）維持用 --accent／
-   固定色，不開放給資源包蓋，避免使用者認不出哪顆是主要或危險按鈕。 */
+   固定色，不開放給主題包蓋，避免使用者認不出哪顆是主要或危險按鈕。 */
 .btn {
   border: 1px solid var(--line);
   border-radius: var(--r-md);
@@ -266,11 +278,14 @@
   transition: background var(--t), border-color var(--t), transform var(--t), box-shadow var(--t)
 }
 
-/* hover 底色維持原本的 --hover 半透明疊色（跟 .p-close:hover 同一個理由，見 point-panel.css）：
-   --hover 是低透明度的黑/白疊層，疊在任何 --pack-btn-bg 上都只會讓底色變深/變淺一點，
-   不需要跟著按鈕底色重新調配，天生就是安全的 */
+/* hover 是「在按鈕原本的底色上再疊一層 --hover」，所以要寫成兩層 background：上層用
+   linear-gradient 把 --hover 這個半透明色鋪成一整片當疊色，下層重複宣告按鈕原本的底色。
+   只寫 background: var(--hover) 是行不通的——background 是「換掉」不是「疊上去」，
+   --hover 只有 5.5% 不透明度，換上去等於整顆按鈕變成幾乎全透明的薄膜：沒選主題包時底下
+   是白色頁面看不太出來，套了深色材質的主題包就會看到按鈕 hover 時黃色底整個消失、
+   直接透出底下的格紋。 */
 .btn:hover {
-  background: var(--hover)
+  background: linear-gradient(var(--hover), var(--hover)), var(--pack-btn-bg, var(--bg))
 }
 
 .btn:active {
@@ -310,10 +325,12 @@
   }
 }
 
+/* 不能用 opacity 當 hover 回饋：opacity 淡化的是「整個元素」，連文字、圖示一起變半透明，
+   套主題包時底下的材質格紋會從按鈕正中央透出來，看起來像按鈕壞掉而不是被 hover 到。
+   改成跟 .btn:hover 同一招，在 --accent 底色上疊一層半透明色，底色本身維持不透明。 */
 .btn.on:hover,
 .btn.primary:hover {
-  opacity: .88;
-  background: var(--accent)
+  background: linear-gradient(var(--hover-strong), var(--hover-strong)), var(--accent)
 }
 
 .btn i {

@@ -18,6 +18,8 @@
     for (let i = 0; i < sides; i++) { const a = (-90 + rot + i * 360 / sides) * Math.PI / 180; p.push((12 + R * Math.cos(a)).toFixed(1) + ',' + (12 + R * Math.sin(a)).toFixed(1)); }
     return p.join(' ');
   }
+  // 還沒填的格子：空心圓點，只用來預告「這個欄位共幾位」，填進去之後才換成上面那組實心幾何圖案
+  const EMPTY_SLOT_SVG = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><circle cx="12" cy="12" r="4.5"/></svg>';
   function maskShapeSVG(kind) {
     const open = '<svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="4" stroke-linejoin="round" stroke-linecap="round">';
     const inner = {
@@ -31,20 +33,37 @@
     return open + inner + '</svg>';
   }
 
-  // type="password" 的欄位：真正輸入仍走原生欄位（含數字鍵盤/切換），只是把原生圓點遮罩換成幾何圖案疊層
+  // 真正輸入仍走原生欄位（含數字鍵盤/切換），只是把看得見的字換成幾何圖案疊層。
+  // 掛了 data-pin-toggle 的欄位一律套用——這些欄位就是 PIN／投稿碼，本來就該遮起來，
+  // 不再只認 type="password"：view.php 裡除了管理者 PIN 之外的幾個欄位都是 type="text"，
+  // 只認 password 的話那幾個欄位會直接把碼明碼顯示，遮罩形同沒做。
+  // 個別欄位若真的需要看見原文，加 data-pin-mask="off" 就好。
   function buildMaskOverlay(input, wrap) {
-    if (input.type !== 'password') return;
+    if (input.dataset.pinMask === 'off') return;
+    // data-pin-slots="6"：長度固定的欄位（例如投稿碼）先用空心圓點把 6 格位置預告出來，
+    // 每輸入一位就把該格換成實心幾何圖案，看得出「還差幾位」。長度不固定的欄位（管理者 PIN）
+    // 不宣告這個屬性，就維持「打幾位長幾個圖案」，不會謊報一個其實不存在的位數。
+    const slots = Math.min(parseInt(input.dataset.pinSlots || '', 10) || 0, MASK_MAX);
     input.style.color = 'transparent';
-    input.style.caretColor = 'currentColor';
+    // 有預告格子時關掉原生游標：文字是透明的，游標會落在透明字的位置，跟置中排列的圖案對不齊，
+    // 看起來像多出一條跟任何一格都無關的線；改用把「下一格」畫得比其他空格明顯來指示進度。
+    input.style.caretColor = slots ? 'transparent' : 'currentColor';
+    // 格子本身已經說明了位數，再留一行「6 位數字」的預設填充字會跟圖案疊在一起
+    if (slots) input.placeholder = '';
     const overlay = document.createElement('span');
     overlay.className = 'pin-mask-overlay';
     overlay.setAttribute('aria-hidden', 'true');
     wrap.appendChild(overlay);
     function render() {
       const n = Math.min(input.value.length, MASK_MAX);
+      const total = Math.max(n, slots);
       let html = '';
-      for (let i = 0; i < n; i++) {
-        html += '<span class="pin-mask-dot' + (i === n - 1 ? ' pop' : '') + '">' + maskShapeSVG(MASK_KINDS[i % MASK_KINDS.length]) + '</span>';
+      for (let i = 0; i < total; i++) {
+        if (i < n) {
+          html += '<span class="pin-mask-dot' + (i === n - 1 ? ' pop' : '') + '">' + maskShapeSVG(MASK_KINDS[i % MASK_KINDS.length]) + '</span>';
+        } else {
+          html += '<span class="pin-mask-dot pin-blank' + (i === n ? ' pin-next' : '') + '">' + EMPTY_SLOT_SVG + '</span>';
+        }
       }
       overlay.innerHTML = html;
     }
