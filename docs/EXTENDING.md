@@ -218,6 +218,19 @@ owner_hash, src_hash, contrib_id, contrib_hash, edit_of, created_at
 
 「特定專案才有插畫疊圖」不需要額外的開關：`meta.json` 沒寫就是沒有。
 
+**內建的全站層**（`layers/`，都是外部圖磚服務，一個檔案都不落地）：
+
+| id | 用途 |
+| --- | --- |
+| `carto-voyager` | 通用底圖，道路較寬、有淡彩。`default_layers` 的預設值。深色模式換 Dark Matter。 |
+| `carto-positron` | 配色極淡，幾乎只剩路網輪廓與地名。要讓自繪插畫當主角時選這張。深色模式換 Dark Matter。 |
+| `carto-positron-nolabels` | Positron 拿掉所有文字。手繪稿自己寫了地名時，底圖不必再標一次。 |
+| `demo-overlay` | 透明 SVG 疊圖的參考範例，不是給正式地圖用的。 |
+
+三張 CARTO 底圖都在 `sl-base` pane，同時勾兩張只有上面那張看得到——它們是彼此的替代品，不是可以疊加的東西。
+
+要再加一個外部來源（國土測繪中心的電子地圖與正射航照、Esri 的衛星影像、中研院的歷史地圖…）就是「多一個資料夾放 `layer.json`」，不必動任何程式碼。注意 `attribution` 必須跟著來源走：CARTO 圖磚的資料是 OpenStreetMap，換一家就要換一份標註。
+
 ### 8.3 `layer.json`
 
 ```json
