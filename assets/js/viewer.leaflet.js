@@ -37,28 +37,149 @@ window.MapApp = (() => {
   const kindOf = (e) => (e && KINDS[e.kind] ? e.kind : 'photo');
   const kindDef = (e) => KINDS[kindOf(e)];
 
-  // 版權標註（依 OSM 慣例含連結）——資料著作權（OSM）領頭，其次圖磚/框架（CARTO/Leaflet），自家連結依重要性排最後：GitHub → Souliong → prjToka
+  // 版權標註（依 OSM 慣例含連結）——資料/圖磚的來源標註跟著圖層走（各層 layer.json 自己的
+  // attribution，由 buildCredit() 去重串接），框架與自家連結則是固定的，依重要性排最後：
+  // Leaflet → GitHub → Souliong → prjToka。換底圖時來源那半段會跟著變，自家這半段不動。
   const REPO_URL = 'https://github.com/zisunny104/koilisu-souliong';
   const SITE_URL = (APP.base || '/');          // Souliong 平台首頁
   const ORG_URL = 'https://toka.dev';          // prjToka
-  const CREDIT_HTML =
-    '<span class="cr-ext">' +
-      '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> ' + t('osm_contributors') + ' &middot; ' +
-      '<a href="https://carto.com/attributions" target="_blank" rel="noopener">CARTO</a> &middot; ' +
-      '<a href="https://leafletjs.com" target="_blank" rel="noopener">Leaflet</a>' +
-    '</span>' +
+  const CREDIT_OWN =
     '<span class="cr-sep" aria-hidden="true"></span>' +
     '<span class="cr-own">' +
       '<a href="' + REPO_URL + '" target="_blank" rel="noopener" aria-label="' + t('github_source_aria') + '"><i class="fa-brands fa-github"></i></a> &middot; ' +
       '<a href="' + SITE_URL + '">Souliong</a> &middot; <a href="' + ORG_URL + '" target="_blank" rel="noopener">prjToka</a>' +
     '</span>';
+  // layer.json 的 attribution 裡可以寫 {key} 引用翻譯字串（例：{osm_contributors}），
+  // 這樣來源標註留在 manifest，又不必為每種語言各寫一份 manifest。
+  const i18nSub = (s) => String(s == null ? '' : s).replace(/\{([a-z0-9_]+)\}/gi, (_, k) => t(k));
+  function buildCredit(manifests) {
+    const src = [];
+    manifests.forEach(m => {
+      const a = i18nSub(m && m.attribution);
+      if (a && src.indexOf(a) < 0) src.push(a);   // 同一個來源疊兩層（例如底圖＋同來源道路層）只列一次
+    });
+    src.push('<a href="https://leafletjs.com" target="_blank" rel="noopener">Leaflet</a>');
+    return '<span class="cr-ext">' + src.join(' &middot; ') + '</span>' + CREDIT_OWN;
+  }
   // 主題：system / light / dark（手動可覆蓋系統偏好）
-  const TILE_OPTS = { maxZoom: 20, subdomains: 'abcd', detectRetina: true, attribution: CREDIT_HTML };
   const systemDark = () => !!(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
   const isDark = () => { const t = document.documentElement.dataset.theme; return t === 'dark' ? true : t === 'light' ? false : systemDark(); };
-  // 底圖：淺色用 Voyager（道路較寬、有淡彩），深色用 Dark Matter
-  const tileUrl = () => 'https://{s}.basemaps.cartocdn.com/' + (isDark() ? 'dark_all' : 'rastertiles/voyager') + '/{z}/{x}/{y}{r}.png';
-  function addTileLayer(map) { return L.tileLayer(tileUrl(), TILE_OPTS).addTo(map); }
+
+  /* ---------- 地圖圖層（伺服器端見 api/layers.php）----------
+     由 view.php 依 meta.json 的 layers（沒寫就用 config 的 default_layers）解析好塞進 APP.layers，
+     由下往上排序。相對路徑在 PHP 端就被改寫成絕對網址，所以這裡完全不必分辨圖磚是外部服務
+     還是本站 layer 端點輸出的，也不必分辨圖層是全站的還是這張地圖專屬的。 */
+  // APP.layers 缺席時的保命底圖（獨立部署，或 view.php 還沒更新到有 layers 的版本）。
+  // 內容與 layers/carto-voyager/layer.json 一致——這是全專案唯一一處重複，寧可重複也不要
+  // 因為少一個設定就整張地圖開天窗。
+  const FALLBACK_LAYER = {
+    id: 'carto-voyager', type: 'raster', pane: 'base',
+    url: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
+    urlDark: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+    subdomains: 'abcd', detectRetina: true, maxZoom: 20,
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> {osm_contributors} &middot; <a href="https://carto.com/attributions" target="_blank" rel="noopener">CARTO</a>',
+  };
+  const layerManifests = () => (APP.layers && APP.layers.length) ? APP.layers : [FALLBACK_LAYER];
+  // Leaflet 預設只有 tilePane(200)／overlayPane(400)／markerPane(600)，圖層彼此之間沒有可以
+  // 指定的層級。這裡替四種角色各開一個 pane，全部落在 400 以下，所以路徑線與點位標記照舊
+  // 蓋在所有圖層上面。認不得的 pane 值一律當插畫層（疊最上面）。
+  const LAYER_PANES = { base: 200, paper: 220, road: 240, art: 260 };
+  const paneKey = (m) => (m && LAYER_PANES[m.pane] != null) ? m.pane : 'art';
+
+  /** 一張圖層。子類負責「怎麼變成一個 L.Layer」，其餘（pane、換主題、掛上／移除）都在這裡。 */
+  class MapLayer {
+    static from(m) { return (m && m.type === 'image') ? new ImageLayer(m) : new RasterLayer(m); }
+    constructor(m) { this.m = m || {}; this.leaflet = null; }
+    /** 深淺色切換時要不要整層重建——只有真的備了深色版的圖層需要，其餘原地不動 */
+    get themeSensitive() { return !!this.m.urlDark; }
+    srcUrl(dark) { return (dark && this.m.urlDark) ? this.m.urlDark : this.m.url; }
+    build(dark, opts) { throw new Error('MapLayer.build() is abstract'); }
+    addTo(map, dark, opts) {
+      const built = this.build(dark, opts || {});
+      if (!built) return this;
+      this.leaflet = built.addTo(map);
+      return this;
+    }
+    remove(map) { if (this.leaflet) { map.removeLayer(this.leaflet); this.leaflet = null; } }
+  }
+
+  /** 圖磚層（外部圖磚服務或本站切好的金字塔）。manifest 的欄位是「跟著來源走的屬性」，
+      subdomains／detectRetina／maxNativeZoom 這些少一個就會破圖，所以整組跟著 manifest。 */
+  class RasterLayer extends MapLayer {
+    build(dark, opts) {
+      const m = this.m;
+      const url = this.srcUrl(dark);
+      if (!url) return null;
+      const o = { pane: opts.pane, maxZoom: m.maxZoom != null ? m.maxZoom : 20 };
+      if (m.subdomains) o.subdomains = m.subdomains;
+      if (m.detectRetina) o.detectRetina = true;
+      if (m.maxNativeZoom != null) o.maxNativeZoom = m.maxNativeZoom;
+      if (m.minZoom != null) o.minZoom = m.minZoom;
+      if (m.opacity != null) o.opacity = m.opacity;
+      if (m.tms) o.tms = true;
+      if (m.bounds) o.bounds = L.latLngBounds(m.bounds);   // 稀疏疊圖：範圍外根本不發請求
+      if (m.className) o.className = m.className;
+      if (opts.attribution) o.attribution = opts.attribution;
+      return L.tileLayer(url, o);
+    }
+  }
+
+  /** 單張疊圖（透明 PNG／SVG）。不切圖磚，靠 bounds 定位；沒有 bounds 就無從擺放，直接不掛。 */
+  class ImageLayer extends MapLayer {
+    build(dark, opts) {
+      const m = this.m;
+      const url = this.srcUrl(dark);
+      if (!url || !m.bounds) return null;
+      const o = { pane: opts.pane, interactive: false };
+      if (m.opacity != null) o.opacity = m.opacity;
+      if (m.className) o.className = m.className;
+      if (opts.attribution) o.attribution = opts.attribution;
+      return L.imageOverlay(url, L.latLngBounds(m.bounds), o);
+    }
+  }
+
+  /** 一整疊圖層（由下往上）加上它們共同的版權標註。地圖只跟這個物件打交道。 */
+  class LayerStack {
+    constructor(manifests) {
+      this.manifests = (manifests && manifests.length) ? manifests : [FALLBACK_LAYER];
+      this.layers = this.manifests.map(m => MapLayer.from(m));
+      this.credit = buildCredit(this.manifests);
+      this.map = null;
+    }
+    ensurePanes(map) {
+      Object.keys(LAYER_PANES).forEach(k => {
+        const name = 'sl-' + k;
+        if (!map.getPane(name)) { map.createPane(name); map.getPane(name).style.zIndex = LAYER_PANES[k]; }
+      });
+    }
+    /** 版權整組掛在最底層那一個 L.Layer 上：上層換主題重建時版權列才不會閃一下。 */
+    _opts(i, layer) {
+      return { pane: 'sl-' + paneKey(layer.m), attribution: i === 0 ? this.credit : undefined };
+    }
+    addTo(map, dark) {
+      this.map = map;
+      this.ensurePanes(map);
+      this.layers.forEach((l, i) => l.addTo(map, dark, this._opts(i, l)));
+      return this;
+    }
+    applyTheme(dark) {
+      if (!this.map) return;
+      this.layers.forEach((l, i) => {
+        if (!l.themeSensitive) return;
+        l.remove(this.map);
+        l.addTo(this.map, dark, this._opts(i, l));
+      });
+    }
+  }
+
+  /** 只有底圖那一層的一疊：分享卡片與定位用的小地圖不需要插畫疊圖，也不該被它擋住地標。 */
+  function baseManifests() {
+    const all = layerManifests();
+    const base = all.filter(m => paneKey(m) === 'base');
+    return (base.length ? base : all).slice(0, 1);
+  }
+  /** 插件公開 API（見 docs/EXTENDING.md）：在一張小地圖上掛好底圖。 */
+  function addTileLayer(map) { return new LayerStack(baseManifests()).addTo(map, isDark()); }
   let themeMode = localStorage.getItem('theme') || 'system';
   if (themeMode !== 'system') document.documentElement.dataset.theme = themeMode;
 
@@ -338,14 +459,9 @@ window.MapApp = (() => {
   }
 
   let META = null, POINTS = [], CATS = [], active = {}, CONTRIB = [], counts = {};
-  let map, photoLayer, baseTile = null, photoLayerOn = false;
+  let map, photoLayer, baseStack = null, photoLayerOn = false;
   let filterPerson = '';
 
-  function setBaseTile() {
-    if (baseTile) map.removeLayer(baseTile);
-    baseTile = L.tileLayer(tileUrl(), TILE_OPTS).addTo(map);
-    baseTile.bringToBack();
-  }
   function updateThemeIcon() {
     const icon = { system: 'fa-circle-half-stroke', light: 'fa-sun', dark: 'fa-moon' }[themeMode] || 'fa-circle-half-stroke';
     const btn = document.getElementById('themeBtn');
@@ -357,7 +473,7 @@ window.MapApp = (() => {
     else document.documentElement.dataset.theme = mode;
     localStorage.setItem('theme', mode);
     updateThemeIcon();
-    if (map) setBaseTile();
+    if (baseStack) baseStack.applyTheme(isDark());
   }
   const chairMarkers = {};
 
@@ -709,7 +825,7 @@ window.MapApp = (() => {
     const miniDiv = el.querySelector('.pt-mini');
     const mini = L.map(miniDiv, { attributionControl: false, zoomControl: false, dragging: true }).setView([lat0, lon0], 17);
     el._mini = mini;
-    L.tileLayer(tileUrl(), TILE_OPTS).addTo(mini);
+    addTileLayer(mini);
     const mk = L.marker([lat0, lon0], { draggable: true }).addTo(mini);
     const state = { lat: lat0, lon: lon0 };
     mk.on('dragend', ev => { const ll = ev.target.getLatLng(); state.lat = ll.lat; state.lon = ll.lng; });
@@ -858,7 +974,7 @@ window.MapApp = (() => {
     const lon0 = typeof e.lon === 'number' ? e.lon : META.center[1];
     const mini = L.map(miniDiv, { attributionControl: false, zoomControl: false, dragging: true }).setView([lat0, lon0], 16);
     panel._mini = mini;
-    L.tileLayer(tileUrl(), TILE_OPTS).addTo(mini);
+    addTileLayer(mini);
     const mk = L.marker([lat0, lon0], { draggable: true }).addTo(mini);
     const state = { lat: lat0, lon: lon0, source: e.loc_source || 'manual' };
     const locEl = panel.querySelector('.pe-loc');
@@ -1159,7 +1275,7 @@ window.MapApp = (() => {
     rebuildCats();   // 此時 CONTRIB 還是空的，結果就是 POINTS 的分類；投稿載入後會再算一次
 
     map = L.map('map', { zoomControl: false }).setView(META.center || [23.9, 120.7], META.zoom || 14);
-    setBaseTile();
+    baseStack = new LayerStack(layerManifests()).addTo(map, isDark());
     L.control.zoom({ position: 'bottomleft' }).addTo(map);
     map.attributionControl.setPosition('bottomright');   // CSS 置中於下方
     map.attributionControl.setPrefix(false);
@@ -1186,7 +1302,7 @@ window.MapApp = (() => {
       applyTheme(order[(order.indexOf(themeMode) + 1) % 3]);
       feature('theme');
     };
-    if (window.matchMedia) window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { if (themeMode === 'system') setBaseTile(); });
+    if (window.matchMedia) window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { if (themeMode === 'system' && baseStack) baseStack.applyTheme(isDark()); });
 
     // 語言切換（手動覆寫）：客製化下拉（原生 select 選單樣式無法跟主題搭配），選了哪個就切哪個，
     // 帶著目前網址參數整頁重新載入，讓伺服器端重新解析並寫入 lang cookie

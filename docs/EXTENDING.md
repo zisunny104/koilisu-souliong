@@ -193,7 +193,77 @@ owner_hash, src_hash, contrib_id, contrib_hash, edit_of, created_at
 
 目前接上這個機制的有兩組：`personExplore`（依序探索）相依 `identity`（投稿者身分）——只有訪客能設定具名身分時，「選了某人、依序探索他的地標」才有意義；`identity` 相依 `upload`（上傳投稿）——身分小標籤點擊後的「快速上傳」捷徑、與解鎖對話框裡「建立身分」的 PIN／暱稱欄位（`#idToggleBtn`/`#idFields`）都只在 `#unlockDialog` 存在（即 `upload` 開啟）時才有意義，核心 `identityChipClick()` 本來就已經用 `MOD('upload')` 判斷過一次（見上一節），這裡只是把既有的耦合明文化。兩段相依會串連：`upload` 關閉 → `identity` 一併關閉 → `personExplore` 也跟著關閉，即使該地圖的 `personExplore`／`identity` 旗標本身仍是開著的（後台勾選框仍會顯示、但不生效）。
 
-## 八、命名與品牌
+## 八、地圖圖層（底圖／疊圖）
+
+底圖與插畫疊圖歸「資源」那一類，**不是插件**。判準就是上一節那條：插件是「可以整包關掉、關掉後核心不認得它」的功能，而底圖關掉地圖就沒了。它的形狀跟主題包一樣是「用哪一包」，不是布林開關——差別只在**數量與順序**：一張地圖只套一個 pack，卻可以由下往上疊好幾層圖層。
+
+### 8.1 兩層作用域
+
+| 作用域 | 位置 | 進版控？ | 用途 |
+|---|---|---|---|
+| `site` | `layers/<id>/` | 是 | 平台內建、所有地圖共用的底圖 |
+| `project` | `projects/<proj>/layers/<id>/` | 否 | 這張地圖專屬（自繪插畫多半屬於這類） |
+
+專案層放在 `projects/` 底下不是隨便選的：那整棵目錄本來就在 `.gitignore`，所以自繪插畫、切好的圖磚金字塔這種「內容而非程式」的檔案天然不進版控，不必為了體積另立規則。同名 id 時**專案層覆蓋全站層**，讓單一地圖能在不影響其他地圖的前提下改掉內建圖層。
+
+反過來說，`url` 直接指向外部圖磚服務的圖層（CARTO、國土測繪中心…）一個檔案都不落地，連數量問題都不存在。
+
+### 8.2 註冊表與選用
+
+比照 `api/packs.php`：註冊表就是目錄底下的資料夾本身，沒有中央 index 檔，新增一層只要新增一個資料夾（內含 `layer.json`）。解析在 `api/layers.php`：
+
+- `souliong_layer_list($cfg, $proj)` — 掃兩層作用域，回傳 `[id => manifest]`，manifest 會被補上 `id`（資料夾名稱才算數，`layer.json` 內容不可覆寫）與 `scope`。
+- `souliong_layers_for($cfg, $meta, $proj)` — 這張地圖生效的**有序**陣列。`meta.json` 的 `"layers": ["carto-voyager", "chungshing-art"]` 由下往上；沒有這個欄位就退回 `config` 的 `default_layers`（預設 `['carto-voyager']`，也就是圖層化之前寫死在檢視器裡的那張底圖，所以舊地圖零影響）。選到不存在的 id 會被靜靜略過，不讓整張地圖開天窗。
+- `souliong_layers_public($cfg, $meta, $proj, $base)` — 前端版本，額外把相對 `url` 改寫成絕對網址。
+
+「特定專案才有插畫疊圖」不需要額外的開關：`meta.json` 沒寫就是沒有。
+
+### 8.3 `layer.json`
+
+```json
+{
+  "label": "中興新村手繪",
+  "type": "image",
+  "pane": "art",
+  "url": "overlay.svg",
+  "bounds": [[23.94, 120.66], [23.97, 120.70]],
+  "opacity": 0.9,
+  "attribution": "繪圖：某某"
+}
+```
+
+`type` 目前兩種：`raster`（`L.tileLayer`，吃 `subdomains`／`detectRetina`／`maxZoom`／`maxNativeZoom`／`minZoom`／`tms`／`bounds`）與 `image`（`L.imageOverlay`，`bounds` 是必要的，可用透明 PNG 或 SVG）。`urlDark` 有值的圖層會在深淺色切換時重建，沒有的原地不動。
+
+**這些欄位必須整組跟著 manifest，不能只抽 URL**：`subdomains`／`detectRetina`／`maxNativeZoom` 都是跟著來源走的屬性，少一個就破圖。
+
+`attribution` 也一樣跟著來源走——CARTO 的圖磚是 OSM 資料，國土測繪中心的不是，寫死在檢視器裡一定會錯。裡面可以用 `{key}` 引用翻譯字串（例 `{osm_contributors}`），這樣來源標註留在 manifest，又不必為每種語言各寫一份。檢視器的 `buildCredit()` 把各層的 attribution 去重串接，再接上固定的 Leaflet ＋ 自家連結。
+
+`pane` 決定疊放層級。Leaflet 預設只有 `tilePane`(200)／`overlayPane`(400)／`markerPane`(600)，圖層之間沒有可指定的層級，所以檢視器替四種角色各開一個 pane：
+
+| `pane` | z-index | 角色 |
+|---|---|---|
+| `base` | 200 | 底圖 |
+| `paper` | 220 | 紙張底色 |
+| `road` | 240 | 道路 |
+| `art` | 260 | 插畫疊圖（認不得的值一律歸這裡） |
+
+全部落在 400 以下，所以路徑線與點位標記照舊蓋在所有圖層上面。
+
+### 8.4 前端：`MapLayer` 類別族
+
+在 `viewer.leaflet.js`。`MapLayer` 是抽象基底，子類只需要回答「怎麼變成一個 `L.Layer`」（`build(dark, opts)`），其餘（pane、換主題重建、掛上／移除）都在基底；`MapLayer.from(manifest)` 依 `type` 挑子類。`LayerStack` 持有一整疊圖層與它們共同的版權標註，地圖只跟它打交道（`addTo(map, dark)` / `applyTheme(dark)`）。版權整組掛在最底層那一個 `L.Layer` 上，上層換主題重建時版權列才不會閃一下。
+
+新增一種圖層＝多一個 `MapLayer` 子類（例如向量圖磚：protomaps-leaflet 是 `L.GridLayer`，不必離開 Leaflet），核心其餘部分不用動。
+
+分享卡片與定位用的小地圖走 `addTileLayer(map)`（插件公開 API），它只掛 `base` 那一層——那些畫面不需要插畫疊圖，也不該被它擋住地標。
+
+### 8.5 尚未完成
+
+- **`<base>/layer/<project>/<id>/<路徑>` 端點還沒開。** `souliong_layer_public()` 已經會把相對 `url` 改寫成這條網址，但 `index.php` 沒有這條路由，所以**目前只有 `url` 指向外部服務的圖層能動**，圖檔放在自己資料夾裡的會 404。框架不供應靜態檔，要比照 `api/photo.php` 開端點（副檔名白名單；SVG 要加 `Content-Security-Policy: sandbox`，否則有人直接開那個網址時內嵌的 script 會在同源執行）。
+- 後台沒有圖層管理介面（排序、匯出匯入），目前只能手改 `meta.json`。
+- 沒有「匯入一張圖、自動切成圖磚」的工具。要做的話形狀比照 `api/thumbfix.php`：瀏覽器逐批呼叫、PHP 用 GD 一次切一個 zoom level，避開執行時間與記憶體上限。
+
+## 九、命名與品牌
 
 - 平台：**Souliong｜循跡**（原創詞，靈感取自客語拼音音韻與 Soul＝地方精神；非客語單字）。
 - Slogan：Every place leaves traces. Every trace tells a story.（每個地方都留下痕跡，每一道痕跡都有故事。）

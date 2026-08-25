@@ -1,0 +1,12 @@
+{
+  "label": "CARTO Voyager",
+  "desc": "OpenStreetMap 資料、CARTO 繪製的通用底圖。淺色用 Voyager（道路較寬、有淡彩），深色用 Dark Matter。這是圖層化之前寫死在檢視器裡的那張底圖，也是 default_layers 的預設值。",
+  "type": "raster",
+  "pane": "base",
+  "url": "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png",
+  "urlDark": "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
+  "subdomains": "abcd",
+  "detectRetina": true,
+  "maxZoom": 20,
+  "attribution": "&copy; <a href=\"https://www.openstreetmap.org/copyright\" target=\"_blank\" rel=\"noopener\">OpenStreetMap</a> {osm_contributors} &middot; <a href=\"https://carto.com/attributions\" target=\"_blank\" rel=\"noopener\">CARTO</a>"
+}

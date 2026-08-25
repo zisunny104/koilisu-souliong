@@ -30,6 +30,7 @@ require __DIR__ . '/../api/security.php';
 require __DIR__ . '/../api/i18n.php';
 require __DIR__ . '/../api/features.php';
 require_once __DIR__ . '/../api/packs.php';
+require_once __DIR__ . '/../api/layers.php';
 $apiCfg    = require __DIR__ . '/../api/config.php';
 $isManager = admin_can($apiCfg, $proj);
 // 投稿開關＝有沒有還有效的投稿碼（真正的碼在伺服器端 codes.json，前端拿不到）。
@@ -50,6 +51,9 @@ $mod = fn(string $key): bool => souliong_module_on($meta, $key);
 // 避免 PHP 端 $mod() 與 JS 端各自判斷、日後模組間有相依時兩邊算出不同答案。
 $moduleState = array_combine(array_keys(souliong_modules()), array_map($mod, array_keys(souliong_modules())));
 $pack = souliong_pack_for($apiCfg, $meta);
+// 這張地圖由下往上要疊哪幾層圖磚／插畫。跟 $pack 同樣是「用哪一包」而非布林開關，差別只在
+// 圖層是有序陣列。相對路徑的圖檔在這裡就被改寫成 <base>/layer/... 絕對網址，前端不必分辨。
+$layers = souliong_layers_public($apiCfg, $meta, $proj, $base);
 // 這張地圖開放哪些投稿型別、對話框預設開哪一頁、誰能建立地點（meta.json 的 contrib 區塊）。
 // 跟 $moduleState 同樣的原則：PHP 端解析一次，前端直接讀 APP.contrib，不在兩邊各自算預設值。
 $contribCfg = souliong_contrib_cfg($meta);
@@ -73,6 +77,7 @@ $APP = [
     'moduleState' => $moduleState,
     'contrib'     => $contribCfg,
     'pack'        => $pack,
+    'layers'      => $layers,
 ];
 $jsonFlags = JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_APOS;
 ?><!DOCTYPE html>
