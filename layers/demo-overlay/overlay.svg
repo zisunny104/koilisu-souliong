@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 960" width="1000" height="960">
+  <!-- 示範用的透明疊圖。看得到的只有畫上去的筆觸，其餘完全透出底圖——這就是「自繪插畫疊圖」
+       要的效果。實際使用時把這個檔換成自己的插畫，並在 layer.json 改 bounds 對準位置。
+       用 SVG 而不是 PNG 的好處：檔案小、放大不糊、純文字進版控 diff 得動。 -->
+  <defs>
+    <linearGradient id="wash" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#e8541c" stop-opacity="0.30"/>
+      <stop offset="100%" stop-color="#c8963c" stop-opacity="0.16"/>
+    </linearGradient>
+  </defs>
+
+  <!-- 圖層範圍（bounds）的虛線框：實務上不會畫，這裡是為了讓人一眼看出疊圖對到哪一塊 -->
+  <rect x="14" y="14" width="972" height="932" rx="26"
+        fill="none" stroke="#e8541c" stroke-opacity="0.55" stroke-width="5" stroke-dasharray="22 16"/>
+
+  <!-- 手繪感的色塊：邊界不規則，刻意不對齊任何街廓 -->
+  <path d="M188 286 C 262 190, 430 158, 546 214 C 664 271, 720 388, 690 494
+           C 660 600, 540 668, 424 652 C 308 636, 214 552, 186 448 C 168 382, 168 328, 188 286 Z"
+        fill="url(#wash)" stroke="#e8541c" stroke-opacity="0.45" stroke-width="6" stroke-linejoin="round"/>
+
+  <!-- 一條散步路線 -->
+  <path d="M262 716 C 360 690, 402 604, 486 566 C 570 528, 664 552, 742 498"
+        fill="none" stroke="#7a5a3a" stroke-opacity="0.6" stroke-width="9"
+        stroke-linecap="round" stroke-dasharray="4 26"/>
+  <circle cx="262" cy="716" r="15" fill="#7a5a3a" fill-opacity="0.6"/>
+  <circle cx="742" cy="498" r="15" fill="#7a5a3a" fill-opacity="0.6"/>
+
+  <text x="500" y="856" text-anchor="middle"
+        font-family="'Noto Sans TC','PingFang TC','Microsoft JhengHei',sans-serif"
+        font-size="52" fill="#8a3a12" fill-opacity="0.72">示範疊圖</text>
+  <text x="500" y="906" text-anchor="middle"
+        font-family="'Noto Sans TC','PingFang TC','Microsoft JhengHei',sans-serif"
+        font-size="28" fill="#8a3a12" fill-opacity="0.55">layers/demo-overlay/overlay.svg</text>
+</svg>

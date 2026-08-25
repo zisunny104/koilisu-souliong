@@ -257,9 +257,28 @@ owner_hash, src_hash, contrib_id, contrib_hash, edit_of, created_at
 
 分享卡片與定位用的小地圖走 `addTileLayer(map)`（插件公開 API），它只掛 `base` 那一層——那些畫面不需要插畫疊圖，也不該被它擋住地標。
 
-### 8.5 尚未完成
+### 8.5 圖檔端點 `<base>/layer/<project>/<id>/<路徑>`
 
-- **`<base>/layer/<project>/<id>/<路徑>` 端點還沒開。** `souliong_layer_public()` 已經會把相對 `url` 改寫成這條網址，但 `index.php` 沒有這條路由，所以**目前只有 `url` 指向外部服務的圖層能動**，圖檔放在自己資料夾裡的會 404。框架不供應靜態檔，要比照 `api/photo.php` 開端點（副檔名白名單；SVG 要加 `Content-Security-Policy: sandbox`，否則有人直接開那個網址時內嵌的 script 會在同源執行）。
+`layer.json` 的 `url` 若是相對路徑，代表圖檔就放在該層自己的資料夾裡。框架不供應靜態檔（理由同 `api/photo.php`），所以由 `api/layerfile.php` 輸出：
+
+```
+圖磚   <base>/layer/100chairs/chungshing-art/tiles/16/54738/28275.png
+單張   <base>/layer/100chairs/demo-overlay/overlay.svg
+```
+
+一支端點同時吃圖磚與單張：自繪插畫可能切成金字塔、也可能就是一張大透明 PNG／SVG，兩者只差在資料夾裡的路徑長相，`layer.json` 想換形式時網址結構不用跟著改。`<project>` 只決定解析範圍（專案層優先於全站層），全站層也走同一條網址——前端因此永遠拿到同一種網址形狀，不必知道圖層是誰的。
+
+把關方式：
+
+- **副檔名白名單**（`png`／`webp`／`jpg`／`jpeg`／`avif`／`svg`）。這道關卡同時保證 `layer.json` 本身拿不到——註冊表內容不該從公開端點外流。
+- **路徑**每一段只允許保守字元、整串不得出現 `..`，最後再用 `realpath()` 確認實體位置落在該圖層資料夾之內（符號連結一併攤平）。
+- **SVG 回應加 `Content-Security-Policy: default-src 'none'; sandbox`**：SVG 可以內嵌 `<script>`，放在 `<img>` 裡不會執行，但有人直接開這個網址就會——同源之下那等於「能放圖層檔的人＝能在本站執行腳本」。在回應層面關掉，不倚賴呼叫端怎麼用。
+- **找不到檔案時分兩種**：稀疏疊圖的常態是「這一格根本沒畫」，所以圖磚形狀（`…/<z>/<x>/<y>.<ext>`）的請求回一張 68 bytes 的全透明 PNG（帶 `X-Souliong-Tile: miss`，分得出「空白」與「真的有一張全透明的磚」），Leaflet 就不會為每個空格印一行紅字；其餘（單張疊圖路徑打錯）照實回 404。
+
+`layers/demo-overlay/` 是可以照抄的參考範例：一張透明 SVG 蓋在底圖上，沒畫到的地方完全透出底圖。要用在自己的地圖上，複製整個資料夾、換掉 `overlay.svg`、把 `bounds` 改成插畫實際對應的西南／東北兩角，再把 id 加進 `meta.json` 的 `layers`。
+
+### 8.6 尚未完成
+
 - 後台沒有圖層管理介面（排序、匯出匯入），目前只能手改 `meta.json`。
 - 沒有「匯入一張圖、自動切成圖磚」的工具。要做的話形狀比照 `api/thumbfix.php`：瀏覽器逐批呼叫、PHP 用 GD 一次切一個 zoom level，避開執行時間與記憶體上限。
 

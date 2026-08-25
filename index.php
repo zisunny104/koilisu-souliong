@@ -42,6 +42,10 @@ switch ($action) {
         $_GET['f'] = count($seg) > 1 ? implode('/', array_slice($seg, 1)) : ($_GET['f'] ?? '');
         require __DIR__ . '/api/media.php';   // 影片／音訊，支援 Range（見該檔說明）
         return;
+    case 'layer':
+        $_GET['f'] = count($seg) > 1 ? implode('/', array_slice($seg, 1)) : ($_GET['f'] ?? '');
+        require __DIR__ . '/api/layerfile.php';   // 圖層圖檔：<base>/layer/<project>/<id>/<路徑>
+        return;
     case 'delete':
         require __DIR__ . '/api/delete.php';
         return;

@@ -1,0 +1,10 @@
+{
+  "label": "示範疊圖",
+  "desc": "自繪插畫疊圖的參考範例：一張透明 SVG 蓋在底圖上，沒畫到的地方完全透出底圖。url 是相對路徑，代表圖檔就放在這個資料夾裡，由 <base>/layer/<project>/<id>/<路徑> 端點輸出。要用在自己的地圖上，複製這個資料夾、換掉 overlay.svg、把 bounds 改成插畫實際對應的西南／東北兩角。",
+  "type": "image",
+  "pane": "art",
+  "url": "overlay.svg",
+  "bounds": [[23.945, 120.680], [23.960, 120.697]],
+  "opacity": 0.95,
+  "attribution": "示範疊圖"
+}
