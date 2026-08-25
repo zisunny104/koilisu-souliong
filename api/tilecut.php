@@ -181,10 +181,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'finis
     ];
     $attr = trim((string)($_POST['attribution'] ?? ''));
     if ($attr !== '') {
-        $manifest['attribution'] = mb_substr($attr, 0, 200);
+        $manifest['attribution'] = mb_substr($attr, 0, 500);
     }
     // 這一段純粹是留給人看的來歷：哪支工具、什麼時候、幾張磚。程式不讀它。
-    $manifest['generated'] = ['tool' => 'tilecut', 'at' => gmdate('c'), 'tiles' => $count];
+    $manifest['generated'] = ['tool' => 'tilecut', 'at' => gmdate('c'), 'tiles' => $count, 'pieces' => max(1, (int)$num('pieces', 1))];
     $json = json_encode($manifest, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
     if (@file_put_contents($dir . '/layer.json', $json, LOCK_EX) === false) {
         json_out(['error' => $tr('tilecut_mkdir_failed_msg')], 500);
@@ -482,6 +482,129 @@ $reqProject = in_array($backProject, $allProjects, true) ? $backProject : ($allP
       color: var(--accent)
     }
 
+    /* ── 圖片清單：一列一張來源圖，由上而下＝由頂層到底層（比照後台的圖層挑選器） ── */
+    .pclist {
+      border: 1px solid var(--line);
+      border-radius: 0.75rem;
+      overflow: hidden
+    }
+
+    .pcrow {
+      display: flex;
+      align-items: center;
+      gap: var(--sp-2);
+      padding: var(--sp-2) var(--sp-3);
+      border-top: 1px solid var(--line)
+    }
+
+    .pcrow:first-child {
+      border-top: none
+    }
+
+    .pcrow.on {
+      box-shadow: inset 3px 0 0 var(--accent)
+    }
+
+    .pcrow.on .pcname {
+      color: var(--accent)
+    }
+
+    .pcord {
+      display: flex;
+      flex-direction: column;
+      flex: none
+    }
+
+    .pcbtn {
+      background: none;
+      color: var(--muted);
+      border: none;
+      padding: 0 var(--sp-2);
+      min-height: 0.875rem;
+      font-size: 0.6875rem;
+      line-height: 1
+    }
+
+    .pcbtn:hover:not(:disabled) {
+      color: var(--accent)
+    }
+
+    .pcbtn.pcdel {
+      min-height: 1.75rem;
+      font-size: 0.8125rem
+    }
+
+    .pcpick {
+      flex: 1 1 auto;
+      min-width: 0;
+      background: none;
+      color: var(--fg);
+      text-align: left;
+      font-weight: 400;
+      padding: var(--sp-1) 0;
+      display: flex;
+      align-items: baseline;
+      gap: var(--sp-2);
+      flex-wrap: wrap
+    }
+
+    .pcname {
+      font-weight: 600;
+      overflow-wrap: anywhere
+    }
+
+    .pcsize {
+      color: var(--muted)
+    }
+
+    .pcvis {
+      margin: 0;
+      flex: none;
+      display: flex;
+      align-items: center
+    }
+
+    .pcvis input {
+      width: auto;
+      min-height: 0;
+      margin: 0
+    }
+
+    .pcempty {
+      padding: var(--sp-3);
+      font-size: 0.75rem;
+      color: var(--muted)
+    }
+
+    /* 沒選取任何一張時整組關掉：能點卻不知道在改哪一張，比關掉更糟 */
+    .pcdisabled {
+      opacity: .45;
+      pointer-events: none
+    }
+
+    /* 地圖上的把手：角落方塊縮放、中央圓鈕整張移動 */
+    .pchandle {
+      width: 0.875rem;
+      height: 0.875rem;
+      background: var(--card);
+      border: 2px solid var(--accent);
+      border-radius: 3px;
+      cursor: nwse-resize;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, .35)
+    }
+
+    .pchandle.pcmove {
+      width: 1.625rem;
+      height: 1.625rem;
+      border-radius: 999px;
+      cursor: move;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--accent);
+      font-size: 0.75rem
+    }
+
     a:focus-visible,
     button:focus-visible,
     select:focus-visible,
@@ -521,11 +644,15 @@ $reqProject = in_array($backProject, $allProjects, true) ? $backProject : ($allP
       </div>
       <div class="hint" style="margin-bottom:var(--sp-3)"><?= $t('tilecut_layer_id_hint') ?></div>
       <div class="row">
-        <label class="filebtn"><span class="ghost" style="display:inline-flex;align-items:center;gap:.5rem;border:1px solid var(--line);border-radius:.625rem;padding:.5rem 1rem;background:var(--card)"><i class="fa-solid fa-folder-open"></i> <span id="fname"><?= $t('tilecut_choose_image_btn') ?></span></span>
-          <input type="file" id="src" accept="image/png,image/webp,image/jpeg,image/svg+xml" hidden></label>
-        <span class="hint mono" id="srcinfo"></span>
+        <label class="filebtn"><span class="ghost" style="display:inline-flex;align-items:center;gap:.5rem;border:1px solid var(--line);border-radius:.625rem;padding:.5rem 1rem;background:var(--card)"><i class="fa-solid fa-images"></i> <?= $t('tilecut_choose_image_btn') ?></span>
+          <input type="file" id="src" accept="image/png,image/webp,image/jpeg,image/svg+xml" multiple hidden></label>
+        <span class="hint" id="srcinfo"></span>
       </div>
       <div class="hint" style="margin-top:var(--sp-2)"><?= $t('tilecut_image_hint') ?></div>
+
+      <h2 style="margin-top:var(--sp-5)"><i class="fa-solid fa-layer-group"></i> <?= $t('tilecut_pieces_heading') ?></h2>
+      <div class="hint" style="margin-bottom:var(--sp-3)"><?= $t('tilecut_pieces_hint') ?></div>
+      <div class="pclist" id="pclist"></div>
     </div>
 
     <div class="card">
@@ -533,15 +660,22 @@ $reqProject = in_array($backProject, $allProjects, true) ? $backProject : ($allP
       <div class="hint" style="margin-bottom:var(--sp-3)"><?= $t('tilecut_place_hint') ?></div>
       <div id="map"></div>
       <div class="row" style="margin-bottom:var(--sp-3)">
-        <button type="button" class="ghost" id="useview"><i class="fa-solid fa-crop-simple"></i> <?= $t('tilecut_use_view_btn') ?></button>
         <button type="button" class="ghost" id="fitov"><i class="fa-solid fa-magnifying-glass-location"></i> <?= $t('tilecut_fit_btn') ?></button>
-        <label class="chk"><input type="checkbox" id="lockar" checked> <?= $t('tilecut_lock_aspect_label') ?></label>
+        <label class="chk"><input type="checkbox" id="ghost" checked> <?= $t('tilecut_ghost_label') ?></label>
       </div>
-      <div class="grid">
-        <div><label for="north"><?= $t('tilecut_north') ?></label><input type="number" id="north" step="0.000001"></div>
-        <div><label for="south"><?= $t('tilecut_south') ?></label><input type="number" id="south" step="0.000001"></div>
-        <div><label for="west"><?= $t('tilecut_west') ?></label><input type="number" id="west" step="0.000001"></div>
-        <div><label for="east"><?= $t('tilecut_east') ?></label><input type="number" id="east" step="0.000001"></div>
+      <div class="hint" id="placemsg" style="margin-bottom:var(--sp-3)"><?= $t('tilecut_select_piece_msg') ?></div>
+      <div id="placeui" class="pcdisabled">
+        <div class="row" style="margin-bottom:var(--sp-3)">
+          <button type="button" class="ghost" id="useview"><i class="fa-solid fa-crop-simple"></i> <?= $t('tilecut_use_view_btn') ?></button>
+          <label class="chk"><input type="checkbox" id="lockar" checked> <?= $t('tilecut_lock_aspect_label') ?></label>
+        </div>
+        <div class="grid">
+          <div><label for="north"><?= $t('tilecut_north') ?></label><input type="number" id="north" step="0.000001"></div>
+          <div><label for="south"><?= $t('tilecut_south') ?></label><input type="number" id="south" step="0.000001"></div>
+          <div><label for="west"><?= $t('tilecut_west') ?></label><input type="number" id="west" step="0.000001"></div>
+          <div><label for="east"><?= $t('tilecut_east') ?></label><input type="number" id="east" step="0.000001"></div>
+          <div><label for="popacity"><?= $t('tilecut_piece_opacity') ?></label><input type="number" id="popacity" min="0" max="1" step="any" value="1"></div>
+        </div>
       </div>
     </div>
 
@@ -563,7 +697,7 @@ $reqProject = in_array($backProject, $allProjects, true) ? $backProject : ($allP
       </div>
       <div>
         <label for="attr"><?= $t('tilecut_attr_label') ?></label>
-        <input type="text" id="attr" maxlength="200">
+        <input type="text" id="attr" maxlength="500">
       </div>
       <div class="hint" style="margin-top:var(--sp-2)"><?= $t('tilecut_zoom_hint') ?></div>
       <div class="hint" id="estimate" style="margin-top:var(--sp-3)"></div>
@@ -603,7 +737,13 @@ $reqProject = in_array($backProject, $allProjects, true) ? $backProject : ($allP
       'error_prefix' => i18n_t($DICT, 'error_prefix_label'),
       'conn_failed'  => i18n_t($DICT, 'connection_failed_retry_msg'),
       'img_failed'   => i18n_t($DICT, 'tilecut_image_load_failed'),
-      'choose_image' => i18n_t($DICT, 'tilecut_choose_image_btn'),
+      'no_pieces'    => i18n_t($DICT, 'tilecut_no_pieces_msg'),
+      'piece_count'  => i18n_t($DICT, 'tilecut_piece_count_msg'),
+      'piece_hide'   => i18n_t($DICT, 'tilecut_piece_hide_title'),
+      'no_visible'   => i18n_t($DICT, 'tilecut_no_visible_msg'),
+      'move_up'      => i18n_t($DICT, 'layer_move_up_aria'),
+      'move_down'    => i18n_t($DICT, 'layer_move_down_aria'),
+      'remove'       => i18n_t($DICT, 'remove_title'),
     ], JSON_UNESCAPED_UNICODE) ?>;
     const fmt = (str, vars) => str.replace(/\{(\w+)\}/g, (_, k) => (vars[k] != null ? vars[k] : ''));
     const csrf = <?= json_encode($csrf) ?>;
@@ -623,9 +763,8 @@ $reqProject = in_array($backProject, $allProjects, true) ? $backProject : ($allP
 
     const $ = id => document.getElementById(id);
     const statusEl = $('status'), doneEl = $('done'), estEl = $('estimate'), barEl = $('barfill');
+    const listEl = $('pclist'), infoEl = $('srcinfo');
 
-    let img = null, imgW = 0, imgH = 0, objUrl = null;
-    let overlay = null, rect = null, swM = null, neM = null;
     let running = false, aborted = false;
 
     // ── 地圖 ──
@@ -633,76 +772,194 @@ $reqProject = in_array($backProject, $allProjects, true) ? $backProject : ($allP
     L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
       { subdomains: 'abcd', detectRetina: true, maxZoom: 20, attribution: '&copy; OpenStreetMap, CARTO' }).addTo(map);
 
-    function bounds() {
-      const n = parseFloat($('north').value), s = parseFloat($('south').value);
-      const w = parseFloat($('west').value), e = parseFloat($('east').value);
-      if ([n, s, w, e].some(v => !isFinite(v)) || s >= n || w >= e
-        || Math.abs(n) > 85.0511 || Math.abs(s) > 85.0511 || Math.abs(w) > 180 || Math.abs(e) > 180) return null;
-      return { n, s, w, e };
+    /** 四個邊界值合不合理。與後端的 souliong_layer_bounds_valid() 同一套判準。 */
+    function validBounds(b) {
+      return !!b && [b.n, b.s, b.w, b.e].every(v => isFinite(v))
+        && b.s < b.n && b.w < b.e
+        && Math.abs(b.n) <= 85.0511 && Math.abs(b.s) <= 85.0511
+        && Math.abs(b.w) <= 180 && Math.abs(b.e) <= 180;
     }
-    function writeBounds(b) {
+
+    /**
+     * 一張來源圖片。清單裡的每一列就是一個 Piece，切磚時由下往上疊成一張。
+     * 位置與不透明度刻意都是純值（bounds / opacity / on），之後要把整疊寫成 edit.json
+     * 存回伺服器「保留原稿」時，直接就是這個形狀，不必再翻譯一次。
+     */
+    class Piece {
+      constructor(name, img, url) {
+        this.name = name;
+        this.img = img;
+        this.url = url;                          // objectURL；移除時要 revoke，否則整張圖留在記憶體裡
+        this.w = img.naturalWidth || img.width;
+        this.h = img.naturalHeight || img.height;
+        this.bounds = null;                      // {n,s,w,e}
+        this.opacity = 1;
+        this.on = true;
+        this.overlay = null;
+      }
+
+      /** 四邊在 Web Mercator 單位世界座標裡的位置；對位與切磚都在這個空間算。 */
+      proj() {
+        return { x0: wx(this.bounds.w), x1: wx(this.bounds.e), y0: wy(this.bounds.n), y1: wy(this.bounds.s) };
+      }
+
+      latLngBounds() {
+        return L.latLngBounds([[this.bounds.s, this.bounds.w], [this.bounds.n, this.bounds.e]]);
+      }
+
+      /** 地圖上的預覽。ghost 是「預覽半透明」那顆開關，只影響畫面，不影響切出來的磚。 */
+      draw(ghost) {
+        if (!validBounds(this.bounds)) return;
+        const ll = this.latLngBounds();
+        if (!this.overlay) this.overlay = L.imageOverlay(this.url, ll, { interactive: false });
+        else this.overlay.setBounds(ll);
+        this.overlay.setOpacity(this.opacity * (ghost ? 0.7 : 1));
+        if (this.on) this.overlay.addTo(map);
+        else map.removeLayer(this.overlay);
+      }
+
+      destroy() {
+        if (this.overlay) map.removeLayer(this.overlay);
+        URL.revokeObjectURL(this.url);
+      }
+    }
+
+    // 陣列前端＝最上層，與畫面上的清單同方向（比照後台的圖層挑選器與繪圖軟體）
+    let pieces = [];
+    let sel = -1;
+
+    // ── 對位把手 ──
+    // 三顆：兩個角落縮放、中央一顆整張平移。只服務「目前選取的那一張」——
+    // 每張圖都長出一組把手的話，五張圖就有十五顆，誰也拖不準。
+    let swM = null, neM = null, mvM = null, selRect = null;
+
+    function ensureHandles() {
+      if (swM) return;
+      const sq = () => L.divIcon({ className: 'pchandle', iconSize: [14, 14], iconAnchor: [7, 7] });
+      swM = L.marker([0, 0], { draggable: true, keyboard: false, icon: sq() });
+      neM = L.marker([0, 0], { draggable: true, keyboard: false, icon: sq() });
+      mvM = L.marker([0, 0], {
+        draggable: true, keyboard: false, icon: L.divIcon({
+          className: 'pchandle pcmove', iconSize: [26, 26], iconAnchor: [13, 13],
+          html: '<i class="fa-solid fa-arrows-up-down-left-right"></i>'
+        })
+      });
+      selRect = L.rectangle([[0, 0], [0, 0]], { color: '#b5482e', weight: 1, fill: false, dashArray: '4 3' });
+
+      // 拖曳中只跟著畫，放開才套長寬比並把把手校正回去（live=true 就是拖曳中那一段）
+      const corner = (m, anchor, live) => () => {
+        const p = pieces[sel];
+        if (!p) return;
+        const a = swM.getLatLng(), b = neM.getLatLng();
+        let nb = { s: Math.min(a.lat, b.lat), n: Math.max(a.lat, b.lat), w: Math.min(a.lng, b.lng), e: Math.max(a.lng, b.lng) };
+        if (!live) nb = applyAspect(nb, anchor, p);
+        commit(p, nb, { skip: live ? m : null });
+      };
+      // 拖西南角時以西北角為支點（南緣由長寬比算出來），拖東北角時以西南角為支點
+      swM.on('drag', corner(swM, 'nw', true)).on('dragend', corner(swM, 'nw', false));
+      neM.on('drag', corner(neM, 'sw', true)).on('dragend', corner(neM, 'sw', false));
+
+      // 平移：位移算在投影空間，整張的形狀才不會隨著往南北走而變形
+      const move = live => () => {
+        const p = pieces[sel];
+        if (!p || !validBounds(p.bounds)) return;
+        const pr = p.proj();
+        const dx = pr.x1 - pr.x0, dy = pr.y1 - pr.y0;
+        if (!(dx > 0 && dx <= 1 && dy > 0 && dy <= 1)) return;   // 比整個世界還大的圖沒有「平移」可言
+        const ll = mvM.getLatLng();
+        const cx = Math.min(1 - dx / 2, Math.max(dx / 2, wx(ll.lng)));
+        const cy = Math.min(1 - dy / 2, Math.max(dy / 2, wy(ll.lat)));
+        commit(p, {
+          w: lngOf(cx - dx / 2), e: lngOf(cx + dx / 2),
+          n: latOf(cy - dy / 2), s: latOf(cy + dy / 2)
+        }, { skip: live ? mvM : null });
+      };
+      mvM.on('drag', move(true)).on('dragend', move(false));
+    }
+
+    /** 把手歸位。skip 是正在被拖的那一顆——重設它的位置會跟滑鼠搶。 */
+    function placeHandles(ll, skip) {
+      if (skip !== swM) swM.setLatLng(ll.getSouthWest());
+      if (skip !== neM) neM.setLatLng(ll.getNorthEast());
+      // 中央把手放在投影中心，不是經緯度中心——後者在南北向會偏，拖起來手感不對
+      if (skip !== mvM) mvM.setLatLng([latOf((wy(ll.getNorth()) + wy(ll.getSouth())) / 2), ll.getCenter().lng]);
+    }
+
+    function showHandles(ll) {
+      ensureHandles();
+      selRect.setBounds(ll);
+      placeHandles(ll);
+      [selRect, swM, neM, mvM].forEach(l => l.addTo(map));
+    }
+
+    function hideHandles() {
+      if (!swM) return;
+      [selRect, swM, neM, mvM].forEach(l => map.removeLayer(l));
+    }
+
+    // ── 數字框 ──
+    function readFields() {
+      const b = {
+        n: parseFloat($('north').value), s: parseFloat($('south').value),
+        w: parseFloat($('west').value), e: parseFloat($('east').value)
+      };
+      return validBounds(b) ? b : null;
+    }
+    function writeFields(b) {
       $('north').value = b.n.toFixed(6); $('south').value = b.s.toFixed(6);
       $('west').value = b.w.toFixed(6); $('east').value = b.e.toFixed(6);
     }
-    function setBounds(b) { writeBounds(b); redraw(); }
+
+    /**
+     * 把新的邊界落到選取的那張圖上：疊圖、外框、把手、數字框一起跟上。
+     * 這是拖曳中每一次 mousemove 都會跑的路徑，所以刻意不重建清單 DOM——
+     * 清單上顯示的東西（檔名、尺寸、不透明度）本來就跟位置無關。
+     * opt.fields=false：來源就是數字框本身，寫回去會把使用者正在打的字蓋掉。
+     * opt.skip：正在被拖的那顆把手。
+     */
+    function commit(p, nb, opt) {
+      opt = opt || {};
+      if (!validBounds(nb)) return;
+      p.bounds = nb;
+      if (opt.fields !== false) writeFields(nb);
+      p.draw($('ghost').checked);
+      const ll = p.latLngBounds();
+      ensureHandles();
+      selRect.setBounds(ll);
+      placeHandles(ll, opt.skip);
+      estimate();
+    }
 
     /**
      * 鎖長寬比：以某一角為支點，把另一角拉到「與來源圖同比例」的位置。
      * 比例要在投影空間算而不是經緯度——同一塊經緯度矩形在不同緯度的實際形狀不同，
      * 用經緯度算出來的圖在台灣會被壓扁約 8%。
      */
-    function applyAspect(b, anchor) {
-      if (!imgW || !imgH || !$('lockar').checked) return b;
+    function applyAspect(b, anchor, p) {
+      if (!p || !p.w || !p.h || !$('lockar').checked) return b;
       const x0 = wx(b.w), x1 = wx(b.e), y0 = wy(b.n), y1 = wy(b.s);
-      const need = (x1 - x0) * imgH / imgW;   // 應有的世界縱向跨距
+      const need = (x1 - x0) * p.h / p.w;   // 應有的世界縱向跨距
       if (!(need > 0) || !isFinite(need)) return b;
       return (anchor === 'sw')
         ? { w: b.w, s: b.s, e: b.e, n: latOf(y1 - need) }    // 西南固定，調北緣
         : { w: b.w, n: b.n, e: b.e, s: latOf(y0 + need) };   // 西北固定，調南緣
     }
 
-    /** 只更新疊圖與外框，不碰把手——拖曳進行中重設把手位置會跟滑鼠搶。 */
-    function drawShapes(b) {
-      const ll = L.latLngBounds([[b.s, b.w], [b.n, b.e]]);
-      if (objUrl) {
-        if (!overlay) overlay = L.imageOverlay(objUrl, ll, { opacity: 0.75, interactive: false }).addTo(map);
-        else { overlay.setUrl(objUrl); overlay.setBounds(ll); }
+    // ── 整疊的幾何 ──
+    /** 會切進圖磚的那幾張的聯集，也就是 layer.json 要寫的 bounds。 */
+    function unionBounds() {
+      let u = null;
+      for (const p of pieces) {
+        if (!p.on || p.opacity <= 0 || !validBounds(p.bounds)) continue;
+        u = u ? {
+          n: Math.max(u.n, p.bounds.n), s: Math.min(u.s, p.bounds.s),
+          w: Math.min(u.w, p.bounds.w), e: Math.max(u.e, p.bounds.e)
+        } : { n: p.bounds.n, s: p.bounds.s, w: p.bounds.w, e: p.bounds.e };
       }
-      if (!rect) rect = L.rectangle(ll, { color: '#b5482e', weight: 1, fill: false, dashArray: '4 3' }).addTo(map);
-      else rect.setBounds(ll);
-      return ll;
+      return u;
     }
 
-    /**
-     * 兩個角落把手：拖曳比在四個數字框裡試誤快得多。
-     * 拖曳中只跟著畫，放開才套用長寬比並把把手校正回去（live=true 就是拖曳中那一段）。
-     */
-    function ensureHandles(ll) {
-      if (swM) { swM.setLatLng(ll.getSouthWest()); neM.setLatLng(ll.getNorthEast()); return; }
-      swM = L.marker(ll.getSouthWest(), { draggable: true }).addTo(map);
-      neM = L.marker(ll.getNorthEast(), { draggable: true }).addTo(map);
-      const handler = (anchor, live) => () => {
-        const sw = swM.getLatLng(), ne = neM.getLatLng();
-        let nb = { s: Math.min(sw.lat, ne.lat), n: Math.max(sw.lat, ne.lat), w: Math.min(sw.lng, ne.lng), e: Math.max(sw.lng, ne.lng) };
-        if (!live) nb = applyAspect(nb, anchor);
-        writeBounds(nb);
-        const b2 = drawShapes(nb);
-        if (!live) { swM.setLatLng(b2.getSouthWest()); neM.setLatLng(b2.getNorthEast()); }
-        estimate();
-      };
-      // 拖西南角時以西北角為支點（南緣由長寬比算出來），拖東北角時以西南角為支點
-      swM.on('drag', handler('nw', true)).on('dragend', handler('nw', false));
-      neM.on('drag', handler('sw', true)).on('dragend', handler('sw', false));
-    }
-
-    function redraw() {
-      const b = bounds();
-      if (!b) { estimate(); return; }
-      ensureHandles(drawShapes(b));
-      estimate();
-    }
-
-    /** 某個 zoom 下這張圖蓋到的圖磚範圍（含端點）。 */
+    /** 某個 zoom 下這片範圍蓋到的圖磚（含端點）。 */
     function tileRange(b, z) {
       const n = 1 << z;
       const cl = (v, hi) => Math.max(0, Math.min(hi, v));
@@ -716,20 +973,29 @@ $reqProject = in_array($backProject, $allProjects, true) ? $backProject : ($allP
       for (let z = z0; z <= z1; z++) { const r = tileRange(b, z); sum += (r.x1 - r.x0 + 1) * (r.y1 - r.y0 + 1); }
       return sum;
     }
-    /** 影像原生解析度大約對應哪一級 zoom：再切上去只是把同一批像素放大，白佔硬碟。 */
-    function nativeZoom(b) {
-      if (!imgW) return null;
-      const span = wx(b.e) - wx(b.w);
-      if (!(span > 0)) return null;
-      return Math.max(0, Math.min(22, Math.round(Math.log2(imgW / (span * TILE)))));
+
+    /**
+     * 整疊的原生解析度大約對應哪一級 zoom：取「最細的那一張」。
+     * 多切上去對其餘幾張只是把同一批像素放大，但為了最細的那張，值得切到它為止。
+     */
+    function nativeZoom() {
+      let best = null;
+      for (const p of pieces) {
+        if (!p.on || p.opacity <= 0 || !validBounds(p.bounds)) continue;
+        const span = wx(p.bounds.e) - wx(p.bounds.w);
+        if (!(span > 0)) continue;
+        const z = Math.round(Math.log2(p.w / (span * TILE)));
+        if (best === null || z > best) best = z;
+      }
+      return best === null ? null : Math.max(0, Math.min(22, best));
     }
 
     function estimate() {
-      const b = bounds();
+      const u = unionBounds();
       const z0 = parseInt($('zmin').value, 10), z1 = parseInt($('zmax').value, 10);
-      if (!b || !isFinite(z0) || !isFinite(z1) || z0 > z1) { estEl.textContent = ''; $('go').disabled = running; return; }
-      const total = totalTiles(b, z0, z1);
-      const nz = nativeZoom(b);
+      if (!u || !isFinite(z0) || !isFinite(z1) || z0 > z1) { estEl.textContent = ''; $('go').disabled = running; return; }
+      const total = totalTiles(u, z0, z1);
+      const nz = nativeZoom();
       let msg = fmt(I18N.estimate, { tiles: total.toLocaleString() });
       if (nz !== null) msg += ' · ' + fmt(I18N.native_hint, { z: nz });
       if (total > MAX_TILES) { msg = fmt(I18N.too_many, { tiles: total.toLocaleString(), max: MAX_TILES.toLocaleString() }); estEl.className = 'hint no'; }
@@ -738,47 +1004,204 @@ $reqProject = in_array($backProject, $allProjects, true) ? $backProject : ($allP
       $('go').disabled = running || total > MAX_TILES;
     }
 
-    ['north', 'south', 'west', 'east'].forEach(k => $(k).addEventListener('input', redraw));
-    ['zmin', 'zmax'].forEach(k => $(k).addEventListener('input', estimate));
-    $('useview').addEventListener('click', () => {
-      const b = map.getBounds();
-      setBounds(applyAspect({ n: b.getNorth(), s: b.getSouth(), w: b.getWest(), e: b.getEast() }, 'sw'));
-    });
-    $('fitov').addEventListener('click', () => { const b = bounds(); if (b) map.fitBounds([[b.s, b.w], [b.n, b.e]]); });
-    $('lockar').addEventListener('change', () => { const b = bounds(); if (b) setBounds(applyAspect(b, 'sw')); });
+    // ── 圖片清單 ──
+    /** 一顆圖示按鈕。檔名可能含 < >，所以名字一律走 textContent，只有固定的圖示用 innerHTML。 */
+    function iconBtn(cls, icon, title, fn, off) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = cls;
+      b.title = title;
+      b.setAttribute('aria-label', title);
+      b.disabled = !!off;
+      b.innerHTML = '<i class="fa-solid ' + icon + '"></i>';
+      b.addEventListener('click', fn);
+      return b;
+    }
 
-    // ── 選圖 ──
-    $('src').addEventListener('change', async ev => {
-      const f = ev.target.files && ev.target.files[0];
-      $('fname').textContent = f ? f.name : I18N.choose_image;
-      if (!f) return;
-      if (objUrl) URL.revokeObjectURL(objUrl);
-      objUrl = URL.createObjectURL(f);
-      try {
-        // SVG 沒有像素尺寸的保證，createImageBitmap 對它的支援也不一致；一律走 <img> 取
-        // naturalWidth/Height，SVG 會用它自己宣告的 width/height（沒宣告則瀏覽器給預設值）。
-        img = await new Promise((res, rej) => {
-          const i = new Image();
-          i.onload = () => res(i); i.onerror = () => rej(new Error('decode'));
-          i.src = objUrl;
-        });
-        imgW = img.naturalWidth || img.width; imgH = img.naturalHeight || img.height;
-        // 沒有內建尺寸的 SVG（只給 viewBox、不給 width/height）量不出長寬比，也就無從對位
-        if (!imgW || !imgH) throw new Error('no intrinsic size');
-      } catch (e) { statusEl.textContent = I18N.img_failed; img = null; imgW = imgH = 0; return; }
-      $('srcinfo').textContent = imgW + ' x ' + imgH;
-      if (!$('llabel').value) $('llabel').value = f.name.replace(/\.[^.]+$/, '');
-      // 還沒對位過就先把圖擺在目前視野裡，讓人有東西可以拖
-      if (!bounds()) {
-        const b = map.getBounds();
-        const pad = (v0, v1) => [v0 + (v1 - v0) * 0.2, v1 - (v1 - v0) * 0.2];
-        const [s, n] = pad(b.getSouth(), b.getNorth());
-        const [w, e] = pad(b.getWest(), b.getEast());
-        setBounds(applyAspect({ n, s, w, e }, 'sw'));
-      } else redraw();
-      const bb = bounds(), nz = bb ? nativeZoom(bb) : null;
-      if (nz !== null) { $('zmax').value = nz; $('zmin').value = Math.max(0, nz - 5); }
+    function renderList() {
+      listEl.textContent = '';
+      if (!pieces.length) {
+        const d = document.createElement('div');
+        d.className = 'pcempty';
+        d.textContent = I18N.no_pieces;
+        listEl.appendChild(d);
+        infoEl.textContent = '';
+        return;
+      }
+      pieces.forEach((p, i) => {
+        const row = document.createElement('div');
+        row.className = 'pcrow' + (i === sel ? ' on' : '');
+
+        const ord = document.createElement('span');
+        ord.className = 'pcord';
+        ord.append(
+          iconBtn('pcbtn', 'fa-chevron-up', I18N.move_up, () => movePiece(i, -1), i === 0),
+          iconBtn('pcbtn', 'fa-chevron-down', I18N.move_down, () => movePiece(i, 1), i === pieces.length - 1)
+        );
+        row.appendChild(ord);
+
+        const vis = document.createElement('label');
+        vis.className = 'pcvis';
+        vis.title = I18N.piece_hide;
+        const cb = document.createElement('input');
+        cb.type = 'checkbox';
+        cb.checked = p.on;
+        cb.addEventListener('change', () => { p.on = cb.checked; refresh(); });
+        vis.appendChild(cb);
+        row.appendChild(vis);
+
+        const pick = document.createElement('button');
+        pick.type = 'button';
+        pick.className = 'pcpick';
+        const nm = document.createElement('span');
+        nm.className = 'pcname';
+        nm.textContent = p.name;
+        const sz = document.createElement('span');
+        sz.className = 'pcsize mono';
+        sz.textContent = p.w + ' x ' + p.h + (p.opacity < 1 ? ' · ' + p.opacity : '');
+        pick.append(nm, sz);
+        pick.addEventListener('click', () => select(i));
+        row.appendChild(pick);
+
+        row.appendChild(iconBtn('pcbtn pcdel', 'fa-trash-can', I18N.remove, () => removePiece(i)));
+        listEl.appendChild(row);
+      });
+      infoEl.textContent = fmt(I18N.piece_count, { n: pieces.length, on: pieces.filter(p => p.on && p.opacity > 0).length });
+    }
+
+    /** 疊圖、清單、把手、預估全部重畫一次。不在拖曳路徑上，可以慢。 */
+    function refresh() {
+      const ghost = $('ghost').checked;
+      pieces.forEach((p, i) => {
+        p.draw(ghost);
+        // 陣列前端是最上層，z-index 就得反過來給：Leaflet 的疊放順序看的是 z-index，
+        // 不是 addTo 的先後，所以每次重畫都重新指定一遍才不會被加入順序決定。
+        if (p.overlay) p.overlay.setZIndex(pieces.length - i);
+      });
+      renderList();
+      const p = pieces[sel];
+      $('placeui').classList.toggle('pcdisabled', !p);
+      $('placemsg').style.display = p ? 'none' : '';
+      if (p && validBounds(p.bounds)) showHandles(p.latLngBounds());
+      else hideHandles();
       estimate();
+    }
+
+    function select(i) {
+      sel = (i >= 0 && i < pieces.length) ? i : -1;
+      const p = pieces[sel];
+      if (p) {
+        if (validBounds(p.bounds)) writeFields(p.bounds);
+        $('popacity').value = p.opacity;
+      }
+      refresh();
+    }
+
+    function movePiece(i, d) {
+      const j = i + d;
+      if (j < 0 || j >= pieces.length) return;
+      const tmp = pieces[i]; pieces[i] = pieces[j]; pieces[j] = tmp;
+      if (sel === i) sel = j; else if (sel === j) sel = i;
+      refresh();
+    }
+
+    function removePiece(i) {
+      const p = pieces[i];
+      if (!p) return;
+      p.destroy();
+      pieces.splice(i, 1);
+      if (sel === i) sel = Math.min(i, pieces.length - 1);
+      else if (sel > i) sel--;
+      select(sel);
+    }
+
+    /**
+     * 新加入的圖片先擺哪裡。尺寸完全相同的十之八九是同一張畫布匯出的不同圖層，
+     * 直接沿用既有那張的位置，省下重對一次；尺寸不同才退回「鋪滿目前視野」。
+     */
+    function defaultBounds(p) {
+      const twin = pieces.find(q => q.w === p.w && q.h === p.h && validBounds(q.bounds));
+      if (twin) return { n: twin.bounds.n, s: twin.bounds.s, w: twin.bounds.w, e: twin.bounds.e };
+      const b = map.getBounds();
+      const pad = (v0, v1) => [v0 + (v1 - v0) * 0.2, v1 - (v1 - v0) * 0.2];
+      const [s, n] = pad(b.getSouth(), b.getNorth());
+      const [w, e] = pad(b.getWest(), b.getEast());
+      return applyAspect({ n, s, w, e }, 'sw', p);
+    }
+
+    // ── 事件 ──
+    ['north', 'south', 'west', 'east'].forEach(k => $(k).addEventListener('input', () => {
+      const p = pieces[sel], b = readFields();
+      if (p && b) commit(p, b, { fields: false });
+    }));
+    ['zmin', 'zmax'].forEach(k => $(k).addEventListener('input', estimate));
+    $('popacity').addEventListener('input', () => {
+      const p = pieces[sel];
+      if (!p) return;
+      const v = parseFloat($('popacity').value);
+      p.opacity = isFinite(v) ? Math.max(0, Math.min(1, v)) : 1;
+      p.draw($('ghost').checked);
+      renderList();
+      estimate();
+    });
+    $('ghost').addEventListener('change', () => {
+      const g = $('ghost').checked;
+      pieces.forEach(p => p.draw(g));
+    });
+    $('useview').addEventListener('click', () => {
+      const p = pieces[sel];
+      if (!p) return;
+      const b = map.getBounds();
+      commit(p, applyAspect({ n: b.getNorth(), s: b.getSouth(), w: b.getWest(), e: b.getEast() }, 'sw', p));
+    });
+    $('fitov').addEventListener('click', () => {
+      const u = unionBounds() || (pieces[sel] ? pieces[sel].bounds : null);
+      if (validBounds(u)) map.fitBounds([[u.s, u.w], [u.n, u.e]]);
+    });
+    $('lockar').addEventListener('change', () => {
+      const p = pieces[sel];
+      if (p && $('lockar').checked && validBounds(p.bounds)) commit(p, applyAspect(p.bounds, 'sw', p));
+    });
+
+    // ── 加入圖片 ──
+    $('src').addEventListener('change', async ev => {
+      const files = Array.from(ev.target.files || []);
+      ev.target.value = '';        // 清掉，同一個檔案再選一次也要能觸發 change
+      if (!files.length) return;
+      const wasEmpty = !pieces.length;
+      const failed = [];
+      let firstName = '';
+      for (const f of files) {
+        const url = URL.createObjectURL(f);
+        let img;
+        try {
+          // SVG 沒有像素尺寸的保證，createImageBitmap 對它的支援也不一致；一律走 <img> 取
+          // naturalWidth/Height，SVG 會用它自己宣告的 width/height（沒宣告則瀏覽器給預設值）。
+          img = await new Promise((res, rej) => {
+            const i = new Image();
+            i.onload = () => res(i); i.onerror = () => rej(new Error('decode'));
+            i.src = url;
+          });
+          // 沒有內建尺寸的 SVG（只給 viewBox、不給 width/height）量不出長寬比，也就無從對位
+          if (!(img.naturalWidth || img.width) || !(img.naturalHeight || img.height)) throw new Error('no intrinsic size');
+        } catch (e) {
+          URL.revokeObjectURL(url);
+          failed.push(f.name);
+          continue;
+        }
+        const p = new Piece(f.name, img, url);
+        p.bounds = defaultBounds(p);
+        pieces.unshift(p);         // 後加的蓋在前面加的上面，跟繪圖軟體「置入」的行為一致
+        if (!firstName) firstName = f.name;
+      }
+      statusEl.textContent = failed.map(n => fmt(I18N.img_failed, { name: n })).join(' ');
+      if (firstName && !$('llabel').value) $('llabel').value = firstName.replace(/\.[^.]+$/, '');
+      // zoom 只在「從空清單開始」時自動帶，之後再加圖不覆蓋使用者調過的值
+      if (wasEmpty) {
+        const nz = nativeZoom();
+        if (nz !== null) { $('zmax').value = nz; $('zmin').value = Math.max(0, nz - 5); }
+      }
+      select(0);
     });
 
     // ── 切磚 ──
@@ -794,17 +1217,41 @@ $reqProject = in_array($backProject, $allProjects, true) ? $backProject : ($allP
       return (b && b.type === 'image/webp') ? { mime: 'image/webp', ext: 'webp', q: 0.85 } : { mime: 'image/png', ext: 'png', q: undefined };
     }
 
-    /** 畫一格。全透明回 null——稀疏金字塔靠這個判斷省掉大半的檔案。 */
-    function cutTile(b, z, x, y, fmtInfo) {
+    /**
+     * 要壓平的那幾張，由下往上排好，投影座標先算好一次。
+     * 每一格都重算 wx()／wy() 會在上萬格的迴圈裡白花掉可觀的時間。
+     */
+    function cutOrder() {
+      const out = [];
+      for (let i = pieces.length - 1; i >= 0; i--) {
+        const p = pieces[i];
+        if (!p.on || p.opacity <= 0 || !validBounds(p.bounds)) continue;
+        const pr = p.proj();
+        out.push({ p, x0: pr.x0, x1: pr.x1, y0: pr.y0, y1: pr.y1 });
+      }
+      return out;
+    }
+
+    /**
+     * 畫一格：由下往上把每一張疊上去，這就是「壓平」——上層蓋住下層，上層透明的地方
+     * 透出下層。整格全透明回 null，稀疏金字塔靠這個判斷省掉大半的檔案。
+     */
+    function cutTile(z, x, y, order, fmtInfo) {
       const n = 1 << z;
-      const x0 = wx(b.w), x1 = wx(b.e), y0 = wy(b.n), y1 = wy(b.s);
-      const px = v => (v - x0) / (x1 - x0) * imgW;
-      const py = v => (v - y0) / (y1 - y0) * imgH;
-      const sx = px(x / n), sxe = px((x + 1) / n), sy = py(y / n), sye = py((y + 1) / n);
-      if (sxe <= 0 || sx >= imgW || sye <= 0 || sy >= imgH) return null;
+      const tx0 = x / n, tx1 = (x + 1) / n, ty0 = y / n, ty1 = (y + 1) / n;
+      let drew = false;
       ctx.clearRect(0, 0, TILE, TILE);
-      // 來源矩形超出影像時瀏覽器會照比例裁切目的地，所以不必自己算交集
-      ctx.drawImage(img, sx, sy, sxe - sx, sye - sy, 0, 0, TILE, TILE);
+      for (const it of order) {
+        if (tx1 <= it.x0 || tx0 >= it.x1 || ty1 <= it.y0 || ty0 >= it.y1) continue;   // 這一格碰不到這張
+        const px = v => (v - it.x0) / (it.x1 - it.x0) * it.p.w;
+        const py = v => (v - it.y0) / (it.y1 - it.y0) * it.p.h;
+        ctx.globalAlpha = it.p.opacity;
+        // 來源矩形超出影像時瀏覽器會照比例裁切目的地，所以不必自己算交集
+        ctx.drawImage(it.p.img, px(tx0), py(ty0), px(tx1) - px(tx0), py(ty1) - py(ty0), 0, 0, TILE, TILE);
+        drew = true;
+      }
+      ctx.globalAlpha = 1;
+      if (!drew) return null;
       const buf = ctx.getImageData(0, 0, TILE, TILE).data;
       const u32 = new Uint32Array(buf.buffer);
       let any = false;
@@ -832,14 +1279,16 @@ $reqProject = in_array($backProject, $allProjects, true) ? $backProject : ($allP
     $('stop').addEventListener('click', () => { aborted = true; });
 
     $('go').addEventListener('click', async () => {
-      const b = bounds();
       const project = $('project').value;
       const id = $('lid').value.trim().toLowerCase();
       const z0 = parseInt($('zmin').value, 10), z1 = parseInt($('zmax').value, 10);
       doneEl.textContent = '';
-      if (!img) { statusEl.textContent = I18N.need_image; return; }
+      if (!pieces.length) { statusEl.textContent = I18N.need_image; return; }
+      const order = cutOrder();
+      if (!order.length) { statusEl.textContent = I18N.no_visible; return; }
       if (!/^[a-z0-9][a-z0-9_-]{0,31}$/.test(id)) { statusEl.textContent = I18N.need_id; return; }
-      if (!b || !(z0 <= z1)) { statusEl.textContent = I18N.bad_bounds; return; }
+      const b = unionBounds();
+      if (!validBounds(b) || !(z0 <= z1)) { statusEl.textContent = I18N.bad_bounds; return; }
       const total = totalTiles(b, z0, z1);
       if (total > MAX_TILES) { statusEl.textContent = fmt(I18N.too_many, { tiles: total, max: MAX_TILES }); return; }
 
@@ -872,7 +1321,7 @@ $reqProject = in_array($backProject, $allProjects, true) ? $backProject : ($allP
             for (let y = r.y0; y <= r.y1; y++) {
               if (aborted) break outer;
               cut++;
-              const blob = await cutTile(b, z, x, y, fmtInfo);
+              const blob = await cutTile(z, x, y, order, fmtInfo);
               if (!blob) { skipped++; }
               else {
                 batch.append('tiles[' + z + '_' + x + '_' + y + ']', blob, z + '_' + x + '_' + y + '.' + fmtInfo.ext);
@@ -902,7 +1351,7 @@ $reqProject = in_array($backProject, $allProjects, true) ? $backProject : ($allP
           fdF.append('ext', fmtInfo.ext);
           fdF.append('south', b.s); fdF.append('west', b.w); fdF.append('north', b.n); fdF.append('east', b.e);
           fdF.append('minZoom', z0); fdF.append('maxZoom', z1);
-          fdF.append('count', sent);
+          fdF.append('count', sent); fdF.append('pieces', order.length);
           await post(fdF);
           statusEl.textContent = fmt(I18N.complete, { sent, skipped, ext: fmtInfo.ext });
           doneEl.className = 'hint ok';
@@ -915,7 +1364,7 @@ $reqProject = in_array($backProject, $allProjects, true) ? $backProject : ($allP
       running = false; $('stop').disabled = true; estimate();
     });
 
-    redraw();
+    refresh();
   </script>
 </body>
 
