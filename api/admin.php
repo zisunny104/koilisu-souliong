@@ -2743,7 +2743,7 @@ if (!$authed) {
                 <div class="modfields-head"><?= $t('layers_heading') ?></div>
                 <div class="hint"><?= $t('layers_pick_hint', ['default' => $layDefault]) ?></div>
                 <?php if ($layRows): ?>
-                <div class="lylist">
+                <div class="lylist lysort">
                   <?php foreach ($layRows as $lid): $li = $layAll[$lid]; ?>
                   <div class="lyrow">
                     <label class="lypick">
@@ -2828,6 +2828,11 @@ if (!$authed) {
             <div class="metaform">
               <h3><i class="fa-solid fa-layer-group"></i> <?= $t('project_layers_heading') ?></h3>
               <div class="hint"><?= $t('project_layers_hint') ?></div>
+              <?php // 切圖磚工具是「產生一個新的專案層」的另一條路（匯入 ZIP 是既有的那條），所以入口擺在一起 ?>
+              <div class="row" style="margin:2px 0 4px">
+                <a class="btn" href="<?= $esc($origin . $basePath . 'tilecut?project=' . urlencode($p)) ?>"><i class="fa-solid fa-scissors"></i> <?= $t('open_tilecut_btn') ?></a>
+                <span class="hint"><?= $t('tilecut_entry_hint') ?></span>
+              </div>
               <?php if ($projLayers): ?>
               <div class="lylist">
                 <?php foreach ($projLayers as $lid => $linfo): ?>
@@ -3326,6 +3331,7 @@ if (!$authed) {
         <?php $toolQs = $scopeProject !== '' ? '?project=' . urlencode($scopeProject) : ''; // 目前在看哪個專案就帶著走；「全部」時不硬塞一個專案給工具頁 ?>
         <div class="row" style="margin-top:8px"><a class="btn" href="<?= $esc($origin . $basePath . 'exiffix' . $toolQs) ?>"><i class="fa-solid fa-kit-medical"></i> <?= $t('open_exiffix_btn') ?></a>
           <a class="btn" href="<?= $esc($origin . $basePath . 'thumbfix' . $toolQs) ?>"><i class="fa-solid fa-images"></i> <?= $t('open_thumbfix_btn') ?></a>
+          <a class="btn" href="<?= $esc($origin . $basePath . 'tilecut' . $toolQs) ?>"><i class="fa-solid fa-scissors"></i> <?= $t('open_tilecut_btn') ?></a>
           <a class="btn" href="?api=admin&backup=all"><i class="fa-solid fa-download"></i> <?= $t('backup_all_btn') ?></a></div>
       </div>
       <div class="card section-card">
@@ -3389,7 +3395,10 @@ if (!$authed) {
   <script>
     // 圖層排序：送出時 layers[] 就是 DOM 由上到下的順序，所以「排序」＝把整列搬位置，
     // 不需要任何隱藏的序號欄位。沒勾的列一樣能搬，只是不會被送出去。
-    document.querySelectorAll('.lylist').forEach(function(list) {
+    //
+    // 掛的是 .lysort 而不是 .lylist：.lylist 純粹是「一疊列」的外觀，專案層清單也在用，
+    // 但那一份沒有上下鍵。行為要自己的鉤子，不能跟外觀共用同一個 class。
+    document.querySelectorAll('.lysort').forEach(function(list) {
       function refresh() {
         var rows = list.querySelectorAll('.lyrow');
         rows.forEach(function(row, i) {

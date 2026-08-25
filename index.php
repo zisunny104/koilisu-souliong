@@ -67,6 +67,9 @@ switch ($action) {
     case 'thumbfix':
         require __DIR__ . '/api/thumbfix.php';  // 備援維護工具：自動產縮圖失敗時，由瀏覽器補產舊投稿縮圖
         return;
+    case 'tilecut':
+        require __DIR__ . '/api/tilecut.php';  // 常駐工具：把一張自繪插畫切成圖磚金字塔，落地成專案層
+        return;
     case 'stat':
         require __DIR__ . '/api/stat.php';
         return;
