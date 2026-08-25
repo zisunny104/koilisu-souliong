@@ -17,8 +17,8 @@ function client_ip(array $cfg): string {
 
 /**
  * 管理登入：多 PIN + 簡易權限管理。
- * - 主 PIN：config['admin_pin']（bootstrap）+ data/admin_pins.json 的 master 清單，皆為全域權限。
- * - 各專案 PIN：data/admin_pins.json 的 projects[<id>] 清單，僅該專案。
+ * - 主 PIN：config['admin_pin']（bootstrap）+ state/admin_pins.json 的 master 清單，皆為全域權限。
+ * - 各專案 PIN：state/admin_pins.json 的 projects[<id>] 清單，僅該專案。
  * - 每把 PIN 可帶暱稱 label。
  * - cookie 由「鹽值」衍生（代表已通過某範圍），與特定 PIN 解耦；移除某 PIN 不影響既有登入，
  *   需全面登出可更換 ip_salt。

@@ -47,9 +47,14 @@ cd /你的路徑/apps/souliong
 chown -R www-data:www-data projects state   # www-data 換成你的 php-fpm 使用者
 chmod -R 775 projects state
 ```
+只有在你要從後台匯入**全站**圖層或主題包時，`layers/`、`packs/` 才需要一併可寫（專案專屬的圖層落在 `projects/<id>/layers/`，已被上面涵蓋）。這兩個目錄進版控，不寫也不影響既有功能，所以預設可以維持唯讀。
 
 ### 5. 上傳大小
-Nginx：`client_max_body_size 15m;`　PHP：`upload_max_filesize=15M`、`post_max_size=16M`。
+單檔上限由 `api/features.php` 的各投稿型別決定：照片 12 MB（`config` 的 `max_bytes`）、**影片 64 MB**、音訊 24 MB。伺服器端要放得比最大的那個型別寬：
+
+Nginx：`client_max_body_size 70m;`　PHP：`upload_max_filesize=64M`、`post_max_size=68M`。
+
+若不開放影片投稿，可依 `meta.json` 實際開放的型別調小。另外 PHP 的 `max_file_uploads` 請保持在 20 以上（預設值）——切圖磚工具一批送 16 張磚，調低會讓後面的磚被無聲丟掉。
 
 ### 6. 穩定後關 debug
 `api/config.php` 的 `debug => false`（錯誤不再回傳內部細節）。
@@ -67,7 +72,7 @@ Nginx：`client_max_body_size 15m;`　PHP：`upload_max_filesize=15M`、`post_ma
 ## 三、管理 / 審閱 / 分析
 
 - 管理頁：`?api=admin`（或 `/<mapid>/manager`），輸入 PIN 登入（POST，httpOnly cookie 保持登入，PIN 不進網址）。
-  - **主 PIN**（`config.admin_pin`）：開所有專案。**專案 PIN**：只開該專案，由主 PIN 在後台新增/移除，可個別授權下列權限旗標（`admin_perm`，預設關閉）：`edit_others`（改別人的投稿）、`edit_points`（改定位點）、`delegate_admin`（可建立「管理PIN」型分享連結）。
+  - **主 PIN**（`config.admin_pin`）：開所有專案。**專案 PIN**：只開該專案，由主 PIN 在後台新增/移除，可個別授權下列權限旗標（`admin_perm`，預設關閉）：`delete_others`（刪別人的投稿）、`edit_others`（改別人的投稿）、`edit_points`（改定位點）、`delegate_admin`（可建立「管理PIN」型分享連結）。
   - 投稿者身分是**純自助**的：參與者用投稿碼進地圖後，在解鎖視窗自行設 PIN 建立身分；後台「身分管理」只顯示/撤銷，不能代為建立，身分本身也不帶到期／次數（那是投稿碼的事）。
   - 「管理 PIN」同樣是**純自助**的：後台只建立**邀請連結**（可設到期時間／兌換次數上限），收到連結的人自行輸入 PIN／暱稱兌換；兌換出來的身分預設無任何權限，需由主 PIN 事後逐項授權（`admin_perm`）。連結的秘密只透過網址 fragment（`#redeem=...`）傳遞，不進伺服器紀錄。
   - 投稿碼／身分管理、看統計摘要、瀏覽與刪除投稿。
@@ -80,13 +85,16 @@ Nginx：`client_max_body_size 15m;`　PHP：`upload_max_filesize=15M`、`post_ma
 script-src  'unsafe-inline' https://unpkg.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com;
 style-src   'unsafe-inline' https://unpkg.com https://cdnjs.cloudflare.com;
 img-src     'self' data: blob: https://*.basemaps.cartocdn.com;
+media-src   'self' blob:;
 connect-src 'self';
 font-src    https://cdnjs.cloudflare.com;
 worker-src  blob:;
 ```
 
 ## 五、備份
-只要備份 `apps/souliong/projects/`（每個專案的全部資料與照片）與 `apps/souliong/state/`（admin PIN 清單）兩個資料夾即為全部使用者資料。
+只要備份 `apps/souliong/projects/`（每個專案的全部資料、照片、影音與專案專屬圖層）與 `apps/souliong/state/`（admin PIN 清單）兩個資料夾即為全部使用者資料；後台的「全部專案備份（ZIP）」打包的也是這兩個（`state/` 在 ZIP 裡的路徑沿用舊名 `data/`，匯入端認得）。
+
+> 例外：從後台匯入的**全站**圖層與主題包落在 `layers/`、`packs/`，不在上面兩個資料夾裡。這兩個目錄進版控，所以正常做法是把匯入的成果一併 commit，而不是靠備份。
 
 > 若你是從舊版（`data/` + `photos/` + `projects/` 三資料夾並存）升級：這是有資料位置破壞性的變動，新舊程式碼與新舊資料夾結構不能混用。升級時需把舊的 `data/<id>.jsonl`／`<id>.code.txt`／`<id>.contrib.json`／`<id>.stats.json` 與 `photos/<id>/` 併入 `projects/<id>/`（分別改名為 `data.jsonl`／`code.txt`／`contrib.json`／`stats.json`／`photos/`），再把只剩 `admin_pins.json`、`.rate/` 的舊 `data/` 改名為 `state/`。放進去的 `code.txt` 不用手動轉檔——後端第一次讀取投稿碼時會自動把它併入 `codes.json`（不限期不限次數那筆）並刪除 `code.txt`，舊碼不會失效。
 

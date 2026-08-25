@@ -171,6 +171,7 @@ header('Content-Type: text/html; charset=utf-8');
         <li>你輸入的暱稱 <span class="en">— the nickname you type</span></li>
         <li>投稿權限（解鎖後記住投稿碼）<span class="en">— contribution code once unlocked</span></li>
         <li>投稿「擁有者標記」，用來讓你在原裝置刪除自己的投稿；此標記有期限，逾期後即無法用它刪除。<span class="en">— an owner marker (time-limited) so you can delete your own posts from this device</span></li>
+        <li>若你自選了 PIN 建立可跨裝置延續的投稿者身分：一組由該 PIN 衍生的識別權杖，用來在別的裝置編輯／刪除同一身分投稿過的內容。<span class="en">— if you set a PIN to create a portable contributor identity, a token derived from it, so you can edit/delete that identity's posts from another device</span></li>
       </ul>
       公開地圖頁不設 Cookie；只有進入後台登入時，會使用一個功能性的 <code>httpOnly</code> Cookie 維持登入，並非追蹤用途。<br>
       <span class="en">The public map sets no cookies; only admin login uses a functional httpOnly cookie (not for tracking).</span>
@@ -179,10 +180,14 @@ header('Content-Type: text/html; charset=utf-8');
     <h2>伺服器記錄的資料 <span class="en">/ Recorded on the server</span></h2>
     <div class="card">
       <ul>
-        <li><b>投稿內容</b>：照片、文字、你填的暱稱、時間、以及你選擇的地點座標——這些會公開顯示於地圖。<span class="en">— your posts (photo, text, nickname, time, chosen location), shown publicly.</span></li>
+        <li><b>投稿內容</b>：照片、影片、音訊、文字、你填的暱稱、時間、以及你選擇的地點座標——這些會公開顯示於地圖。<span class="en">— your posts (photo, video, audio, text, nickname, time, chosen location), shown publicly.</span></li>
         <li><b>匿名使用統計</b>：瀏覽次數、工作階段、裝置類別（手機／桌機）、功能使用次數、照片的相機型號等彙總數字，<b>不含個人身分</b>。<span class="en">— aggregate, non-identifying usage stats.</span></li>
         <li><b>防冒名的來源標記</b>：為了在發生冒名或濫用時界定影響範圍，系統會儲存一段<b>加鹽雜湊</b>後的來源標記。它經過去識別、無法還原成 IP，僅供管理者鑑識，<b>不對外顯示</b>。<span class="en">— a salted, de-identified source hash for abuse forensics; never shown publicly and not reversible to an IP.</span></li>
       </ul>
+      上傳的照片會轉存為 WebP，過程<b>移除原始 EXIF</b>（僅另存我們讀到的拍攝時間、座標，以及相機廠牌／型號／鏡頭／軟體、光圈、快門、ISO、焦距等有限的拍攝參數；不含機身序號等可唯一識別裝置的欄位）。<br>
+      <span class="en">Photos are re-encoded to WebP on upload and <b>original EXIF is stripped</b> — only shot time, coordinates, and a limited set of shooting parameters are kept (camera make/model/lens/software, aperture, shutter, ISO, focal length); no serial numbers or other uniquely-identifying fields.</span><br>
+      影片與音訊則<b>依原檔保存、不重新編碼</b>，因此檔案內原有的中繼資料（部分手機會寫入拍攝地點與機型）也會一併留在伺服器上。直接在網頁上錄下的聲音不含這些欄位；若你上傳的是相簿裡的既有檔案且介意這件事，請先自行清除中繼資料再上傳。<br>
+      <span class="en">Video and audio are kept <b>exactly as uploaded — not re-encoded</b>, so any metadata already inside the file (some phones embed location and device model) stays on the server too. Audio recorded in the browser has none of this; if you upload an existing file and this matters to you, strip its metadata first.</span>
     </div>
 
     <h2>刪除與內容處理 <span class="en">/ Deletion &amp; takedown</span></h2>
@@ -193,8 +198,8 @@ header('Content-Type: text/html; charset=utf-8');
 
     <h2>第三方 <span class="en">/ Third parties</span></h2>
     <div class="card">
-      地圖以 Leaflet 顯示、圖磚來自 CARTO、圖資 © OpenStreetMap 貢獻者；QR 產生在你的瀏覽器本機完成。這些用於顯示功能，非廣告或追蹤。授權詳見 <a href="https://github.com/zisunny104/koilisu-souliong/blob/main/LICENSE" target="_blank" rel="noopener">LICENSE</a>。<br>
-      <span class="en">Map via Leaflet, tiles by CARTO, data © OpenStreetMap contributors; QR generated locally in your browser. For display only — no ads or tracking.</span>
+      地圖以 Leaflet 顯示、預設圖磚來自 CARTO、圖資 © OpenStreetMap 貢獻者；QR 產生在你的瀏覽器本機完成。個別地圖可能改用其他圖磚來源或加上自繪疊圖，實際來源標示在地圖的圖資出處列。這些用於顯示功能，非廣告或追蹤。授權詳見 <a href="https://github.com/zisunny104/koilisu-souliong/blob/main/LICENSE" target="_blank" rel="noopener">LICENSE</a>。<br>
+      <span class="en">Map via Leaflet, default tiles by CARTO, data © OpenStreetMap contributors; QR generated locally in your browser. Individual maps may use other tile sources or hand-drawn overlays, credited in the map's attribution line. For display only — no ads or tracking.</span>
     </div>
 
     <footer>© 2026 prjToka · Souliong 循跡 · 本頁為平台通則，各地圖另可能有自訂的投稿說明。</footer>
