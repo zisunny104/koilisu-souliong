@@ -31,12 +31,16 @@ if (is_blocked($cfg, $project, $blockOwnerHash, $blockContribId)) {
 }
 
 // 投稿碼：限特定人上傳（碼存後端檔案，前端拿不到，這裡才是真正把關）。已用管理 PIN 登入者視為已解鎖。
-// 能不能投稿完全看投稿碼（codes.json，各自可設到期/次數）；這裡計一次使用。
-$metaU = json_decode((string)@file_get_contents($cfg['projects_dir'] . '/' . $project . '/meta.json'), true);
-$gated = !empty($metaU['gated']);
+// 能不能投稿完全看投稿碼（codes.json，各自可設到期/次數）：一組有效碼都沒有＝這張地圖現在沒開放投稿；
+// 有碼就一定要附碼，這裡順便計一次使用。
 $givenCode = preg_replace('/\D/', '', (string)($_POST['code'] ?? ''));
-if ($gated && !admin_can($cfg, $project) && !code_check($cfg, $project, $givenCode, true)) {
-    json_out(['error' => '需要正確的投稿碼才能上傳（碼可能已到期或用完次數）'], 403);
+if (!admin_can($cfg, $project)) {
+    if (!contrib_open($cfg, $project)) {
+        json_out(['error' => '這張地圖目前未開放投稿'], 403);
+    }
+    if (!code_check($cfg, $project, $givenCode, true)) {
+        json_out(['error' => '需要正確的投稿碼才能上傳（碼可能已到期或用完次數）'], 403);
+    }
 }
 
 function clean_str(?string $s, int $max): ?string {
@@ -68,6 +72,7 @@ $kindDef = souliong_kinds()[$kind];
 // 再確認這張地圖有沒有開放這個內容種類（meta.json 的 contrib.kinds）。desc 不在對話框的種類
 // 清單裡、由 story 模組自己把關，所以不受這條限制。沒設定 contrib 的舊地圖解析出來就是
 // ['photo']，前端不送 kind 時的預設值也是 photo，因此既有投稿流程完全不受影響。
+$metaU = json_decode((string)@file_get_contents($cfg['projects_dir'] . '/' . $project . '/meta.json'), true);
 $contribCfg = souliong_contrib_cfg($metaU);
 if (in_array($kind, souliong_contrib_kinds(), true) && !in_array($kind, $contribCfg['kinds'], true)) {
     json_out(['error' => '這張地圖沒有開放這種投稿：' . souliong_kind_label($kind)], 403);

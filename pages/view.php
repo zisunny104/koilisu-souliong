@@ -25,9 +25,6 @@ $meta    = is_file($metaF) ? json_decode(file_get_contents($metaF), true) : null
 $ptsF    = $meta ? __DIR__ . '/../projects/' . $proj . '/' . ($meta['points'] ?? 'points.json') : null;
 $points  = ($ptsF && is_file($ptsF)) ? json_decode(file_get_contents($ptsF), true) : [];
 
-// 是否需要投稿碼（真正的碼在伺服器端 projects/<project>/code.txt，前端拿不到）
-$gated = is_array($meta) && !empty($meta['gated']);
-
 // 已用管理 PIN 登入者（主 PIN 或此專案的 PIN）直接視為已解鎖投稿身分，不受投稿碼限制
 require __DIR__ . '/../api/security.php';
 require __DIR__ . '/../api/i18n.php';
@@ -35,6 +32,9 @@ require __DIR__ . '/../api/features.php';
 require_once __DIR__ . '/../api/packs.php';
 $apiCfg    = require __DIR__ . '/../api/config.php';
 $isManager = admin_can($apiCfg, $proj);
+// 投稿開關＝有沒有還有效的投稿碼（真正的碼在伺服器端 codes.json，前端拿不到）。
+// APP.gated 因此變成「現在有碼可解鎖」：一組都沒有時前端連解鎖鈕都不出現。
+$gated = contrib_open($apiCfg, $proj);
 // 定位點編輯（editpoint.php）走的是這個公開頁面而非後台頁，因此比照 admin.php 的作法，
 // 帶一份「同源才讀得到」的 CSRF 驗證值，只在已登入管理者時計算並輸出。
 // 管理者三種登入方式都要各自對應到正確的衍生值，否則其中一種身分送出的請求會被誤判成 CSRF 失效。

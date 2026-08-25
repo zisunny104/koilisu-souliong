@@ -170,9 +170,6 @@ if (!$authed) {
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title><?= $t('admin_login_title') ?></title>
     <style>
-      .langsw{position:fixed;top:16px;right:16px;z-index:3;display:flex;gap:2px;font-size:0.75rem}
-      .langsw a{color:var(--muted);text-decoration:none;padding:4px 8px;border-radius:999px}
-      .langsw a.on{color:var(--fg);font-weight:700;background:var(--card);border:1px solid var(--line)}
       :root {
         color-scheme: light dark;
         --bg: #111113;
@@ -181,7 +178,15 @@ if (!$authed) {
         --line: #2b2b2f;
         --card: #1c1c1f;
         --accent: #f1f1f3;
-        --accent-fg: #151517
+        --accent-fg: #151517;
+        --r-md: 0.75rem;
+        --sp-1: 0.25rem;
+        --sp-2: 0.5rem;
+        --sp-3: 0.75rem;
+        --sp-4: 1rem;
+        --sp-5: 1.5rem;
+        /* 最小點擊區：WCAG 2.2 SC 2.5.8 下限 24px，取 1.75rem 留餘裕 */
+        --tap: 1.75rem
       }
 
       @media(prefers-color-scheme:light) {
@@ -202,85 +207,116 @@ if (!$authed) {
 
       body {
         margin: 0;
-        height: 100vh;
+        min-height: 100vh;
         display: grid;
         place-items: center;
+        padding: var(--sp-5) var(--sp-4);
         background: var(--bg);
         color: var(--fg);
-        font-family: system-ui, sans-serif
+        font-family: system-ui, sans-serif;
+        line-height: 1.6
+      }
+
+      .langsw {
+        position: fixed;
+        top: var(--sp-2);
+        right: var(--sp-2);
+        z-index: 3;
+        display: flex;
+        gap: var(--sp-1);
+        font-size: 0.75rem
+      }
+
+      .langsw a {
+        display: inline-flex;
+        align-items: center;
+        min-height: var(--tap);
+        color: var(--muted);
+        text-decoration: none;
+        padding: 0 var(--sp-3);
+        border-radius: 999px;
+        border: 1px solid transparent
+      }
+
+      .langsw a.on {
+        color: var(--fg);
+        font-weight: 700;
+        background: var(--card);
+        border-color: var(--line)
       }
 
       form {
         background: var(--card);
         border: 1px solid var(--line);
-        border-radius: 20px;
-        padding: 28px;
-        width: min(320px, 90vw);
+        border-radius: 1.25rem;
+        padding: 1.75rem;
+        width: min(20rem, 90vw);
         box-shadow: 0 12px 40px rgba(0, 0, 0, .3);
         text-align: center
       }
 
       h1 {
         font-size: 1.125rem;
-        margin: 0 0 4px
+        line-height: 1.4;
+        margin: 0 0 var(--sp-1)
       }
 
       .s {
         font-size: 0.75rem;
         color: var(--muted);
-        margin-bottom: 18px
+        margin-bottom: var(--sp-5)
       }
 
       input {
         width: 100%;
         text-align: center;
-        letter-spacing: 4px;
+        letter-spacing: 0.25rem;
         font-size: 1.25rem;
-        padding: 12px;
+        padding: var(--sp-3);
         border: 1px solid var(--line);
-        border-radius: 12px;
+        border-radius: var(--r-md);
         background: var(--bg);
         color: var(--fg);
-        margin-bottom: 12px
+        margin-bottom: var(--sp-3)
       }
 
       button {
         width: 100%;
         border: none;
-        border-radius: 12px;
+        border-radius: var(--r-md);
         background: var(--accent);
         color: var(--accent-fg);
         font-size: 0.9375rem;
         font-weight: 700;
-        padding: 12px;
+        padding: var(--sp-3);
         cursor: pointer
       }
 
       .err {
         color: #ff6b6b;
         font-size: 0.8125rem;
-        margin-bottom: 10px;
-        min-height: 18px
+        margin-bottom: var(--sp-2);
+        min-height: 1.125rem
       }
 
       .pin-toggle-wrap {
         position: relative;
         display: block;
-        margin-bottom: 12px
+        margin-bottom: var(--sp-3)
       }
 
       .pin-toggle-wrap input {
         margin-bottom: 0;
-        padding-right: 40px
+        padding-right: 2.5rem
       }
 
       .pin-toggle-btn {
         position: absolute;
-        right: 6px;
+        right: var(--sp-1);
         top: 50%;
         transform: translateY(-50%);
-        width: 28px;
-        height: 28px;
+        width: var(--tap);
+        height: var(--tap);
         border: none;
         background: transparent;
         color: var(--muted);
@@ -288,7 +324,7 @@ if (!$authed) {
         display: flex;
         align-items: center;
         justify-content: center;
-        border-radius: 8px
+        border-radius: var(--sp-2)
       }
 
       .pin-toggle-btn:hover {
@@ -298,11 +334,11 @@ if (!$authed) {
       .pin-mask-overlay {
         position: absolute;
         inset: 0;
-        right: 40px;
+        right: 2.5rem;
         display: flex;
         align-items: center;
         justify-content: center;
-        gap: 9px;
+        gap: 0.5625rem;
         overflow: hidden;
         pointer-events: none;
         color: var(--fg)
@@ -338,14 +374,32 @@ if (!$authed) {
       }
 
       .switchlink {
-        margin-top: 14px;
+        margin-top: var(--sp-3);
         font-size: 0.8125rem
       }
 
+      /* 連結也要有 24px 以上的可點面積，不能只有一行字的高度 */
       .switchlink a {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: var(--tap);
+        padding: 0 var(--sp-2);
+        border-radius: var(--sp-2);
         color: var(--muted);
         cursor: pointer;
         text-decoration: underline
+      }
+
+      .switchlink a:hover {
+        color: var(--fg)
+      }
+
+      a:focus-visible,
+      button:focus-visible,
+      input:focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 2px
       }
     </style>
   </head>
@@ -1080,14 +1134,16 @@ if (!$authed) {
       margin: 0;
       display: flex;
       align-items: center;
-      gap: var(--sp-2);
+      flex-wrap: wrap;
+      gap: 0 var(--sp-2);
       flex: 1
     }
 
     h1 .sub {
       font-size: 0.75rem;
       font-weight: 500;
-      color: var(--muted)
+      color: var(--muted);
+      white-space: nowrap
     }
 
     h2 {
@@ -1115,14 +1171,39 @@ if (!$authed) {
       margin-top: var(--sp-2)
     }
 
+    /* 投稿碼是要唸給人聽、打進欄位的，所以碼本身放大當主角；
+       QR 只有真的要給人掃時才需要，收進「分享」按鈕展開全螢幕（.qr-trigger） */
     .codecard {
       display: flex;
-      gap: var(--sp-3);
-      align-items: flex-start;
-      padding: var(--sp-3) var(--sp-4)
+      flex-direction: column;
+      gap: var(--sp-2);
+      padding: var(--sp-4)
     }
 
-    .codecard .qr, .sharenew .qr {
+    .codecard-acts {
+      display: flex;
+      align-items: center;
+      gap: var(--sp-2);
+      margin-top: var(--sp-1)
+    }
+
+    .codecard-acts form {
+      display: inline-flex;
+      margin: 0
+    }
+
+    /* 同一排的圖示鈕跟「分享」鈕等高，看起來才是一組 */
+    .codecard-acts .chipbtn,
+    .codecard-acts .x {
+      width: 2.25rem;
+      height: 2.25rem
+    }
+
+    .codecard-acts .x {
+      margin-left: auto
+    }
+
+    .sharenew .qr {
       background: #fff;
       padding: 0.375rem;
       border-radius: var(--r-sm);
@@ -1145,39 +1226,45 @@ if (!$authed) {
     }
 
     .qr-modal .qr-modal-card {
+      position: relative;
       background: #fff;
-      border-radius: 1.75rem;
-      padding: var(--sp-6) var(--sp-5);
-      max-width: min(90vw, 27.5rem);
+      border-radius: 1.5rem;
+      padding: var(--sp-6) var(--sp-5) var(--sp-5);
+      max-width: min(88vw, 20rem);
       width: 100%;
       text-align: center;
       box-shadow: 0 24px 70px rgba(0, 0, 0, .45)
     }
 
-    .qr-modal .qr-modal-title {
-      font-size: 1.0625rem;
-      font-weight: 800;
-      color: #1a1a1a
+    .qr-modal .qr-modal-close {
+      position: absolute;
+      top: var(--sp-3);
+      right: var(--sp-3);
+      width: 2rem;
+      height: 2rem;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid #e4e4e7;
+      border-radius: 999px;
+      background: #fff;
+      color: #555;
+      font-size: 0.8125rem;
+      cursor: pointer
     }
 
-    .qr-modal .qr-modal-guide {
-      font-size: 0.8125rem;
-      color: #666;
+    .qr-modal .qr-modal-title {
+      font-size: 0.9375rem;
+      font-weight: 700;
+      color: #1a1a1a;
       margin-bottom: var(--sp-4)
     }
 
-    .qr-modal .qr-modal-code {
-      margin-top: var(--sp-4);
-      font-family: ui-monospace, Consolas, monospace;
-      font-size: 1.75rem;
-      font-weight: 700;
-      letter-spacing: .08em;
-      color: #1a1a1a
-    }
-
+    /* QR 是配角：夠掃就好，不要整張卡都是它 */
     .qr-modal .qr-modal-box {
-      width: 100%;
-      aspect-ratio: 1
+      width: 11.25rem;
+      height: 11.25rem;
+      margin: 0 auto
     }
 
     .qr-modal .qr-modal-box svg {
@@ -1186,43 +1273,43 @@ if (!$authed) {
       display: block
     }
 
-    .qr-modal .qr-modal-url {
-      margin-top: var(--sp-3);
+    .qr-modal .qr-modal-code {
+      margin-top: var(--sp-4);
       font-family: ui-monospace, Consolas, monospace;
-      font-size: 0.75rem;
-      color: #444;
+      font-size: 1.75rem;
+      font-weight: 700;
+      letter-spacing: .12em;
+      color: #1a1a1a
+    }
+
+    .qr-modal .qr-modal-url {
+      margin-top: var(--sp-2);
+      font-family: ui-monospace, Consolas, monospace;
+      font-size: 0.6875rem;
+      color: #8a8a8f;
       word-break: break-all
     }
 
-    .qr-modal .qr-modal-hint {
-      margin-top: var(--sp-2);
-      font-size: 0.75rem;
-      color: #888
-    }
-
-    .codecard .qr svg, .sharenew .qr svg {
+    .sharenew .qr svg {
       width: 100%;
       height: 100%;
       display: block
     }
 
-    .codecard-info {
-      flex: 1;
-      min-width: 0
-    }
-
     .codecard-title {
       display: flex;
-      align-items: center;
+      align-items: baseline;
       flex-wrap: wrap;
-      gap: var(--sp-2)
+      gap: var(--sp-1) var(--sp-2)
     }
 
     .codecard-title .code-main {
-      font-size: 0.9375rem;
+      font-size: 1.75rem;
       font-weight: 800;
+      line-height: 1.2;
       color: var(--fg);
-      letter-spacing: .03em
+      letter-spacing: .08em;
+      word-break: break-all
     }
 
     .codecard-title .codecard-label {
@@ -1267,8 +1354,10 @@ if (!$authed) {
       display: contents
     }
 
+    /* display:contents 之下 summary 直接落在父層流裡，沒有這行就會緊貼上一塊（投稿碼列表／空狀態） */
     .metaedit>summary {
-      list-style: none
+      list-style: none;
+      margin-top: var(--sp-3)
     }
 
     .metaedit>summary::-webkit-details-marker {
@@ -1623,8 +1712,8 @@ if (!$authed) {
 
     .stat-card .cols {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(13.75rem, 1fr));
-      /* 不設 align-items 的話四欄會被拉成等高，只有一行字的那欄下面會空一大片 */
+      grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+      /* 不設 align-items 的話各欄會被拉成等高，只有一行字的那欄下面會空一大片 */
       align-items: start;
       gap: var(--sp-3);
       margin-top: var(--sp-4);
@@ -1653,12 +1742,154 @@ if (!$authed) {
 
     .stat-card .col ol {
       margin: 0;
-      padding-left: 1.25rem
+      padding-left: 1.25rem;
+      max-height: 15rem;
+      overflow-y: auto
     }
 
     .stat-card .col p {
       margin: var(--sp-1) 0;
       color: var(--muted)
+    }
+
+    /* 統計圖表：純 CSS 長條，長度在 PHP 端就算好，不引圖表庫也不用 JS
+       （這頁本來就不供靜態檔，為了幾張圖多一個相依不划算）。
+       條本身是裝飾（aria-hidden），每一列旁邊都有文字標籤與數值，讀螢幕的人拿到的資訊一樣。 */
+    .stat-card .col .statbars {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      max-height: 15rem;
+      overflow-y: auto
+    }
+
+    .stat-card .col .statbars li {
+      display: grid;
+      grid-template-columns: minmax(3.25rem, 6rem) 1fr auto;
+      align-items: center;
+      gap: var(--sp-2);
+      padding: 0.1875rem 0
+    }
+
+    .stat-card .col .statbars .lbl {
+      color: var(--muted);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis
+    }
+
+    .stat-card .col .statbars .trk {
+      height: 0.5rem;
+      border-radius: 999px;
+      background: var(--line);
+      overflow: hidden
+    }
+
+    .stat-card .col .statbars .fil {
+      display: block;
+      height: 100%;
+      border-radius: 999px;
+      background: var(--accent)
+    }
+
+    .stat-card .col .statbars .val {
+      font-weight: 700;
+      font-variant-numeric: tabular-nums
+    }
+
+    .stat-card .col .statsub {
+      color: var(--muted);
+      margin: var(--sp-3) 0 var(--sp-1)
+    }
+
+    .stat-card .col .statsub:first-of-type {
+      margin-top: 0
+    }
+
+    /* 直式分佈（時段／星期）：沒有資料的格子也要留位置，才看得出一整天的形狀 */
+    .statcols {
+      display: flex;
+      align-items: flex-end;
+      gap: 0.125rem;
+      height: 4.5rem;
+      margin-top: var(--sp-2)
+    }
+
+    .statcols .cc {
+      flex: 1;
+      display: flex;
+      align-items: flex-end;
+      height: 100%
+    }
+
+    .statcols .cc i {
+      display: block;
+      width: 100%;
+      background: var(--accent);
+      border-radius: 0.125rem 0.125rem 0 0
+    }
+
+    .statcols .cc.zero i {
+      background: var(--line)
+    }
+
+    .statcols-axis {
+      display: flex;
+      gap: 0.125rem;
+      margin-top: var(--sp-1);
+      font-size: 0.6875rem;
+      color: var(--muted)
+    }
+
+    .statcols-axis span {
+      flex: 1;
+      text-align: center;
+      white-space: nowrap
+    }
+
+    /* 同一欄裡上下兩張圖（時段、星期）之間要留白，不然看起來像同一張 */
+    .statcols-axis+.statcols {
+      margin-top: var(--sp-4)
+    }
+
+    /* 兩類佔比（手機／桌機）：一條堆疊條，顏色對應上面兩個數字 */
+    .statdev .b {
+      color: var(--muted)
+    }
+
+    .statdev .sep {
+      color: var(--muted);
+      font-weight: 400;
+      margin: 0 0.125rem
+    }
+
+    .statratio {
+      display: flex;
+      height: 0.375rem;
+      margin-top: var(--sp-2);
+      border-radius: 999px;
+      overflow: hidden;
+      background: var(--line)
+    }
+
+    .statratio span {
+      display: block;
+      height: 100%
+    }
+
+    .statratio .a {
+      background: var(--accent)
+    }
+
+    .statratio .b {
+      background: var(--muted)
+    }
+
+    /* 時段圖有 24 格，擠在一欄看不出形狀，寬螢幕給它兩欄 */
+    @media (min-width: 40rem) {
+      .stat-card .col.wide {
+        grid-column: span 2
+      }
     }
 
     .tablewrap {
@@ -1713,6 +1944,13 @@ if (!$authed) {
       color: var(--muted)
     }
 
+    /* 同一格可能有兩個標籤（照片＋編修），用 flex 給列距，不要靠 <br> 疊在一起 */
+    .tagcell {
+      display: inline-flex;
+      flex-wrap: wrap;
+      gap: var(--sp-1)
+    }
+
     .tag {
       display: inline-block;
       font-size: 0.75rem;
@@ -1731,9 +1969,10 @@ if (!$authed) {
       margin-top: var(--sp-2)
     }
 
+    /* 圖示鈕與 .btn 用同一種外框：同一排按鈕不能有的有框、有的沒框 */
     .iconbtn {
-      background: none;
-      border: none;
+      background: var(--card);
+      border: 1px solid var(--line);
       color: var(--danger);
       cursor: pointer;
       font-size: 0.9375rem;
@@ -1746,6 +1985,7 @@ if (!$authed) {
     }
 
     .iconbtn:hover {
+      border-color: var(--danger);
       background: var(--line)
     }
 
@@ -1780,8 +2020,8 @@ if (!$authed) {
 
     /* 移除／撤銷。原本 17×16px，遠低於 WCAG 2.2 SC 2.5.8 的 24×24 下限 */
     .x {
-      background: none;
-      border: none;
+      background: var(--card);
+      border: 1px solid var(--line);
       color: var(--danger);
       cursor: pointer;
       font-size: 1rem;
@@ -1797,6 +2037,7 @@ if (!$authed) {
     }
 
     .x:hover {
+      border-color: var(--danger);
       background: var(--line)
     }
 
@@ -1951,8 +2192,8 @@ if (!$authed) {
     }
 
     .eyebtn {
-      background: none;
-      border: none;
+      background: var(--card);
+      border: 1px solid var(--line);
       color: var(--muted);
       cursor: pointer;
       font-size: 0.75rem;
@@ -1968,13 +2209,14 @@ if (!$authed) {
 
     .eyebtn:hover {
       color: var(--fg);
+      border-color: var(--accent);
       background: var(--line)
     }
 
     /* pinchip 內的小型連結按鈕（複製邀請連結等）。原本 18×14px，點不到 */
     .chipbtn {
-      background: none;
-      border: none;
+      background: var(--card);
+      border: 1px solid var(--line);
       color: var(--accent);
       cursor: pointer;
       font-size: 0.75rem;
@@ -1989,6 +2231,7 @@ if (!$authed) {
     }
 
     .chipbtn:hover {
+      border-color: var(--accent);
       background: var(--line)
     }
 
@@ -2100,6 +2343,34 @@ if (!$authed) {
       margin-top: var(--sp-3)
     }
 
+    .modrow {
+      display: flex;
+      align-items: flex-start;
+      gap: var(--sp-2)
+    }
+
+    .setrow {
+      display: block;
+      margin-top: var(--sp-3)
+    }
+
+    .setrow>b {
+      display: block;
+      margin-bottom: var(--sp-1)
+    }
+
+    /* 下拉選單跟輸入框長一樣，不留一顆瀏覽器原生樣式的白框 */
+    .section-card select {
+      border: 1px solid var(--line);
+      border-radius: var(--r-sm);
+      background: var(--bg);
+      color: var(--fg);
+      padding: var(--sp-2) var(--sp-3);
+      font-size: 0.8125rem;
+      min-height: 2.25rem;
+      max-width: 100%
+    }
+
     .danger-zone {
       border-color: var(--danger)
     }
@@ -2130,10 +2401,10 @@ if (!$authed) {
        明確表示「這一格現在是空的」，並把下一步的按鈕就放在框裡。 */
     .emptystate {
       display: flex;
-      flex-direction: column;
       align-items: center;
-      gap: var(--sp-3);
-      padding: var(--sp-5) var(--sp-4);
+      justify-content: center;
+      gap: var(--sp-2);
+      padding: var(--sp-4);
       margin-top: var(--sp-2);
       border: 1px dashed var(--line);
       border-radius: var(--r-md);
@@ -2152,7 +2423,19 @@ if (!$authed) {
       <a href="?<?= $langQs ?>lang=en" class="<?= $LANG === 'en' ? 'on' : '' ?>">English</a>
     </div>
     <div class="top">
-      <h1><i class="fa-solid fa-gauge-high"></i> <?= $t('app_title') ?> <span class="sub"><?= $master ? $t('master_admin_label') : $t('project_admin_label', ['project' => $reqProject]) ?> · <?= $t('records_count_suffix', ['n' => count($rows)]) ?></span></h1>
+      <?php
+        // 主標就寫「現在在哪」：總覽是所有專案，進到專案就是那個專案的名稱。
+        // 站台名稱留在瀏覽器分頁標題即可，佔著 h1 只會讓人看不出目前位置。
+        $headMeta = [];
+        if ($scopeProject !== '') {
+          $hm = json_decode((string)@file_get_contents($cfg['projects_dir'] . '/' . $scopeProject . '/meta.json'), true);
+          if (is_array($hm)) $headMeta = $hm;
+        }
+        $headName = $scopeProject !== ''
+          ? ((string)($headMeta['title'] ?? '') !== '' ? (string)$headMeta['title'] : $scopeProject)
+          : $t('all_projects_heading');
+      ?>
+      <h1><i class="fa-solid <?= $scopeProject !== '' ? 'fa-map-location-dot' : 'fa-layer-group' ?>"></i> <?= $esc($headName) ?> <span class="sub"><?php if ($scopeProject !== '' && $headName !== $scopeProject): ?><span class="mono"><?= $esc($scopeProject) ?></span> · <?php endif; ?><?= $master ? $t('master_admin_label') : $t('project_admin_label') ?> · <?= $t('records_count_suffix', ['n' => count($rows)]) ?></span></h1>
       <?php
         // 回到公開網站。有指定專案就直接回那張地圖，沒有（主要管理者的總覽）就回平台首頁。
         // 一定要用 $origin . $basePath 組絕對網址：後台可能是從 /<project>/manager 這種路徑式網址進來的，
@@ -2239,7 +2522,7 @@ if (!$authed) {
     <h2><?= $t('project_access_heading') ?></h2>
     <?php foreach ($viewProjects as $p):
       $meta = json_decode((string)@file_get_contents($cfg['projects_dir'] . '/' . $p . '/meta.json'), true);
-      $gated = !empty($meta['gated']);
+      $contribOpen = contrib_open($cfg, $p);   // 有沒有還有效的投稿碼＝這張地圖現在開不開放投稿
       $ppinsAll = pins_load($cfg)['projects'][$p] ?? [];
       $realPins = array_values(array_filter($ppinsAll, fn($e) => ($e['kind'] ?? 'pin') !== 'invite'));
       $invites = array_values(array_filter($ppinsAll, fn($e) => ($e['kind'] ?? 'pin') === 'invite'));
@@ -2280,7 +2563,6 @@ if (!$authed) {
                   <?php endforeach; ?>
                 </select>
               </label>
-              <div class="badge"><?= $tr('sources_field_hint') ?></div>
               <input type="hidden" name="modules_submitted" value="1">
               <div class="modfields">
                 <div class="modfields-head"><?= $t('feature_modules_heading') ?></div>
@@ -2379,29 +2661,31 @@ if (!$authed) {
         <?php };
       ?>
         <!-- 投稿碼：一碼一張卡，連結／QR／限制／用量都在同一張卡上 -->
-        <div class="sechead"><i class="fa-solid fa-ticket"></i> <?= $t('contrib_code') ?><?= $gated ? "" : "<span class=\"sechint\">" . $t("codes_ungated_hint") . "</span>" ?></div>
+        <div class="sechead"><i class="fa-solid fa-ticket"></i> <?= $t('contrib_code') ?><span class="sechint"><?= $contribOpen ? $t('codes_gated_hint') : $t('codes_none_hint') ?></span></div>
         <?php if ($codesList): ?>
           <div class="code-grid">
             <?php foreach ($codesList as $ce2): $cc = (string)($ce2['code'] ?? ''); $inviteC = $mapUrl($p) . '?code=' . $cc; ?>
               <div class="card codecard">
-                <div class="qr" data-url="<?= $esc($inviteC) ?>" data-title="<?= $esc($meta['title'] ?? $p) ?>" data-code="<?= $esc($cc) ?>"></div>
+                <div class="codecard-title">
+                  <span class="mono code-main"><?= $esc($cc) ?></span>
+                  <?php if (($ce2['label'] ?? '') !== ''): ?><span class="codecard-label"><?= $esc($ce2['label']) ?></span><?php endif; ?>
+                </div>
                 <div class="codecard-info">
-                  <div class="codecard-title">
-                    <span class="mono code-main"><?= $esc($cc) ?></span>
-                    <?php if (($ce2['label'] ?? '') !== ''): ?><span class="codecard-label"><?= $esc($ce2['label']) ?></span><?php endif; ?>
-                    <button type="button" class="chipbtn" data-copy="<?= $esc($inviteC) ?>" title="<?= $t('copy_code_invite_link_title') ?>"><i class="fa-solid fa-link"></i></button>
-                    <form method="post" style="display:inline"><input type="hidden" name="csrf" value="<?= $esc_csrf ?>"><input type="hidden" name="action" value="delcode"><input type="hidden" name="project" value="<?= $esc($p) ?>"><input type="hidden" name="code_del" value="<?= $esc($cc) ?>"><button class="x" title="<?= $t('remove_code_title') ?>">×</button></form>
-                  </div>
                   <div class="badge">
                     <?= !empty($ce2['expires_at']) ? $t('expires_at_label', ['date' => substr((string)$ce2['expires_at'], 0, 16)]) : $t('no_expiry_label') ?>
                     ・<?= isset($ce2['max_uses']) && $ce2['max_uses'] !== null ? $t('used_of_max_label', ['used' => (int)($ce2['used_count'] ?? 0), 'max' => (int)$ce2['max_uses']]) : $t('unlimited_used_label', ['used' => (int)($ce2['used_count'] ?? 0)]) ?>
                   </div>
                 </div>
+                <div class="codecard-acts">
+                  <button type="button" class="btn qr-trigger" data-url="<?= $esc($inviteC) ?>" data-title="<?= $esc($meta['title'] ?? $p) ?>" data-code="<?= $esc($cc) ?>" title="<?= $t('show_qr_title') ?>"><i class="fa-solid fa-share-nodes"></i> <?= $t('share_code_btn') ?></button>
+                  <button type="button" class="chipbtn" data-copy="<?= $esc($inviteC) ?>" title="<?= $t('copy_code_invite_link_title') ?>"><i class="fa-solid fa-link"></i></button>
+                  <form method="post"><input type="hidden" name="csrf" value="<?= $esc_csrf ?>"><input type="hidden" name="action" value="delcode"><input type="hidden" name="project" value="<?= $esc($p) ?>"><input type="hidden" name="code_del" value="<?= $esc($cc) ?>"><button class="x" title="<?= $t('remove_code_title') ?>">×</button></form>
+                </div>
               </div>
             <?php endforeach; ?>
           </div>
         <?php else: ?>
-          <div class="emptystate"><?= $t('no_codes_yet_msg') ?></div>
+          <div class="emptystate"><i class="fa-solid fa-ticket" aria-hidden="true"></i><?= $t('no_codes_yet_msg') ?></div>
         <?php endif; ?>
         <details class="metaedit">
           <summary class="btn"><i class="fa-solid fa-plus"></i> <?= $t('add_code_btn') ?></summary>
@@ -2465,7 +2749,7 @@ if (!$authed) {
                 <?php endforeach; ?>
               </div>
             <?php else: ?>
-              <div class="emptystate"><?= $t('no_records_yet_msg') ?></div>
+              <div class="emptystate"><i class="fa-solid fa-inbox" aria-hidden="true"></i><?= $t('no_records_yet_msg') ?></div>
             <?php endif; ?>
           </div>
 
@@ -2560,6 +2844,39 @@ if (!$authed) {
 
     <div class="pane on" id="pane-overview">
     <h2><?= $t('stats_summary_heading') ?></h2>
+    <?php
+      // 統計圖表：長度在 PHP 端就算好，純 CSS 畫條，不引圖表庫也不用 JS。
+      // 條是裝飾（aria-hidden），每一列旁邊都有文字標籤與數值，讀螢幕的人拿到的資訊一樣。
+      $statBars = function (array $arr, callable $label, int $limit = 20) use ($esc): string {
+        if (!$arr) return '';
+        $max = max($arr) ?: 1;
+        $out = '<ol class="statbars">';
+        foreach (array_slice($arr, 0, $limit, true) as $k => $v) {
+          $w = max(2, (int)round((int)$v / $max * 100));   // 最小 2%：只被點過一次也要看得到一小截
+          $lb = (string)$label($k);
+          $out .= '<li><span class="lbl" title="' . $esc($lb) . '">' . $esc($lb) . '</span>'
+            . '<span class="trk" aria-hidden="true"><span class="fil" style="width:' . $w . '%"></span></span>'
+            . '<span class="val">' . (int)$v . '</span></li>';
+        }
+        return $out . '</ol>';
+      };
+      // $cells = [['v' => 次數, 'title' => 滑過顯示的字, 'axis' => 軸標（空字串＝這格不標）], ...]
+      $statCols = function (array $cells, string $aria) use ($esc): string {
+        $max = 0;
+        foreach ($cells as $c) $max = max($max, (int)$c['v']);
+        $max = $max ?: 1;
+        $bars = '';
+        $axis = '';
+        foreach ($cells as $c) {
+          $v = (int)$c['v'];
+          $h = $v > 0 ? max(8, (int)round($v / $max * 100)) : 3;   // 0 也畫一條淺淺的底，看得出這格存在
+          $bars .= '<div class="cc' . ($v ? '' : ' zero') . '" title="' . $esc((string)$c['title']) . '"><i style="height:' . $h . '%"></i></div>';
+          $axis .= '<span>' . $esc((string)$c['axis']) . '</span>';
+        }
+        return '<div class="statcols" role="img" aria-label="' . $esc($aria) . '">' . $bars . '</div>'
+          . '<div class="statcols-axis" aria-hidden="true">' . $axis . '</div>';
+      };
+    ?>
     <?php foreach ($viewProjects as $p): $s = stats_read($cfg, $p);
       if (!$s) continue;
       $s['points'] = $s['points'] ?? [];
@@ -2583,8 +2900,31 @@ if (!$authed) {
       arsort($browsers);
       $oses = $s['os'] ?? [];
       arsort($oses);
-      $bLabels = ['chrome' => 'Chrome', 'safari' => 'Safari', 'edge' => 'Edge', 'firefox' => 'Firefox', 'samsung' => 'Samsung Internet', 'opera' => 'Opera', 'line' => $t('browser_line'), 'facebook' => $t('browser_fb'), 'instagram' => $t('browser_ig'), 'wechat' => $t('browser_wechat'), 'duckduckgo' => 'DuckDuckGo', 'other' => $t('other_label')];
-      $oLabels = ['ios' => 'iOS', 'android' => 'Android', 'windows' => 'Windows', 'macos' => 'macOS', 'linux' => 'Linux', 'other' => $t('other_label')];
+      // 標籤交給 $statBars 統一跳脫，這裡拿未跳脫的原文（用 $t 會變成跳脫兩次）
+      $bLabels = ['chrome' => 'Chrome', 'safari' => 'Safari', 'edge' => 'Edge', 'firefox' => 'Firefox', 'samsung' => 'Samsung Internet', 'opera' => 'Opera', 'line' => i18n_t($DICT, 'browser_line'), 'facebook' => i18n_t($DICT, 'browser_fb'), 'instagram' => i18n_t($DICT, 'browser_ig'), 'wechat' => i18n_t($DICT, 'browser_wechat'), 'duckduckgo' => 'DuckDuckGo', 'other' => i18n_t($DICT, 'other_label')];
+      $oLabels = ['ios' => 'iOS', 'android' => 'Android', 'windows' => 'Windows', 'macos' => 'macOS', 'linux' => 'Linux', 'other' => i18n_t($DICT, 'other_label')];
+      $mob = (int)($s['device']['mobile'] ?? 0);
+      $desk = (int)($s['device']['desktop'] ?? 0);
+      $mobPct = ($mob + $desk) > 0 ? (int)round($mob / ($mob + $desk) * 100) : 0;
+      // 時段／星期：連沒有資料的格子都要列出來，才看得出一整天、一整週的形狀
+      $hourCells = [];
+      for ($hx = 0; $hx <= 23; $hx++) {
+        $hv = (int)(($s['by_hour'] ?? [])[$hx] ?? 0);
+        $hourCells[] = ['v' => $hv, 'title' => i18n_t($DICT, 'hour_item', ['h' => $hx, 'n' => $hv]), 'axis' => $hx % 3 === 0 ? (string)$hx : ''];
+      }
+      $dowCells = [];
+      for ($dx = 0; $dx <= 6; $dx++) {
+        $dv = (int)(($s['by_dow'] ?? [])[$dx] ?? 0);
+        $dn = $dowNames[$dx] ?? (string)$dx;
+        $dowCells[] = ['v' => $dv, 'title' => i18n_t($DICT, 'weekday_item', ['d' => $dn, 'n' => $dv]), 'axis' => $dn];
+      }
+      // 圖是給眼睛看的，讀螢幕的人拿到的是這行前三名摘要（跟改版前那行文字一樣）
+      $hTop = [];
+      foreach (array_slice($byHour, 0, 3, true) as $k => $v) $hTop[] = i18n_t($DICT, 'hour_item', ['h' => (int)$k, 'n' => (int)$v]);
+      $dTop = [];
+      foreach (array_slice($byDow, 0, 3, true) as $k => $v) $dTop[] = i18n_t($DICT, 'weekday_item', ['d' => $dowNames[(int)$k] ?? $k, 'n' => (int)$v]);
+      $hourAria = i18n_t($DICT, 'top_hours_label') . ($hTop ? implode('、', $hTop) : i18n_t($DICT, 'no_data_msg'));
+      $dowAria = i18n_t($DICT, 'top_weekdays_label') . ($dTop ? implode('、', $dTop) : i18n_t($DICT, 'no_data_msg'));
     ?>
       <details class="stat-card">
         <summary>
@@ -2593,50 +2933,55 @@ if (!$authed) {
             <div class="tile">
               <div class="n"><?= (int)($s['views'] ?? 0) ?></div>
               <div class="l"><?= $t('stat_views_label') ?></div>
+              <div class="d"><?= $t('stat_views_desc') ?></div>
             </div>
             <div class="tile">
               <div class="n"><?= (int)($s['sessions'] ?? 0) ?></div>
               <div class="l"><?= $t('stat_sessions_label') ?></div>
+              <div class="d"><?= $t('stat_sessions_desc') ?></div>
             </div>
             <div class="tile">
               <div class="n"><?= (int)($s['uploads'] ?? 0) ?></div>
               <div class="l"><?= $t('stat_uploads_label') ?></div>
+              <div class="d"><?= $t('stat_uploads_desc') ?></div>
             </div>
             <div class="tile">
-              <div class="n"><?= (int)(($s['device']['mobile'] ?? 0)) ?>/<?= (int)(($s['device']['desktop'] ?? 0)) ?></div>
+              <div class="n statdev"><span class="a"><?= $mob ?></span><span class="sep">/</span><span class="b"><?= $desk ?></span></div>
+              <?php if ($mob + $desk > 0): ?><div class="statratio" aria-hidden="true"><span class="a" style="width:<?= $mobPct ?>%"></span><span class="b" style="width:<?= 100 - $mobPct ?>%"></span></div><?php endif; ?>
               <div class="l"><?= $t('stat_mobile_desktop_label') ?></div>
+              <div class="d"><?= $t('stat_device_desc') ?></div>
             </div>
           </div>
           <div class="break"><?= $t('top_points_label') ?><b><?= $esc($top($s['points'])) ?></b><br><?= $t('top_cameras_label') ?><b><?= $esc($top($s['cameras'])) ?></b></div>
         </summary>
         <div class="cols">
           <div class="col">
-            <h4><?= $t('stats_explain_heading') ?></h4>
-            <p><?= $tr('stats_explain_body') ?></p>
-          </div>
-          <div class="col">
             <h4><?= $t('points_rank_heading') ?></h4>
-            <?php if ($s['points']): ?><ol><?php foreach (array_slice($s['points'], 0, 20, true) as $k => $v): ?><li><?= $t('point_rank_item', ['k' => $k, 'n' => (int)$v]) ?></li><?php endforeach; ?></ol><?php else: ?><p><?= $t('no_data_msg') ?></p><?php endif; ?>
+            <p class="colnote"><?= $t('points_rank_note') ?></p>
+            <?php if ($s['points']): ?><?= $statBars($s['points'], fn($k) => i18n_t($DICT, 'point_short_label', ['k' => $k])) ?><?php else: ?><p><?= $t('no_data_msg') ?></p><?php endif; ?>
           </div>
           <div class="col">
             <h4><?= $t('cameras_rank_heading') ?></h4>
-            <?php if ($s['cameras']): ?><ol><?php foreach (array_slice($s['cameras'], 0, 20, true) as $k => $v): ?><li><?= $t('rank_item_generic', ['k' => $k, 'n' => (int)$v]) ?></li><?php endforeach; ?></ol><?php else: ?><p><?= $t('no_data_msg') ?></p><?php endif; ?>
+            <p class="colnote"><?= $t('cameras_rank_note') ?></p>
+            <?php if ($s['cameras']): ?><?= $statBars($s['cameras'], fn($k) => (string)$k) ?><?php else: ?><p><?= $t('no_data_msg') ?></p><?php endif; ?>
           </div>
           <div class="col">
             <h4><?= $t('feature_usage_heading') ?></h4>
-            <?php if ($feats): ?><ol><?php foreach ($feats as $k => $v): ?><li><?= $t('rank_item_generic', ['k' => $featLabels[$k] ?? $k, 'n' => (int)$v]) ?></li><?php endforeach; ?></ol><?php else: ?><p><?= $t('no_data_msg') ?></p><?php endif; ?>
+            <p class="colnote"><?= $t('feature_usage_note') ?></p>
+            <?php if ($feats): ?><?= $statBars($feats, fn($k) => $featLabels[$k] ?? $k) ?><?php else: ?><p><?= $t('no_data_msg') ?></p><?php endif; ?>
           </div>
           <div class="col">
             <h4><?= $t('browser_os_heading') ?></h4>
-            <?php if ($browsers || $oses): ?>
-              <p><?= $t('browser_label') ?><?php $bb = []; foreach ($browsers as $k => $v) $bb[] = ($bLabels[$k] ?? $k) . '（' . (int)$v . '）'; echo $esc(implode('、', $bb)); ?><br>
-                <?= $t('os_label') ?><?php $oo = []; foreach ($oses as $k => $v) $oo[] = ($oLabels[$k] ?? $k) . '（' . (int)$v . '）'; echo $esc(implode('、', $oo)); ?></p>
-            <?php else: ?><p><?= $t('no_data_since_stat_msg') ?></p><?php endif; ?>
+            <p class="colnote"><?= $t('browser_os_note') ?></p>
+            <?php if ($browsers): ?><div class="statsub"><?= $t('browser_label') ?></div><?= $statBars($browsers, fn($k) => $bLabels[$k] ?? $k, 8) ?><?php endif; ?>
+            <?php if ($oses): ?><div class="statsub"><?= $t('os_label') ?></div><?= $statBars($oses, fn($k) => $oLabels[$k] ?? $k, 8) ?><?php endif; ?>
+            <?php if (!$browsers && !$oses): ?><p><?= $t('no_data_since_stat_msg') ?></p><?php endif; ?>
           </div>
-          <div class="col">
+          <div class="col wide">
             <h4><?= $t('visit_time_heading') ?></h4>
-            <p><?= $t('top_hours_label') ?><?php $hh = []; foreach (array_slice($byHour, 0, 3, true) as $k => $v) $hh[] = $t('hour_item', ['h' => (int)$k, 'n' => (int)$v]); echo $hh ? implode('、', $hh) : $t('no_data_msg'); ?><br>
-              <?= $t('top_weekdays_label') ?><?php $dd = []; foreach (array_slice($byDow, 0, 3, true) as $k => $v) $dd[] = $t('weekday_item', ['d' => $dowNames[(int)$k] ?? $k, 'n' => (int)$v]); echo $dd ? implode('、', $dd) : $t('no_data_msg'); ?></p>
+            <p class="colnote"><?= $t('visit_time_note') ?></p>
+            <?= $statCols($hourCells, $hourAria) ?>
+            <?= $statCols($dowCells, $dowAria) ?>
           </div>
         </div>
       </details>
@@ -2675,7 +3020,7 @@ if (!$authed) {
             <td class="mono"><?= $idx-- ?></td>
             <td><?= $esc($r['project']) ?></td>
             <td><?= $esc($r['item_num'] ?? '') ?></td>
-            <td><span class="tag"><?= $esc(souliong_kind_label($r['kind'] ?? 'photo')) ?></span><?= !empty($r['edit_of']) ? '<br><span class="tag">' . $t('edited_record_tag') . '</span>' : '' ?></td>
+            <td><span class="tagcell"><span class="tag"><?= $esc(souliong_kind_label($r['kind'] ?? 'photo')) ?></span><?= !empty($r['edit_of']) ? '<span class="tag">' . $t('edited_record_tag') . '</span>' : '' ?></span></td>
             <td><?= $photoUrl ? '<a href="' . $esc($photoUrl) . '" target="_blank"><img loading="lazy" src="' . $esc($thumbUrl) . '" alt=""></a>' : '' ?></td>
             <td><?= $esc($r['name'] ?? '') ?></td>
             <td><?= nl2br($esc($r['comment'] ?? '')) ?></td>
@@ -2708,16 +3053,16 @@ if (!$authed) {
         <div class="hint" style="margin-top:6px"><?= $t('global_features_hint') ?></div>
         <form method="post" style="margin-top:8px">
           <input type="hidden" name="csrf" value="<?= $esc_csrf ?>"><input type="hidden" name="action" value="settings">
-          <label class="modrow" style="display:flex;gap:8px;align-items:flex-start">
-            <input type="checkbox" name="random_explore" style="width:auto;margin-top:3px" <?= souliong_random_explore_on($cfg) ? 'checked' : '' ?>>
+          <label class="modrow">
+            <input type="checkbox" name="random_explore" <?= souliong_random_explore_on($cfg) ? 'checked' : '' ?>>
             <span><b><?= $t('random_explore_toggle_label') ?></b><br><span class="hint"><?= $t('random_explore_toggle_hint') ?></span></span>
           </label>
-          <label class="modrow" style="display:flex;gap:8px;align-items:flex-start;margin-top:10px">
-            <input type="checkbox" name="registration_open" style="width:auto;margin-top:3px" <?= souliong_registration_open($cfg) ? 'checked' : '' ?>>
+          <label class="modrow" style="margin-top:var(--sp-3)">
+            <input type="checkbox" name="registration_open" <?= souliong_registration_open($cfg) ? 'checked' : '' ?>>
             <span><b><?= $t('registration_open_toggle_label') ?></b><br><span class="hint"><?= $t('registration_open_toggle_hint') ?></span></span>
           </label>
           <?php $sitePackCur = souliong_site_pack($cfg); ?>
-          <label style="margin-top:10px;display:block"><b><?= $t('site_pack_label') ?></b>
+          <label class="setrow"><b><?= $t('site_pack_label') ?></b>
             <select name="site_pack">
               <option value=""><?= $t('no_pack_option') ?></option>
               <?php foreach (souliong_pack_list($cfg) as $pid => $pinfo): ?>
@@ -2734,7 +3079,7 @@ if (!$authed) {
         <span class="badge"><i class="fa-solid fa-upload"></i> <?= $t('import_backup_badge') ?></span>
         <label class="btn" style="cursor:pointer"><i class="fa-solid fa-folder-open"></i> <span data-file><?= $t('choose_zip_btn') ?></span>
           <input type="file" name="backup" accept=".zip" required hidden onchange="this.parentNode.querySelector('[data-file]').textContent=this.files[0]?this.files[0].name:<?= json_encode(i18n_t($DICT, 'choose_zip_btn'), JSON_UNESCAPED_UNICODE) ?>"></label>
-        <select name="mode" style="border:1px solid var(--line);border-radius:10px;background:var(--bg);color:var(--fg);padding:7px 10px;font-size:0.8125rem">
+        <select name="mode">
           <option value="merge"><?= $t('import_mode_merge') ?></option>
           <option value="replace"><?= $t('import_mode_replace') ?></option>
         </select>
@@ -2807,12 +3152,11 @@ if (!$authed) {
       var wrap = document.createElement('div');
       wrap.className = 'qr-modal';
       wrap.innerHTML = '<div class="qr-modal-card">'
+        + '<button type="button" class="qr-modal-close" aria-label="' + <?= json_encode(i18n_t($DICT, 'close'), JSON_UNESCAPED_UNICODE) ?> + '"><i class="fa-solid fa-xmark"></i></button>'
         + (title ? '<div class="qr-modal-title"></div>' : '')
-        + '<div class="qr-modal-guide">' + <?= json_encode(i18n_t($DICT, 'qr_scan_guide'), JSON_UNESCAPED_UNICODE) ?> + '</div>'
         + '<div class="qr-modal-box"></div>'
-        + '<div class="qr-modal-url"></div>'
         + (codeText ? '<div class="qr-modal-code"></div>' : '')
-        + '<div class="qr-modal-hint">' + <?= json_encode(i18n_t($DICT, 'qr_click_anywhere_close'), JSON_UNESCAPED_UNICODE) ?> + '</div></div>';
+        + '<div class="qr-modal-url"></div></div>';
       if (title) wrap.querySelector('.qr-modal-title').textContent = title;
       wrap.querySelector('.qr-modal-url').textContent = url;
       if (codeText) wrap.querySelector('.qr-modal-code').textContent = codeText;
@@ -2824,9 +3168,12 @@ if (!$authed) {
       } catch (e) {}
       function close() { wrap.remove(); document.removeEventListener('keydown', onKey); }
       function onKey(e) { if (e.key === 'Escape') close(); }
-      wrap.addEventListener('click', close);
+      // 點卡片本身不關（碼要能選取複製），只有點背景或右上角關閉鈕才關
+      wrap.addEventListener('click', function(e) { if (e.target === wrap) close(); });
+      wrap.querySelector('.qr-modal-close').addEventListener('click', close);
       document.addEventListener('keydown', onKey);
       document.body.appendChild(wrap);
+      wrap.querySelector('.qr-modal-close').focus();
     }
     document.querySelectorAll('.expirywidget').forEach(function(widget) {
       var input = widget.querySelector('.expirycustom');

@@ -224,7 +224,7 @@ function gen_code(int $len = 6): string {
 /**
  * 投稿碼：可建多組，各自可設到期時間／次數上限（皆留空＝不限期不限次數），
  * 達到即失效；存 projects/<project>/codes.json = [{code, label, created, expires_at, max_uses, used_count}]。
- * meta.gated 為真才需要任何碼（見呼叫端 code_check）。
+ * 有沒有還有效的碼就是這張地圖的投稿開關（見 contrib_open）。
  */
 function codes_file(array $cfg, string $project): string { return project_dir($cfg, $project) . '/codes.json'; }
 function codes_load(array $cfg, string $project): array {
@@ -276,6 +276,22 @@ function code_check(array $cfg, string $project, string $given, bool $bump): boo
     }
     return false;
 }
+
+/**
+ * 投稿開關＝有沒有還有效的投稿碼。碼是唯一的開關：
+ *   一組有效碼都沒有 → 這張地圖現在未開放投稿（管理者不受限，方便主辦者自己補資料）
+ *   有 → 要碼才能投稿，且各碼自己的到期／次數上限照常生效
+ * 舊版的 meta.gated 已停用：那個旗標後台沒有任何地方能設，等於投稿碼形同虛設。
+ */
+function codes_active(array $cfg, string $project): array {
+    $now = gmdate('c');
+    return array_values(array_filter(codes_load($cfg, $project), function ($e) use ($now) {
+        if (!empty($e['expires_at']) && $now > (string)$e['expires_at']) return false;
+        $max = $e['max_uses'] ?? null;
+        return !($max !== null && (int)($e['used_count'] ?? 0) >= (int)$max);
+    }));
+}
+function contrib_open(array $cfg, string $project): bool { return codes_active($cfg, $project) !== []; }
 
 /**
  * 投稿者身分（可選，設 PIN 才有；匿名投稿者無此身分）：可用一組 PIN 建立跨裝置的身分，用來在別的裝置管理自己的投稿。

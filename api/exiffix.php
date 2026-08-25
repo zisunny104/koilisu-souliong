@@ -197,9 +197,7 @@ $reqProject = preg_replace('/[^a-z0-9_-]/', '', $_GET['project'] ?? ($allProject
   <title><?= $t('exiffix_title') ?></title>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
   <style>
-    .langsw{position:fixed;top:16px;right:16px;z-index:3;display:flex;gap:2px;font-size:0.75rem}
-    .langsw a{color:var(--muted);text-decoration:none;padding:4px 8px;border-radius:999px}
-    .langsw a.on{color:var(--fg);font-weight:700;background:var(--card);border:1px solid var(--line)}
+    /* 間距與點擊區用 rem，跟著使用者的瀏覽器字級縮放 */
     :root {
       --bg: #f6f5f2;
       --fg: #1c1a17;
@@ -207,7 +205,14 @@ $reqProject = preg_replace('/[^a-z0-9_-]/', '', $_GET['project'] ?? ($allProject
       --line: #e2ddd3;
       --card: #fff;
       --accent: #b5482e;
-      --accent-fg: #fff
+      --accent-fg: #fff;
+      --sp-1: 0.25rem;
+      --sp-2: 0.5rem;
+      --sp-3: 0.75rem;
+      --sp-4: 1rem;
+      --sp-5: 1.5rem;
+      /* 最小點擊區：WCAG 2.2 SC 2.5.8 下限 24px，取 1.75rem 留餘裕 */
+      --tap: 1.75rem
     }
 
     @media (prefers-color-scheme:dark) {
@@ -230,64 +235,133 @@ $reqProject = preg_replace('/[^a-z0-9_-]/', '', $_GET['project'] ?? ($allProject
       margin: 0;
       background: var(--bg);
       color: var(--fg);
-      font: 15px/1.6 system-ui, -apple-system, "Noto Sans TC", sans-serif;
-      padding: 24px 16px 60px
+      font: 0.9375rem/1.6 system-ui, -apple-system, "Noto Sans TC", sans-serif;
+      padding: var(--sp-4) var(--sp-4) 3.75rem
     }
 
     .wrap {
-      max-width: 720px;
+      max-width: 45rem;
       margin: 0 auto
+    }
+
+    /* 原本 position:fixed 貼右上角，視窗一窄就壓在標題上；改成跟著版面走的一列 */
+    .langsw {
+      max-width: 45rem;
+      margin: 0 auto var(--sp-2);
+      display: flex;
+      justify-content: flex-end;
+      gap: var(--sp-1);
+      font-size: 0.75rem
+    }
+
+    .langsw a {
+      display: inline-flex;
+      align-items: center;
+      min-height: var(--tap);
+      color: var(--muted);
+      text-decoration: none;
+      padding: 0 var(--sp-3);
+      border-radius: 999px;
+      border: 1px solid transparent
+    }
+
+    .langsw a.on {
+      color: var(--fg);
+      font-weight: 700;
+      background: var(--card);
+      border-color: var(--line)
     }
 
     h1 {
       font-size: 1.125rem;
+      line-height: 1.4;
+      margin: 0 0 var(--sp-4);
       display: flex;
       align-items: center;
-      gap: 8px
+      flex-wrap: wrap;
+      gap: 0 var(--sp-2)
     }
 
     .warn {
       border: 1px solid var(--accent);
       color: var(--accent);
-      border-radius: 12px;
-      padding: 12px 16px;
+      border-radius: var(--sp-3);
+      padding: var(--sp-3) var(--sp-4);
       font-size: 0.8125rem;
-      margin-bottom: 16px
+      margin-bottom: var(--sp-4)
     }
 
     .card {
       background: var(--card);
       border: 1px solid var(--line);
-      border-radius: 14px;
-      padding: 16px 18px;
-      margin-bottom: 16px
+      border-radius: 0.875rem;
+      padding: var(--sp-4) var(--sp-5);
+      margin-bottom: var(--sp-4)
+    }
+
+    /* 兩種修復方式用編號卡片區分，取代原本靠段落文字說明「方式一／方式二」 */
+    .steptitle {
+      display: flex;
+      align-items: center;
+      gap: var(--sp-2);
+      font-size: 0.9375rem;
+      font-weight: 700;
+      margin: 0 0 var(--sp-2)
+    }
+
+    .steptitle .num {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex: none;
+      width: 1.5rem;
+      height: 1.5rem;
+      border-radius: 999px;
+      background: var(--accent);
+      color: var(--accent-fg);
+      font-size: 0.75rem
+    }
+
+    .steptitle+.hint {
+      margin-bottom: var(--sp-3)
+    }
+
+    .hint.runhint {
+      margin-top: var(--sp-3)
+    }
+
+    /* 尚未輸出訊息前不要撐開卡片 */
+    .hint:empty {
+      display: none
     }
 
     label {
       display: block;
       font-size: 0.8125rem;
       color: var(--muted);
-      margin-bottom: 6px
+      margin-bottom: var(--sp-1)
     }
 
     select,
     input[type=file] {
       width: 100%;
       border: 1px solid var(--line);
-      border-radius: 10px;
+      border-radius: 0.625rem;
       background: var(--bg);
       color: var(--fg);
-      padding: 8px 10px;
+      padding: var(--sp-2) var(--sp-3);
       font-size: 0.875rem;
-      margin-bottom: 12px
+      min-height: 2.25rem;
+      margin-bottom: var(--sp-3)
     }
 
     button {
       border: none;
       background: var(--accent);
       color: var(--accent-fg);
-      border-radius: 10px;
-      padding: 9px 16px;
+      border-radius: 0.625rem;
+      padding: var(--sp-2) var(--sp-4);
+      min-height: 2.25rem;
       font-size: 0.875rem;
       font-weight: 700;
       cursor: pointer
@@ -305,17 +379,17 @@ $reqProject = preg_replace('/[^a-z0-9_-]/', '', $_GET['project'] ?? ($allProject
 
     ul#results {
       list-style: none;
-      margin: 14px 0 0;
+      margin: var(--sp-3) 0 0;
       padding: 0;
       font-size: 0.8125rem
     }
 
     ul#results li {
-      padding: 6px 0;
+      padding: var(--sp-2) 0;
       border-top: 1px solid var(--line);
       display: flex;
       justify-content: space-between;
-      gap: 10px
+      gap: var(--sp-3)
     }
 
     .ok {
@@ -328,6 +402,39 @@ $reqProject = preg_replace('/[^a-z0-9_-]/', '', $_GET['project'] ?? ($allProject
 
     a {
       color: var(--accent)
+    }
+
+    /* 返回後台：原本是一行純文字連結，點擊面積不足一個手指 */
+    .backlink {
+      margin-top: var(--sp-5)
+    }
+
+    .backlink a {
+      display: inline-flex;
+      align-items: center;
+      gap: var(--sp-2);
+      min-height: 2.25rem;
+      padding: 0 var(--sp-4);
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: var(--card);
+      color: var(--fg);
+      font-size: 0.8125rem;
+      font-weight: 600;
+      text-decoration: none
+    }
+
+    .backlink a:hover {
+      border-color: var(--accent);
+      color: var(--accent)
+    }
+
+    a:focus-visible,
+    button:focus-visible,
+    select:focus-visible,
+    input:focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 2px
     }
   </style>
 </head>
@@ -342,26 +449,28 @@ $reqProject = preg_replace('/[^a-z0-9_-]/', '', $_GET['project'] ?? ($allProject
     <div class="warn"><?= $t('exiffix_warn') ?></div>
 
     <div class="card">
-      <label><?= $t('tool_select_project_label') ?></label>
+      <h2 class="steptitle"><span class="num">1</span><?= $t('exiffix_method1_title') ?></h2>
+      <div class="hint"><?= $t('exiffix_method1_hint') ?></div>
+      <label for="project"><?= $t('tool_select_project_label') ?></label>
       <select id="project">
         <?php foreach ($allProjects as $p): ?><option value="<?= $esc($p) ?>" <?= $p === $reqProject ? 'selected' : '' ?>><?= $esc($p) ?></option><?php endforeach; ?>
       </select>
-      <div class="hint" style="margin-bottom:10px"><?= $t('exiffix_method1_hint') ?></div>
       <button id="goAuto"><?= $t('exiffix_method1_btn') ?></button>
-      <div class="hint" id="statusAuto" style="margin-top:8px"></div>
+      <div class="hint runhint" id="statusAuto"></div>
       <ul id="resultsAuto"></ul>
     </div>
 
     <div class="card">
-      <div class="hint" style="margin-bottom:10px"><?= $t('exiffix_method2_hint') ?></div>
-      <label><?= $t('exiffix_choose_files_label') ?></label>
+      <h2 class="steptitle"><span class="num">2</span><?= $t('exiffix_method2_title') ?></h2>
+      <div class="hint"><?= $t('exiffix_method2_hint') ?></div>
+      <label for="files"><?= $t('exiffix_choose_files_label') ?></label>
       <input type="file" id="files" accept="image/*" multiple>
       <button id="go" disabled><?= $t('exiffix_match_btn') ?></button>
-      <div class="hint" id="status" style="margin-top:8px"></div>
+      <div class="hint runhint" id="status"></div>
       <ul id="results"></ul>
     </div>
 
-    <p><a href="<?= $adminUrl ?>">&larr; <?= $t('back_to_admin') ?></a></p>
+    <p class="backlink"><a href="<?= $adminUrl ?>"><i class="fa-solid fa-arrow-left"></i> <?= $t("back_to_admin") ?></a></p>
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/exifr/dist/full.umd.js"></script>

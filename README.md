@@ -41,14 +41,14 @@ php -S localhost:8000                          # 或掛你的 Nginx/PHP-FPM
 
 在 `projects/<id>/` 放兩個檔，**免改程式**：
 
-- `meta.json`：標題、中心點、分類、`"gated": true`（要投稿碼才可上傳）
+- `meta.json`：標題、中心點、分類、模組開關（投稿要不要碼由後台的投稿碼決定，不寫在這裡）
 - 點位 JSON（`meta.json` 的 `points` 指定檔名）
 
 ```json
 // projects/mymap/meta.json
 { "id":"mymap", "title":"我的地圖", "subtitle":"副標",
   "center":[23.95,120.69], "zoom":14, "points":"points.json",
-  "numbering":"suffix", "categoryOrder":["green","pink","blue"], "gated":true }
+  "numbering":"suffix", "categoryOrder":["green","pink","blue"] }
 ```
 點位每筆：`num, theme, area, chair, material, lat, lon, cat, catLabel, color, story`。詳見 [EXTENDING.md](docs/EXTENDING.md)（含日後加入聲音等媒體的作法與 roadmap）。
 
@@ -56,7 +56,7 @@ php -S localhost:8000                          # 或掛你的 Nginx/PHP-FPM
 
 ## 投稿碼（給參與者上傳）
 
-- `meta.json` 設 `"gated": true` 即需投稿碼。
+- **碼即開關**：後台建立投稿碼＝開放投稿（要碼才能投）；一組有效碼都沒有＝目前未開放投稿，只有管理者能投。
 - 碼存 `projects/<id>/codes.json`（清單），可同時開多組，各自可選填**到期時間**／**張數上限**（留空即不限）；後台一碼一張卡，含邀請連結、QR、用量、刪除。
 - 在後台新增/刪除投稿碼、複製**邀請連結**或給參與者掃 **QR**；連結 `.../<id>?code=XXXX` 一點即解鎖上傳。
 

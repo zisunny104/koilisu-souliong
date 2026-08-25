@@ -22,7 +22,7 @@ owner_hash, src_hash, contrib_id, contrib_hash, edit_of, created_at
 ## 二、新增一張地圖（完全不用改程式）
 
 1. 建 `projects/<新id>/meta.json` 與點位 JSON（參考 `projects/100chairs/`）。
-2. `meta.json` 可設 `"gated": true` 要投稿碼、或不設＝開放。
+2. 要開放投稿就到後台建一組投稿碼（碼即開關，見 `api/security.php` 的 `contrib_open()`）。
 3. 進入方式：`/koilisu/souliong/<新id>`；`souliong/` 首頁會自動列出它。
 
 點位 JSON 每筆：`num, theme, area, chair, material, lat, lon, cat, catLabel, color, story`

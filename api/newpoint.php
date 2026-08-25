@@ -58,7 +58,10 @@ if ($who === 'admin') {
     if (is_blocked($cfg, $project, $ownerHash, $contribId)) {
         json_out(['error' => '此身分已被主辦者停權，無法繼續投稿'], 403);
     }
-    if (!empty($meta['gated']) && !admin_can($cfg, $project)) {
+    if (!admin_can($cfg, $project)) {
+        if (!contrib_open($cfg, $project)) {
+            json_out(['error' => '這張地圖目前未開放投稿'], 403);
+        }
         // 跟 upload.php 一樣計一次使用次數：建點跟投稿是等價的寫入行為，
         // 沒理由讓限次的投稿碼可以無限建點。
         $givenCode = preg_replace('/\D/', '', (string)($_POST['code'] ?? ''));

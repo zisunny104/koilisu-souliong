@@ -202,9 +202,10 @@ window.MapApp = (() => {
     } catch (e) {}
   }
 
-  // 上傳權限（預設 View；需投稿碼解鎖，限特定人。已用管理 PIN 登入者一律視為已解鎖。EMBED 一律不可上傳）
+  // 上傳權限：能不能投稿完全看投稿碼。APP.gated＝這張地圖現在有還有效的碼（見 api/security.php contrib_open）；
+  // 一組都沒有＝目前未開放投稿，解鎖鈕也不出現。已用管理 PIN 登入者一律視為已解鎖。EMBED 一律不可上傳。
   function storedCode() { try { return localStorage.getItem('uploadCode_' + PROJECT) || ''; } catch (e) { return ''; } }
-  function isUnlocked() { return !APP.gated || !!storedCode() || !!APP.isManager; }
+  function isUnlocked() { return !!APP.isManager || (!!APP.gated && !!storedCode()); }
   function canPost() { return !EMBED && MOD('upload') && isUnlocked(); }
   function applyPostState() {
     document.body.classList.toggle('noupload', !canPost());
