@@ -5,6 +5,7 @@ require __DIR__ . '/security.php';
 require __DIR__ . '/stats.php';
 require __DIR__ . '/features.php';
 require_once __DIR__ . '/packs.php';
+require_once __DIR__ . '/layers.php';     // 地圖圖層註冊表（底圖／疊圖），形狀同 packs.php
 require_once __DIR__ . '/settings.php';   // packs.php 內部也會載它，兩邊都用 require_once 才不會重複宣告
 require __DIR__ . '/../pages/error.php';
 require_once __DIR__ . '/i18n.php';
@@ -624,6 +625,25 @@ if (!$authed) {
               $meta['pack'] = $pk;
             }
           }
+          // 地圖圖層：跟 pack 一樣只收目前實際存在的 id，差別是它是有序陣列。表單由上而下＝
+          // 由頂層到底層（跟所有繪圖軟體的圖層面板一致），meta.json 存的是相反方向（由下往上
+          // 疊，見 layers.php），所以這裡要反轉一次。
+          // 兩態：沒有 layers 欄位＝跟隨 config 的 default_layers；有欄位＝這張地圖自己指定。
+          // 全部取消勾選存成「移除欄位」而不是空陣列——空陣列在 souliong_layers_for() 裡本來
+          // 就等同沒指定，寫下去只會讓人以為自己關掉了所有圖層，實際上照樣拿到預設底圖。
+          if (isset($_POST['layers_submitted'])) {
+            $avail = souliong_layer_list($cfg, $p);
+            $picked = [];
+            foreach ((array)($_POST['layers'] ?? []) as $lid) {
+              $lid = (string)$lid;
+              if (isset($avail[$lid]) && !in_array($lid, $picked, true)) $picked[] = $lid;
+            }
+            if ($picked) {
+              $meta['layers'] = array_reverse($picked);
+            } else {
+              unset($meta['layers']);
+            }
+          }
           $json = json_encode($meta, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
           if ($json !== false && is_dir(dirname($mf))) {
             @file_put_contents($mf, $json, LOCK_EX);
@@ -843,6 +863,39 @@ if (!$authed) {
             @unlink($tmp);
             exit;
           }
+          // ── 圖層匯出：整個圖層資料夾打包，路徑含 <id>/ 前綴（同 pack）。與 pack 的差別是檔案
+          //    數量不固定——單張疊圖只有兩個檔，切好的圖磚金字塔可能上萬個——所以要遞迴走訪，
+          //    並且設上限：超過就擋下來，請對方直接從伺服器取，而不是讓這個請求跑到逾時。 ──
+          if ($_GET['backup'] === 'layer') {
+            $lid = preg_replace('/[^a-z0-9_-]/', '', $_GET['layer'] ?? '');
+            $lp  = preg_replace('/[^a-z0-9_-]/', '', $_GET['project'] ?? '');
+            $all = souliong_layer_list($cfg, $lp);
+            if ($lid === '' || !isset($all[$lid])) {
+              error_page(404, $t('error_404_title'), $t('layer_not_found_msg'), '?api=admin#tools', $t('back_to_admin'));
+            }
+            // 全站層歸主要管理者，專案層歸該專案的管理者——權限跟著圖層實際住在哪裡走
+            $isProj = ($all[$lid]['scope'] ?? '') === 'project';
+            if ($isProj ? !$canProject($lp) : !$master) {
+              error_page(403, $t('no_permission_title'), $t('master_only_layers_msg'), '?api=admin#tools', $t('back_to_admin'));
+            }
+            $ldir = souliong_layer_dir($cfg, $lid, $lp);
+            $files = souliong_layer_files($ldir, $lid, $err);
+            if ($err !== '') {
+              error_page(413, $t('error_413_title'), $t($err), '?api=admin#tools', $t('back_to_admin'));
+            }
+            $name = 'souliong-layer-' . $lid . '-' . date('Ymd-His') . '.zip';
+            $tmp = tempnam(sys_get_temp_dir(), 'sklyr');
+            if (!zip_pack($tmp, $files)) {
+              http_response_code(500);
+              exit($t('backup_failed_msg'));
+            }
+            header('Content-Type: application/zip');
+            header('Content-Disposition: attachment; filename="' . $name . '"');
+            header('Content-Length: ' . filesize($tmp));
+            readfile($tmp);
+            @unlink($tmp);
+            exit;
+          }
           $bp = $_GET['backup'] === 'project' ? preg_replace('/[^a-z0-9_-]/', '', $_GET['project'] ?? '') : null;
           if ($bp === null && !$master) {
             error_page(403, $t('no_permission_title'), $t('master_only_backup_all_msg'), '?api=admin' . ($scopeProject !== '' ? '&project=' . urlencode($scopeProject) : '') . '#tools', $t('back_to_admin'));
@@ -994,6 +1047,48 @@ if (!$authed) {
             audit_log($cfg, $auditWho(), 'pack_import', null, implode(',', array_keys($ids)));
           }
           header('Location: ?api=admin#tools');
+          exit;
+        }
+
+        // ── 圖層匯入：zip 內路徑需含 <id>/ 前綴，id 只認資料夾名稱（避免 layer.json 內容偽造，同 pack）。
+        //    比 pack 多一個「匯到哪裡」：沒帶 project ＝全站層（主要管理者限定），帶了 project ＝
+        //    該地圖自己的圖層。切好的圖磚金字塔請匯進專案——projects/ 本來就不進版控。
+        //    匯入不會刪掉 zip 裡沒有的舊檔（同 pack，是覆蓋不是取代）。 ──
+        if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'layerimport') {
+          need_csrf($csrf);
+          $lp = preg_replace('/[^a-z0-9_-]/', '', $_POST['project'] ?? '');
+          $backTo = '?api=admin' . ($lp !== '' ? '&project=' . urlencode($lp) : '') . '#tools';
+          if ($lp === '' ? !$master : !$canProject($lp)) {
+            error_page(403, $t('no_permission_title'), $t('master_only_layers_msg'), $backTo, $t('back_to_admin'));
+          }
+          $roots = souliong_layer_roots($cfg, $lp);
+          $destRoot = rtrim((string)($lp === '' ? ($roots['site'] ?? '') : ($roots['project'] ?? '')), '/\\');
+          if ($destRoot === '') {
+            error_page(500, $t('error_500_title'), $t('layer_dest_missing_msg'), $backTo, $t('back_to_admin'));
+          }
+          require_once __DIR__ . '/zip.php';
+          if (isset($_FILES['layer']) && $_FILES['layer']['error'] === UPLOAD_ERR_OK) {
+            // <id>/(層層子目錄/)?(layer.json | 白名單副檔名的圖檔)。子目錄放行是因為圖磚就是
+            // <z>/<x>/<y>.png 三層；副檔名白名單與 souliong_layer_files() 共用同一份名單。
+            // 匯進來的 SVG 可能內嵌 <script>，那在圖檔端點是靠回應的 CSP sandbox 擋掉的，不是靠
+            // 這裡的過濾——這裡只保證「副檔名是圖檔」，執行與否由 layerfile.php 決定。
+            $exts = implode('|', array_keys(souliong_layer_mimes()));
+            $re = '#^([a-z0-9_-]+)/((?:[A-Za-z0-9_.-]+/)*(?:layer\.json|[A-Za-z0-9_.-]+\.(?:' . $exts . ')))$#';
+            $norm = fn($nm) => str_replace('\\', '/', (string)$nm);
+            $accept = fn($nm) => strpos($norm($nm), '..') === false && preg_match($re, $norm($nm));
+            $entries = zip_unpack($_FILES['layer']['tmp_name'], $accept);
+            $ids = [];
+            foreach ($entries as $nm => $content) {
+              if (!preg_match($re, $norm($nm), $mm)) continue;
+              $dest = $destRoot . '/' . $mm[1] . '/' . $mm[2];
+              $dd = dirname($dest);
+              if (!is_dir($dd)) @mkdir($dd, 0775, true);
+              @file_put_contents($dest, $content, LOCK_EX);
+              $ids[$mm[1]] = true;
+            }
+            audit_log($cfg, $auditWho(), 'layer_import', $lp !== '' ? $lp : null, implode(',', array_keys($ids)));
+          }
+          header('Location: ' . $backTo);
           exit;
         }
 
@@ -1459,6 +1554,71 @@ if (!$authed) {
       height: 1rem;
       margin-top: 0.25rem;
       flex: none
+    }
+
+    /* 圖層挑選器：一列＝一層，右側是上下移動。列的順序就是疊圖順序，所以整份清單要看起來
+       像一疊東西——列與列之間用細線分隔，而不是散開的間距。 */
+    .lylist {
+      display: flex;
+      flex-direction: column;
+      border: 1px solid var(--line);
+      border-radius: var(--r-sm);
+      overflow: hidden
+    }
+
+    .lyrow {
+      display: flex;
+      align-items: center;
+      gap: var(--sp-2);
+      padding: var(--sp-2)
+    }
+
+    .lyrow+.lyrow {
+      border-top: 1px solid var(--line)
+    }
+
+    .metaform label.lypick {
+      flex: 1 1 auto;
+      flex-direction: row;
+      align-items: center;
+      gap: var(--sp-2);
+      min-width: 0;
+      font-size: 0.8125rem;
+      color: var(--fg);
+      cursor: pointer
+    }
+
+    .lypick input[type="checkbox"] {
+      width: 1rem;
+      height: 1rem;
+      flex: none
+    }
+
+    .lymove {
+      display: flex;
+      gap: 2px;
+      flex: none
+    }
+
+    .lybtn {
+      border: 1px solid var(--line);
+      border-radius: var(--r-sm);
+      background: var(--bg);
+      color: var(--muted);
+      cursor: pointer;
+      padding: 2px 7px;
+      font-size: 0.75rem;
+      line-height: 1.4
+    }
+
+    .lybtn:hover {
+      color: var(--fg)
+    }
+
+    /* 首列不能再往上、末列不能再往下：按鈕留在原位（版面不跳動）但明確表示按了沒用 */
+    .lybtn:disabled {
+      opacity: 0.3;
+      cursor: default
     }
 
     .row input {
@@ -2563,6 +2723,45 @@ if (!$authed) {
                   <?php endforeach; ?>
                 </select>
               </label>
+              <?php
+                // 圖層挑選器。清單由上而下＝由頂層到底層（跟繪圖軟體的圖層面板一致），
+                // meta.json 存的是相反方向，兩邊各自反轉一次，見上面 action=meta 的處理。
+                // 勾選的排在前面（照現有疊法），沒勾的接在後面等著被叫上來。
+                $layAll  = souliong_layer_list($cfg, $p);
+                $layCur  = array_values(array_filter(
+                  array_reverse((array)($meta['layers'] ?? [])),
+                  fn($lid) => is_string($lid) && isset($layAll[$lid])
+                ));
+                $layRows = $layCur;
+                foreach (array_keys($layAll) as $lid) {
+                  if (!in_array($lid, $layRows, true)) $layRows[] = $lid;
+                }
+                $layDefault = implode('、', souliong_default_layers($cfg));
+              ?>
+              <input type="hidden" name="layers_submitted" value="1">
+              <div class="modfields lyfields">
+                <div class="modfields-head"><?= $t('layers_heading') ?></div>
+                <div class="hint"><?= $t('layers_pick_hint', ['default' => $layDefault]) ?></div>
+                <?php if ($layRows): ?>
+                <div class="lylist">
+                  <?php foreach ($layRows as $lid): $li = $layAll[$lid]; ?>
+                  <div class="lyrow">
+                    <label class="lypick">
+                      <input type="checkbox" name="layers[]" value="<?= $esc($lid) ?>" <?= in_array($lid, $layCur, true) ? 'checked' : '' ?>>
+                      <span><b><?= $esc($li['label'] ?? $lid) ?></b>
+                        <span class="hint mono"><?= $esc($lid) ?> · <?= $esc($li['pane'] ?? 'art') ?><?= ($li['scope'] ?? '') === 'project' ? ' · ' . $t('layer_scope_project') : '' ?></span></span>
+                    </label>
+                    <span class="lymove">
+                      <button type="button" class="lybtn" data-lymove="-1" aria-label="<?= $t('layer_move_up_aria') ?>" title="<?= $t('layer_move_up_aria') ?>"><i class="fa-solid fa-chevron-up"></i></button>
+                      <button type="button" class="lybtn" data-lymove="1" aria-label="<?= $t('layer_move_down_aria') ?>" title="<?= $t('layer_move_down_aria') ?>"><i class="fa-solid fa-chevron-down"></i></button>
+                    </span>
+                  </div>
+                  <?php endforeach; ?>
+                </div>
+                <?php else: ?>
+                <div class="hint"><?= $t('no_layers_msg') ?></div>
+                <?php endif; ?>
+              </div>
               <input type="hidden" name="modules_submitted" value="1">
               <div class="modfields">
                 <div class="modfields-head"><?= $t('feature_modules_heading') ?></div>
@@ -2617,6 +2816,42 @@ if (!$authed) {
                 <button class="btn solid"><i class="fa-solid fa-floppy-disk"></i> <?= $t('save_desc_btn') ?></button>
               </div>
             </form>
+          </dialog>
+          <?php
+            // 這張地圖自己的圖層（projects/<id>/layers/）。放在專案卡而不是「工具」分頁，因為
+            // 工具分頁只有主要管理者看得到，而自繪插畫本來就該由該地圖的管理者自己換。
+            // 全站層在這裡只列不給刪改——要動它得去工具分頁。
+            $projLayers = array_filter(souliong_layer_list($cfg, $p), fn($li) => ($li['scope'] ?? '') === 'project');
+          ?>
+          <button type="button" class="btn" onclick="document.getElementById('lyrdlg-<?= $esc($p) ?>').showModal()"><i class="fa-solid fa-layer-group"></i> <?= $t('layers_heading') ?></button>
+          <dialog id="lyrdlg-<?= $esc($p) ?>" class="metadlg" onclick="if(event.target===this)this.close()">
+            <div class="metaform">
+              <h3><i class="fa-solid fa-layer-group"></i> <?= $t('project_layers_heading') ?></h3>
+              <div class="hint"><?= $t('project_layers_hint') ?></div>
+              <?php if ($projLayers): ?>
+              <div class="lylist">
+                <?php foreach ($projLayers as $lid => $linfo): ?>
+                <div class="lyrow">
+                  <span style="flex:1 1 auto;min-width:0;font-size:0.8125rem"><b><?= $esc($linfo['label'] ?? $lid) ?></b>
+                    <span class="hint mono"><?= $esc($lid) ?> · <?= $esc($linfo['type'] ?? 'raster') ?></span></span>
+                  <a class="btn" href="?api=admin&backup=layer&layer=<?= $esc($lid) ?>&project=<?= $esc($p) ?>"><i class="fa-solid fa-download"></i> <?= $t('pack_export_btn') ?></a>
+                </div>
+                <?php endforeach; ?>
+              </div>
+              <?php else: ?>
+              <div class="hint"><?= $t('no_project_layers_msg') ?></div>
+              <?php endif; ?>
+              <form method="post" enctype="multipart/form-data" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+                <input type="hidden" name="csrf" value="<?= $esc_csrf ?>"><input type="hidden" name="action" value="layerimport"><input type="hidden" name="project" value="<?= $esc($p) ?>">
+                <span class="badge"><i class="fa-solid fa-upload"></i> <?= $t('layer_import_badge') ?></span>
+                <label class="btn" style="cursor:pointer"><i class="fa-solid fa-folder-open"></i> <span data-file><?= $t('choose_zip_btn') ?></span>
+                  <input type="file" name="layer" accept=".zip" required hidden onchange="this.parentNode.querySelector('[data-file]').textContent=this.files[0]?this.files[0].name:<?= json_encode(i18n_t($DICT, 'choose_zip_btn'), JSON_UNESCAPED_UNICODE) ?>"></label>
+                <button class="btn"><i class="fa-solid fa-upload"></i> <?= $t('restore_btn') ?></button>
+              </form>
+              <div class="dlgactions">
+                <button type="button" class="btn" onclick="this.closest('dialog').close()"><?= $t('close') ?></button>
+              </div>
+            </div>
           </dialog>
           <?php endif; ?>
         </div>
@@ -3117,6 +3352,30 @@ if (!$authed) {
           <button class="btn"><i class="fa-solid fa-upload"></i> <?= $t('restore_btn') ?></button>
         </form>
       </div>
+      <div class="card section-card">
+        <div class="badge"><i class="fa-solid fa-layer-group"></i> <?= $t('layers_heading') ?></div>
+        <div class="hint" style="margin-top:6px"><?= $t('site_layers_hint') ?></div>
+        <?php $siteLayers = souliong_layer_list($cfg); ?>
+        <?php if ($siteLayers): ?>
+        <div style="display:flex;flex-direction:column;gap:6px;margin-top:10px">
+          <?php foreach ($siteLayers as $lid => $linfo): ?>
+          <div style="display:flex;align-items:center;gap:8px;justify-content:space-between">
+            <span><b><?= $esc($linfo['label'] ?? $lid) ?></b> <span class="hint mono"><?= $esc($lid) ?> · <?= $esc($linfo['type'] ?? 'raster') ?></span></span>
+            <a class="btn" href="?api=admin&backup=layer&layer=<?= $esc($lid) ?>"><i class="fa-solid fa-download"></i> <?= $t('pack_export_btn') ?></a>
+          </div>
+          <?php endforeach; ?>
+        </div>
+        <?php else: ?>
+        <div class="hint" style="margin-top:8px"><?= $t('no_layers_msg') ?></div>
+        <?php endif; ?>
+        <form method="post" enctype="multipart/form-data" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:10px">
+          <input type="hidden" name="csrf" value="<?= $esc_csrf ?>"><input type="hidden" name="action" value="layerimport">
+          <span class="badge"><i class="fa-solid fa-upload"></i> <?= $t('layer_import_badge') ?></span>
+          <label class="btn" style="cursor:pointer"><i class="fa-solid fa-folder-open"></i> <span data-file><?= $t('choose_zip_btn') ?></span>
+            <input type="file" name="layer" accept=".zip" required hidden onchange="this.parentNode.querySelector('[data-file]').textContent=this.files[0]?this.files[0].name:<?= json_encode(i18n_t($DICT, 'choose_zip_btn'), JSON_UNESCAPED_UNICODE) ?>"></label>
+          <button class="btn"><i class="fa-solid fa-upload"></i> <?= $t('restore_btn') ?></button>
+        </form>
+      </div>
     </div><!-- /pane-tools -->
     <?php endif; ?>
   </div>
@@ -3128,6 +3387,29 @@ if (!$authed) {
     <?php readfile(__DIR__ . '/../assets/js/pin-input.js'); ?>
   </script>
   <script>
+    // 圖層排序：送出時 layers[] 就是 DOM 由上到下的順序，所以「排序」＝把整列搬位置，
+    // 不需要任何隱藏的序號欄位。沒勾的列一樣能搬，只是不會被送出去。
+    document.querySelectorAll('.lylist').forEach(function(list) {
+      function refresh() {
+        var rows = list.querySelectorAll('.lyrow');
+        rows.forEach(function(row, i) {
+          row.querySelector('[data-lymove="-1"]').disabled = (i === 0);
+          row.querySelector('[data-lymove="1"]').disabled = (i === rows.length - 1);
+        });
+      }
+      list.addEventListener('click', function(ev) {
+        var btn = ev.target.closest('[data-lymove]');
+        if (!btn) return;
+        var row = btn.closest('.lyrow');
+        var sib = btn.dataset.lymove === '-1' ? row.previousElementSibling : row.nextElementSibling;
+        if (!sib) return;
+        if (btn.dataset.lymove === '-1') list.insertBefore(row, sib);
+        else list.insertBefore(sib, row);
+        refresh();
+        btn.focus();   // 連按時焦點要跟著那一列走，不然第二下會落在別層上
+      });
+      refresh();
+    });
     document.querySelectorAll('.qr').forEach(function(el) {
       try {
         var qr = qrcode(0, 'M');

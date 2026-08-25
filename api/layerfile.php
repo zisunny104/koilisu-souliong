@@ -13,15 +13,9 @@
 require_once __DIR__ . '/layers.php';
 $cfg = require __DIR__ . '/config.php';
 
-// 副檔名白名單。這道關卡同時是「layer.json 拿不到」的保證：註冊表內容不該從公開端點外流。
-$MIMES = [
-    'png'  => 'image/png',
-    'webp' => 'image/webp',
-    'jpg'  => 'image/jpeg',
-    'jpeg' => 'image/jpeg',
-    'avif' => 'image/avif',
-    'svg'  => 'image/svg+xml',
-];
+// 副檔名白名單（與後台匯出／匯入共用同一份，見 layers.php）。這道關卡同時是「layer.json
+// 拿不到」的保證：註冊表內容不該從公開端點外流。
+$MIMES = souliong_layer_mimes();
 
 $raw = (string)($_GET['f'] ?? '');
 // <project>/<id>/<路徑>；路徑每一段都只允許保守字元，且整串不得出現 ".."

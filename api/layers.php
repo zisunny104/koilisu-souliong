@@ -95,19 +95,29 @@ function souliong_layer_dir(array $cfg, string $id, string $proj = ''): ?string
 }
 
 /**
+ * 沒有自己指定圖層的地圖套用哪一組。
+ *
+ * 預設值不是空陣列而是 ['carto-voyager']：這是「圖層化之前寫死在 viewer.leaflet.js 裡的
+ * 那張底圖」，沒更新設定檔的舊部署因此得到與從前完全相同的畫面（api/config.php 不進版控，
+ * 所以「設定檔沒有這個欄位」是常態而不是意外）。後台要顯示「跟隨全站預設（…）」時也叫這裡，
+ * 免得說明文字跟實際生效的圖層各講各的。
+ */
+function souliong_default_layers(array $cfg): array
+{
+    return (array)($cfg['default_layers'] ?? ['carto-voyager']);
+}
+
+/**
  * $meta 是專案 meta.json 解析後的陣列（可能是 null）。
  * 回傳該地圖生效的圖層 manifest 陣列，由下往上排序；選到不存在的 id 會被靜靜略過
  * （比照 souliong_pack_for()：資料指到已刪除的資源時退回預設，不讓整張地圖開天窗）。
- *
- * default_layers 的預設值不是空陣列而是 ['carto-voyager']：這是「圖層化之前寫死在
- * viewer.leaflet.js 裡的那張底圖」，沒設定的舊部署與舊地圖因此得到與從前完全相同的畫面。
  */
 function souliong_layers_for(array $cfg, ?array $meta, string $proj = ''): array
 {
     $all = souliong_layer_list($cfg, $proj);
     $want = (is_array($meta) && isset($meta['layers']) && is_array($meta['layers']) && $meta['layers'])
         ? $meta['layers']
-        : (array)($cfg['default_layers'] ?? ['carto-voyager']);
+        : souliong_default_layers($cfg);
     $out = [];
     foreach ($want as $id) {
         if (is_string($id) && isset($all[$id])) {
@@ -151,4 +161,72 @@ function souliong_layers_public(array $cfg, ?array $meta, string $proj, string $
         fn(array $m): array => souliong_layer_public($m, $base, $proj),
         souliong_layers_for($cfg, $meta, $proj)
     );
+}
+
+/**
+ * 圖層資料夾裡允許出現的圖檔副檔名 → MIME。端點輸出（layerfile.php）、後台匯出打包、後台匯入
+ * 落地共用這一份名單：匯得出去的東西就該匯得回來，一份名單才不會三邊各長各的。
+ */
+function souliong_layer_mimes(): array
+{
+    return [
+        'png'  => 'image/png',
+        'webp' => 'image/webp',
+        'jpg'  => 'image/jpeg',
+        'jpeg' => 'image/jpeg',
+        'avif' => 'image/avif',
+        'svg'  => 'image/svg+xml',
+    ];
+}
+
+/**
+ * 遞迴列出一個圖層資料夾該進 ZIP 的檔案，回傳 [ "<id>/相對路徑" => 磁碟絕對路徑 ]。
+ *
+ * 跟主題包的差別是檔案數量不固定：單張疊圖只有 layer.json ＋一個圖檔，切好的圖磚金字塔可能
+ * 上萬個。所以這裡設上限，超過就整包放棄並把訊息 key 寫進 $err——與其讓請求跑到逾時、留下
+ * 一個半截的 ZIP，不如當場說清楚「這包太大，請直接從伺服器取」。
+ */
+function souliong_layer_files(?string $dir, string $id, ?string &$err = null, int $maxFiles = 5000, int $maxBytes = 300 * 1024 * 1024): array
+{
+    $err = '';
+    if ($dir === null || !is_dir($dir)) {
+        $err = 'layer_not_found_msg';
+        return [];
+    }
+    $root  = rtrim(str_replace('\\', '/', $dir), '/');
+    $mimes = souliong_layer_mimes();
+    $out   = [];
+    $bytes = 0;
+    $stack = [$root];
+    while ($stack) {
+        $cur = array_pop($stack);
+        foreach (scandir($cur) ?: [] as $e) {
+            if ($e === '.' || $e === '..' || !preg_match('/^[A-Za-z0-9_.-]+$/', $e)) {
+                continue;
+            }
+            $path = $cur . '/' . $e;
+            if (is_link($path)) {
+                continue;   // 符號連結可能指到資料夾外，打包時一律跳過
+            }
+            if (is_dir($path)) {
+                $stack[] = $path;
+                continue;
+            }
+            $ext = strtolower(pathinfo($e, PATHINFO_EXTENSION));
+            if ($e !== 'layer.json' && !isset($mimes[$ext])) {
+                continue;
+            }
+            $bytes += (int)filesize($path);
+            if (count($out) >= $maxFiles || $bytes > $maxBytes) {
+                $err = 'layer_too_big_msg';
+                return [];
+            }
+            $out[$id . '/' . ltrim(substr($path, strlen($root)), '/')] = $path;
+        }
+    }
+    if (!isset($out[$id . '/layer.json'])) {
+        $err = 'layer_not_found_msg';   // 沒有 manifest 就不是一個圖層，匯出去也裝不回來
+        return [];
+    }
+    return $out;
 }
