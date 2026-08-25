@@ -1092,6 +1092,119 @@ if (!$authed) {
           exit;
         }
 
+        // ── 圖層的解析：刪除與就地編輯共用。刻意用「作用域對應的那個 root」而不是
+        //    souliong_layer_dir()——後者同名時會偏好專案層，用在這裡的話，想刪全站層卻剛好有
+        //    同名專案層時就會刪錯一邊。權限規則與 layerimport 相同：圖層住哪，權限就跟到哪。 ──
+        $layerTarget = function (string $lp, string $lid) use ($cfg, $master, $canProject, $t): array {
+          $backTo = '?api=admin' . ($lp !== '' ? '&project=' . urlencode($lp) : '') . '#tools';
+          if ($lp === '' ? !$master : !$canProject($lp)) {
+            error_page(403, $t('no_permission_title'), $t('master_only_layers_msg'), $backTo, $t('back_to_admin'));
+          }
+          $roots = souliong_layer_roots($cfg, $lp);
+          $root = rtrim((string)($lp === '' ? ($roots['site'] ?? '') : ($roots['project'] ?? '')), '/\\');
+          $dir = ($root !== '' && preg_match('/^[a-z0-9_-]+$/', $lid)) ? $root . '/' . $lid : '';
+          if ($dir === '' || !is_dir($dir) || !is_file($dir . '/layer.json')) {
+            error_page(404, $t('error_404_title'), $t('layer_not_found_msg'), $backTo, $t('back_to_admin'));
+          }
+          return [$root, $dir, $backTo];
+        };
+
+        // ── 圖層刪除：整個資料夾。切好的金字塔可能上萬個檔，靠手動刪不實際，所以後台要有這條路。
+        //    刪掉之後仍指著它的 meta.json 不必清理——souliong_layers_for() 對找不到的 id 本來就
+        //    靜靜略過（同 pack），地圖只會少一層而不會開天窗。 ──
+        if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'layerdelete') {
+          need_csrf($csrf);
+          $lp  = preg_replace('/[^a-z0-9_-]/', '', $_POST['project'] ?? '');
+          $lid = strtolower(preg_replace('/[^A-Za-z0-9_-]/', '', $_POST['layer'] ?? ''));
+          [$root, $dir, $backTo] = $layerTarget($lp, $lid);
+          // 全站預設層刪掉的話，所有沒自訂圖層的地圖會同時變成一片空白——這種「一鍵讓整站沒有
+          // 底圖」的操作不該只靠一個 confirm 擋。要換預設請先改 config 的 default_layers。
+          if ($lp === '' && in_array($lid, souliong_default_layers($cfg), true)) {
+            error_page(409, $t('error_400_title'), $t('layer_is_default_msg', ['id' => $lid]), $backTo, $t('back_to_admin'));
+          }
+          if (!souliong_layer_rmtree($dir, $root)) {
+            error_page(500, $t('error_500_title'), $t('layer_delete_failed_msg'), $backTo, $t('back_to_admin'));
+          }
+          audit_log($cfg, $auditWho(), 'layer_delete', $lp !== '' ? $lp : null, $lid);
+          header('Location: ' . $backTo);
+          exit;
+        }
+
+        // ── 圖層設定就地編輯：只動 layer.json 裡「位置與外觀」那幾欄。
+        //
+        //    這條路存在的理由是成本不對稱：切一次圖磚可能產生上萬個檔，卻只為了改個名字、調個
+        //    不透明度或把疊圖往東挪幾公尺就要重切整包，太浪費。
+        //
+        //    讀進來的是完整 manifest，底下只覆寫表單認得的欄位，其餘（url、urlDark、subdomains、
+        //    detectRetina、type、desc、maxNativeZoom、generated…）原樣寫回去。表單沒有的欄位
+        //    不等於使用者想清掉它。 ──
+        if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'layeredit') {
+          need_csrf($csrf);
+          $lp  = preg_replace('/[^a-z0-9_-]/', '', $_POST['project'] ?? '');
+          $lid = strtolower(preg_replace('/[^A-Za-z0-9_-]/', '', $_POST['layer'] ?? ''));
+          [$root, $dir, $backTo] = $layerTarget($lp, $lid);
+          $mf = $dir . '/layer.json';
+          $manifest = json_decode((string)@file_get_contents($mf), true);
+          if (!is_array($manifest)) {
+            error_page(404, $t('error_404_title'), $t('layer_not_found_msg'), $backTo, $t('back_to_admin'));
+          }
+          unset($manifest['id'], $manifest['scope']);   // 這兩欄是列表時才補上的，不該落地
+
+          $label = trim((string)($_POST['label'] ?? ''));
+          $manifest['label'] = mb_substr($label !== '' ? $label : (string)($manifest['label'] ?? $lid), 0, 60);
+
+          $pane = (string)($_POST['pane'] ?? '');
+          $manifest['pane'] = in_array($pane, souliong_layer_panes(), true) ? $pane : (string)($manifest['pane'] ?? 'art');
+
+          // 1 是 Leaflet 的預設值，寫進去只是雜訊；設回 1 就把這個 key 拿掉。
+          $op = round(max(0.0, min(1.0, (float)($_POST['opacity'] ?? 1))), 3);
+          if ($op >= 1.0) { unset($manifest['opacity']); } else { $manifest['opacity'] = $op; }
+
+          $attr = trim((string)($_POST['attribution'] ?? ''));
+          // 500 而不是 200：內建的 CARTO 那三層光是 attribution 就 215 字（兩個帶 target/rel 的
+          // <a>），砍在 200 會把使用者從沒碰過的欄位默默截斷，正是不該發生的那種資料遺失。
+          if ($attr === '') { unset($manifest['attribution']); } else { $manifest['attribution'] = mb_substr($attr, 0, 500); }
+
+          // 邊界四格：四格全空＝這一層本來就沒有範圍限制（外部圖磚服務就是這樣），不無中生有；
+          // 填了就要四格都填、而且要是投影畫得出來的範圍。只填一兩格是打到一半，當成錯誤。
+          $nums = [];
+          foreach (['south', 'west', 'north', 'east'] as $bk) {
+            $bv = trim((string)($_POST[$bk] ?? ''));
+            if ($bv !== '' && is_numeric($bv)) { $nums[$bk] = (float)$bv; }
+          }
+          if (count($nums) === 4) {
+            if (!souliong_layer_bounds_valid($nums['south'], $nums['west'], $nums['north'], $nums['east'])) {
+              error_page(400, $t('error_400_title'), $t('tilecut_bad_bounds_msg'), $backTo, $t('back_to_admin'));
+            }
+            $manifest['bounds'] = [[$nums['south'], $nums['west']], [$nums['north'], $nums['east']]];
+          } elseif ($nums) {
+            error_page(400, $t('error_400_title'), $t('tilecut_bad_bounds_msg'), $backTo, $t('back_to_admin'));
+          } else {
+            unset($manifest['bounds']);
+          }
+
+          // 縮放範圍：空白＝不寫，交給 Leaflet 的預設。maxNativeZoom 不開放編輯——那是「圖磚
+          // 實際切到第幾級」，由切圖工具寫入，改它只會讓 Leaflet 去要不存在的磚。
+          $zs = [];
+          foreach (['minZoom', 'maxZoom'] as $zk) {
+            $zv = trim((string)($_POST[$zk] ?? ''));
+            if ($zv === '' || !is_numeric($zv)) { unset($manifest[$zk]); continue; }
+            $zs[$zk] = max(0, min(24, (int)$zv));
+            $manifest[$zk] = $zs[$zk];
+          }
+          if (isset($zs['minZoom'], $zs['maxZoom']) && $zs['minZoom'] > $zs['maxZoom']) {
+            error_page(400, $t('error_400_title'), $t('layer_bad_zoom_msg'), $backTo, $t('back_to_admin'));
+          }
+
+          $json = json_encode($manifest, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+          if ($json === false || @file_put_contents($mf, $json . "\n", LOCK_EX) === false) {
+            error_page(500, $t('error_500_title'), $t('layer_save_failed_msg'), $backTo, $t('back_to_admin'));
+          }
+          audit_log($cfg, $auditWho(), 'layer_edit', $lp !== '' ? $lp : null, $lid);
+          header('Location: ' . $backTo);
+          exit;
+        }
+
         // ── 資料 ──（$allProjects 沿用前面「專案清單」算好的那份，中間的動作不會新增/刪除專案目錄）
         $viewProjects = $master
           ? ($scopeProject !== '' ? [$scopeProject] : $allProjects)
@@ -1619,6 +1732,44 @@ if (!$authed) {
     .lybtn:disabled {
       opacity: 0.3;
       cursor: default
+    }
+
+    /* 圖層列右側的操作區。按鈕在窄螢幕會被擠扁，所以整組 flex:none——寧可名稱那一欄先截斷，
+       也不要「匯出」變成一顆按不到的細條。 */
+    .lyacts {
+      display: flex;
+      gap: var(--sp-2);
+      flex: none;
+      align-items: center
+    }
+
+    .lyacts .btn {
+      padding: var(--sp-1) var(--sp-3);
+      min-height: 1.875rem;
+      font-size: 0.75rem
+    }
+
+    /* 邊界四格與縮放兩格：成對的數字欄位並排比疊成一長條好對照，窄螢幕再退回單欄 */
+    .lygrid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: var(--sp-2)
+    }
+
+    @media (max-width:24rem) {
+      .lygrid {
+        grid-template-columns: 1fr
+      }
+    }
+
+    /* 刪除擺在設定對話框最底下，用一條分隔線跟「儲存／取消」隔開：它跟上面那些欄位不是同一類
+       操作，不該看起來像表單的一部分。 */
+    .lydelrow {
+      display: flex;
+      justify-content: flex-end;
+      margin-top: var(--sp-4);
+      padding-top: var(--sp-3);
+      border-top: 1px solid var(--line)
     }
 
     .row input {
@@ -2679,6 +2830,77 @@ if (!$authed) {
       <?php endif; ?>
     <?php endif; ?>
 
+    <?php
+      // 圖層列右側的「設定」「匯出」兩顆按鈕，以及設定對話框（刪除在對話框最底下）。專案的圖層對話框與工具分頁的
+      // 全站圖層清單長得不一樣，但「能對一個圖層做什麼」該是同一組，所以只寫這一份。
+      // $lp === '' 代表全站層，非空代表某張地圖自己的層——差別只在多帶一個 project 參數，
+      // 權限與路徑解析都由後端的 $layerTarget 決定，不靠前端少畫一顆按鈕來把關。
+      $layerAdminRow = function (string $lid, array $linfo, string $lp) use ($t, $esc, $esc_csrf, $DICT) {
+        $dlgId = 'lyedit-' . ($lp !== '' ? $lp : 'site') . '-' . $lid;
+        $qs = '&layer=' . urlencode($lid) . ($lp !== '' ? '&project=' . urlencode($lp) : '');
+        $bnd = (array)($linfo['bounds'] ?? []);
+        $bv = fn(int $i, int $j) => isset($bnd[$i][$j]) && is_numeric($bnd[$i][$j]) ? (string)$bnd[$i][$j] : '';
+        $zv = fn(string $k) => isset($linfo[$k]) && is_numeric($linfo[$k]) ? (string)(int)$linfo[$k] : '';
+        $curPane = (string)($linfo['pane'] ?? 'art');
+        $delMsg = i18n_t($DICT, 'layer_delete_confirm', ['id' => $lid]);
+    ?>
+      <span class="lyacts">
+        <button type="button" class="btn" onclick="document.getElementById('<?= $esc($dlgId) ?>').showModal()"><i class="fa-solid fa-sliders"></i> <?= $t('layer_edit_btn') ?></button>
+        <a class="btn" href="?api=admin&backup=layer<?= $esc($qs) ?>" title="<?= $t('pack_export_btn') ?>" aria-label="<?= $t('pack_export_btn') ?>"><i class="fa-solid fa-download"></i></a>
+      </span>
+      <dialog id="<?= $esc($dlgId) ?>" class="metadlg" onclick="if(event.target===this)this.close()">
+        <form method="post" class="metaform">
+          <input type="hidden" name="csrf" value="<?= $esc_csrf ?>">
+          <input type="hidden" name="action" value="layeredit">
+          <input type="hidden" name="layer" value="<?= $esc($lid) ?>">
+          <?php if ($lp !== ''): ?><input type="hidden" name="project" value="<?= $esc($lp) ?>"><?php endif; ?>
+          <h3><i class="fa-solid fa-sliders"></i> <?= $t('layer_edit_heading', ['id' => $lid]) ?></h3>
+          <div class="hint"><?= $t('layer_edit_hint') ?></div>
+          <label><?= $t('tilecut_label_label') ?>
+            <input name="label" maxlength="60" value="<?= $esc($linfo['label'] ?? $lid) ?>"></label>
+          <label><?= $t('tilecut_pane_label') ?>
+            <select name="pane">
+              <?php foreach (['art', 'road', 'paper', 'base'] as $pn): ?>
+              <option value="<?= $pn ?>" <?= $curPane === $pn ? 'selected' : '' ?>><?= $t('tilecut_pane_' . $pn) ?></option>
+              <?php endforeach; ?>
+            </select></label>
+          <label><?= $t('tilecut_opacity_label') ?>
+            <input type="number" name="opacity" min="0" max="1" step="any" value="<?= $esc(isset($linfo['opacity']) && is_numeric($linfo['opacity']) ? (string)$linfo['opacity'] : '1') ?>"></label>
+          <label><?= $t('tilecut_attr_label') ?>
+            <input name="attribution" maxlength="500" value="<?= $esc($linfo['attribution'] ?? '') ?>"></label>
+          <div class="modfields">
+            <div class="modfields-head"><?= $t('layer_bounds_heading') ?></div>
+            <div class="hint"><?= $t('layer_bounds_hint') ?></div>
+            <div class="lygrid">
+              <label><?= $t('tilecut_north') ?><input type="number" step="any" name="north" value="<?= $esc($bv(1, 0)) ?>"></label>
+              <label><?= $t('tilecut_south') ?><input type="number" step="any" name="south" value="<?= $esc($bv(0, 0)) ?>"></label>
+              <label><?= $t('tilecut_west') ?><input type="number" step="any" name="west" value="<?= $esc($bv(0, 1)) ?>"></label>
+              <label><?= $t('tilecut_east') ?><input type="number" step="any" name="east" value="<?= $esc($bv(1, 1)) ?>"></label>
+            </div>
+          </div>
+          <div class="modfields">
+            <div class="modfields-head"><?= $t('layer_zoom_heading') ?></div>
+            <div class="hint"><?= $t('layer_zoom_hint') ?></div>
+            <div class="lygrid">
+              <label><?= $t('tilecut_zoom_min') ?><input type="number" min="0" max="24" step="1" name="minZoom" value="<?= $esc($zv('minZoom')) ?>"></label>
+              <label><?= $t('tilecut_zoom_max') ?><input type="number" min="0" max="24" step="1" name="maxZoom" value="<?= $esc($zv('maxZoom')) ?>"></label>
+            </div>
+          </div>
+          <div class="dlgactions">
+            <button type="button" class="btn" onclick="this.closest('dialog').close()"><?= $t('cancel') ?></button>
+            <button class="btn solid"><i class="fa-solid fa-floppy-disk"></i> <?= $t('save_settings_btn') ?></button>
+          </div>
+        </form>
+        <?php // 刪除自成一個 form（form 不能互相巢狀），擺在對話框最底下：要刪得先打開設定，順手誤觸不了 ?>
+        <form method="post" class="lydelrow" onsubmit="return confirm(<?= $esc(json_encode($delMsg, JSON_UNESCAPED_UNICODE)) ?>)">
+          <input type="hidden" name="csrf" value="<?= $esc_csrf ?>">
+          <input type="hidden" name="action" value="layerdelete">
+          <input type="hidden" name="layer" value="<?= $esc($lid) ?>">
+          <?php if ($lp !== ''): ?><input type="hidden" name="project" value="<?= $esc($lp) ?>"><?php endif; ?>
+          <button class="btn danger"><i class="fa-solid fa-trash-can"></i> <?= $t('layer_delete_btn') ?></button>
+        </form>
+      </dialog>
+    <?php }; ?>
     <h2><?= $t('project_access_heading') ?></h2>
     <?php foreach ($viewProjects as $p):
       $meta = json_decode((string)@file_get_contents($cfg['projects_dir'] . '/' . $p . '/meta.json'), true);
@@ -2839,7 +3061,7 @@ if (!$authed) {
                 <div class="lyrow">
                   <span style="flex:1 1 auto;min-width:0;font-size:0.8125rem"><b><?= $esc($linfo['label'] ?? $lid) ?></b>
                     <span class="hint mono"><?= $esc($lid) ?> · <?= $esc($linfo['type'] ?? 'raster') ?></span></span>
-                  <a class="btn" href="?api=admin&backup=layer&layer=<?= $esc($lid) ?>&project=<?= $esc($p) ?>"><i class="fa-solid fa-download"></i> <?= $t('pack_export_btn') ?></a>
+                  <?php $layerAdminRow($lid, $linfo, $p); ?>
                 </div>
                 <?php endforeach; ?>
               </div>
@@ -3363,11 +3585,11 @@ if (!$authed) {
         <div class="hint" style="margin-top:6px"><?= $t('site_layers_hint') ?></div>
         <?php $siteLayers = souliong_layer_list($cfg); ?>
         <?php if ($siteLayers): ?>
-        <div style="display:flex;flex-direction:column;gap:6px;margin-top:10px">
+        <div class="lylist" style="margin-top:10px">
           <?php foreach ($siteLayers as $lid => $linfo): ?>
-          <div style="display:flex;align-items:center;gap:8px;justify-content:space-between">
-            <span><b><?= $esc($linfo['label'] ?? $lid) ?></b> <span class="hint mono"><?= $esc($lid) ?> · <?= $esc($linfo['type'] ?? 'raster') ?></span></span>
-            <a class="btn" href="?api=admin&backup=layer&layer=<?= $esc($lid) ?>"><i class="fa-solid fa-download"></i> <?= $t('pack_export_btn') ?></a>
+          <div class="lyrow">
+            <span style="flex:1 1 auto;min-width:0;font-size:0.8125rem"><b><?= $esc($linfo['label'] ?? $lid) ?></b> <span class="hint mono"><?= $esc($lid) ?> · <?= $esc($linfo['type'] ?? 'raster') ?></span></span>
+            <?php $layerAdminRow($lid, $linfo, ""); ?>
           </div>
           <?php endforeach; ?>
         </div>

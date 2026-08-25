@@ -230,3 +230,73 @@ function souliong_layer_files(?string $dir, string $id, ?string &$err = null, in
     }
     return $out;
 }
+
+/**
+ * 圖層可以擺在哪幾個 pane，由下而上。切圖磚工具與後台的就地編輯共用這一份白名單——
+ * 兩邊各寫一份的話，總有一天其中一邊會多出（或少掉）一個選項而沒人發現。
+ */
+function souliong_layer_panes(): array
+{
+    return ['base', 'paper', 'road', 'art'];
+}
+
+/**
+ * 疊圖的四角邊界合不合理。±85.0511 是 Web Mercator 的實際上下限（Leaflet 用的也是這個數），
+ * 超過去不是「畫錯位置」而是「這個投影根本畫不出來」，所以擋在這裡而不是留給前端去發散。
+ */
+function souliong_layer_bounds_valid(float $s, float $w, float $n, float $e): bool
+{
+    return $s < $n && $w < $e
+        && abs($s) <= 85.0511 && abs($n) <= 85.0511
+        && abs($w) <= 180 && abs($e) <= 180;
+}
+
+/**
+ * 刪掉一棵目錄樹，但只准刪 $root 之內、且不等於 $root 的東西。
+ *
+ * 兩個地方要用：重切圖層時得先清掉舊磚（金字塔是稀疏的，上一版畫到、這一版沒畫到的格子若
+ * 留著，就會變成怎麼擦都擦不掉的殘影），以及後台整層刪除。刪除不可逆，所以這裡用 realpath
+ * 攤平後再確認一次目標確實在圖層資料夾底下，並且一律不跟隨符號連結。
+ * 回傳「這棵樹真的不見了」。
+ */
+function souliong_layer_rmtree(string $dir, string $root): bool
+{
+    $rr = realpath($root);
+    $rd = realpath($dir);
+    if ($rr === false || $rd === false) {
+        return false;
+    }
+    $n = fn(string $p): string => rtrim(str_replace('\\', '/', $p), '/');
+    if ($n($rd) === $n($rr) || strpos($n($rd) . '/', $n($rr) . '/') !== 0) {
+        return false;   // 目標不在 root 之內，或目標就是 root 本身——都不動
+    }
+    $stack = [$rd];
+    $dirs  = [];
+    while ($stack) {
+        $cur = array_pop($stack);
+        $dirs[] = $cur;
+        foreach (scandir($cur) ?: [] as $e) {
+            if ($e === '.' || $e === '..') {
+                continue;
+            }
+            $p = $cur . '/' . $e;
+            if (is_link($p) || !is_dir($p)) {
+                if (!@unlink($p) && file_exists($p)) {
+                    @chmod($p, 0666);
+                    @unlink($p);
+                }
+                continue;
+            }
+            $stack[] = $p;
+        }
+    }
+    foreach (array_reverse($dirs) as $d) {
+        if (!@rmdir($d) && is_dir($d)) {
+            // Windows 上同步工具（OneDrive…）會給資料夾掛唯讀屬性，而 RemoveDirectory 遇到唯讀
+            // 資料夾一律回 ACCESS_DENIED。清掉屬性再試一次——chmod 在 Windows 只動唯讀位元。
+            @chmod($d, 0777);
+            @rmdir($d);
+        }
+    }
+    return !is_dir($rd);
+}

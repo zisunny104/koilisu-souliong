@@ -58,55 +58,6 @@ function tilecut_dir(array $cfg, string $project, string $id): ?string
     return rtrim($root, '/\\') . '/' . $id;
 }
 
-/**
- * 刪掉一棵目錄樹，但只准刪 $root 之內的東西。
- *
- * 重切一次圖層時舊磚必須先清掉：金字塔是稀疏的，上一版畫到、這一版沒畫到的格子若留著，
- * 就會變成「怎麼擦都擦不掉的殘影」。刪除是不可逆的，所以這裡用 realpath 攤平後再確認一次
- * 目標確實在圖層資料夾底下，並且一律不跟隨符號連結。回傳「這棵樹真的不見了」。
- */
-function tilecut_rmtree(string $dir, string $root): bool
-{
-    $rr = realpath($root);
-    $rd = realpath($dir);
-    if ($rr === false || $rd === false) {
-        return false;
-    }
-    $n = fn(string $p): string => rtrim(str_replace('\\', '/', $p), '/');
-    if (strpos($n($rd) . '/', $n($rr) . '/') !== 0) {
-        return false;   // 目標不在 root 之內（或就是 root 本身）——不動
-    }
-    $stack = [$rd];
-    $dirs  = [];
-    while ($stack) {
-        $cur = array_pop($stack);
-        $dirs[] = $cur;
-        foreach (scandir($cur) ?: [] as $e) {
-            if ($e === '.' || $e === '..') {
-                continue;
-            }
-            $p = $cur . '/' . $e;
-            if (is_link($p) || !is_dir($p)) {
-                if (!@unlink($p) && file_exists($p)) {
-                    @chmod($p, 0666);
-                    @unlink($p);
-                }
-                continue;
-            }
-            $stack[] = $p;
-        }
-    }
-    foreach (array_reverse($dirs) as $d) {
-        if (!@rmdir($d) && is_dir($d)) {
-            // Windows 上同步工具（OneDrive…）會給資料夾掛唯讀屬性，而 RemoveDirectory 遇到唯讀
-            // 資料夾一律回 ACCESS_DENIED。清掉屬性再試一次——chmod 在 Windows 只動唯讀位元。
-            @chmod($d, 0777);
-            @rmdir($d);
-        }
-    }
-    return !is_dir($rd);
-}
-
 // ── 開工：建立（或清空）圖層資料夾（POST，JSON 回應） ──
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'begin') {
     if (!hash_equals(admin_derived($cfg), (string)($_POST['csrf'] ?? ''))) {
@@ -126,7 +77,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'begin
         json_out(['error' => $tr('tilecut_exists_msg', ['id' => $id])], 409);
     }
     // 清不乾淨就不往下走：舊磚留著會變成擦不掉的殘影，寧可當場說失敗，也不要交出一張半新半舊的圖層。
-    if ($existed && is_dir($dir . '/tiles') && !tilecut_rmtree($dir . '/tiles', $dir)) {
+    if ($existed && is_dir($dir . '/tiles') && !souliong_layer_rmtree($dir . '/tiles', $dir)) {
         json_out(['error' => $tr('tilecut_clear_failed_msg')], 500);
     }
     if (!is_dir($dir) && !@mkdir($dir, 0775, true)) {
@@ -205,12 +156,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'finis
     $e = $num('east');
     $z0 = max(0, min(24, (int)$num('minZoom')));
     $z1 = max(0, min(24, (int)$num('maxZoom')));
-    // Web Mercator 在南北極附近發散，±85.0511 是它的實際邊界（Leaflet 也用這個數）
-    if ($s >= $n || $w >= $e || abs($s) > 85.0511 || abs($n) > 85.0511 || abs($w) > 180 || abs($e) > 180 || $z0 > $z1) {
+    // 邊界的合理範圍由 souliong_layer_bounds_valid() 定義（Web Mercator 在南北極附近發散），
+    // 後台的就地編輯用同一支，兩邊對「畫得出來」的定義才會一致。
+    if (!souliong_layer_bounds_valid($s, $w, $n, $e) || $z0 > $z1) {
         json_out(['error' => $tr('tilecut_bad_bounds_msg')], 400);
     }
     $ext = in_array($_POST['ext'] ?? '', ['png', 'webp'], true) ? $_POST['ext'] : 'png';
-    $pane = in_array($_POST['pane'] ?? '', ['base', 'paper', 'road', 'art'], true) ? $_POST['pane'] : 'art';
+    $pane = in_array($_POST['pane'] ?? '', souliong_layer_panes(), true) ? $_POST['pane'] : 'art';
     $label = trim((string)($_POST['label'] ?? ''));
     $count = max(0, (int)$num('count'));
     $manifest = [

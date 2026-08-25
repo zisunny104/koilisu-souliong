@@ -11,13 +11,14 @@ id, project, item_num, kind, name, comment,
 photo, thumb, photo_time, lat, lon, loc_source,
 media, media_mime, duration,                      （影片／音訊；照片不會有這幾個）
 exif{make,model,lens,f,exp,iso,focal,sw},
-owner_hash, src_hash, contrib_id, contrib_hash, edit_of, created_at
+license, owner_hash, src_hash, contrib_id, contrib_hash, edit_of, created_at
 ```
 `kind` 目前有：`photo`（照片投稿）、`video`／`audio`（影音投稿）、`text`（純文字的一則紀錄）、
 `desc`（地點說明版本）、`point`（定位點版本，見 `editpoint.php`）、`newpoint`（新建立的地點，見 `newpoint.php`）。
 完整定義在 `api/features.php` 的 `souliong_kinds()`，見第三節。
 `edit_of` 指向被編輯的原始投稿 id（版本化：不覆寫，新增一筆版本紀錄，前端取最新版本蓋過原始值）。
 `contrib_id`/`contrib_hash` 是可選的投稿者身分（自選 PIN 才有）：前者對外可見（分組顯示用），後者僅供伺服器驗證「本人編輯/刪除」，不外流。
+`license` 是投稿時決定的授權：預設 `cc0`，已建立身分的投稿者可在投稿視窗勾選改成 `cc-by`（`api/upload.php` 會再驗一次有沒有 `ctoken`——沒有穩定身分就沒有名字可標示，一律回落 `cc0`）。目前只入庫、還沒有顯示端。
 
 ## 二、新增一張地圖（完全不用改程式）
 
@@ -137,22 +138,38 @@ owner_hash, src_hash, contrib_id, contrib_hash, edit_of, created_at
 - 要「疊圖」＝同時載入多個 project 的點位與投稿、用圖層開關切換。
 - 資料本來就是「每個 project 各自的檔案」，所以重疊只是「多讀幾個 + 圖層控制」的**新增功能**，不需改資料結構。
 
-## 五、統計要「顯示」怎麼做
+## 五、統計的顯示
 
-統計已在記錄（`projects/<project>/stats.json`），只差顯示：
-- 讀取：`GET ?api=stat&project=<id>&read=1`（需已用管理 PIN 登入）
-- 用回傳 JSON 畫圖：`points` 排序＝熱門點、`by_hour`/`by_dow`＝時段、`device`/`features`/`cameras`＝圓餅或數字卡。
-- 可在 `admin.php` 內嵌一段 `<canvas>` 直接畫（已有摘要文字版）。
+統計記在 `projects/<project>/stats.json`（由 `api/stat.php` 累加），後台「總覽」分頁已經在畫。原始 JSON 也可以自己取用：`GET ?api=stat&project=<id>&read=1`（需已用管理 PIN 登入）。
+
+欄位分三種形狀：`views`／`sessions`／`uploads` 是純計數；`points`（點位熱門度）、`cameras`、`features`、`browser`、`os` 是「key ⇒ 次數」的排行；`by_hour`（0–23）、`by_dow`（0–6）、`device`（`mobile`／`desktop`）是固定格數的分布。
+
+圖表是**伺服器端就把寬高算好的純 CSS**——沒有圖表函式庫、沒有 `<canvas>`、沒有多一支 CDN。後台是一支自足的 PHP 檔，多一個外部相依就多一個「離線或 CDN 掛掉就只剩空白」的理由。
+
+`api/admin.php` 的 `pane-overview` 裡有兩個共用產生器，要加新圖表先看能不能套現成的：
+
+| | 形狀 | 目前用在 |
+|---|---|---|
+| `$statBars($arr, $label, $limit = 20)` | 橫條排行（`<ol class="statbars">`） | 點位、相機、功能、瀏覽器、系統 |
+| `$statCols($cells, $aria)` | 直條分布（`<div class="statcols">` ＋ 軸標列） | 造訪時段（24 格）、星期分布（7 格） |
+
+兩個都吃「呼叫端已經排序、翻譯、取好前幾名的陣列」，不是 `stats.json` 原文——標籤怎麼翻、要不要 `arsort()`、取幾名都留在呼叫端，產生器只管畫。`$statCols` 的 `$cells` 每格是 `['v' => 次數, 'title' => 滑過顯示的字, 'axis' => 軸標（空字串＝這格不標）]`。
+
+**最小可見寬度是刻意的**：橫條最小 2%、直條最小 8%，值為 0 的直條另外畫一條 3% 的淺底。只出現過一次的項目也要看得到一小截，否則使用者會以為那一列是空的；0 值畫淺底則是讓人看得出「這一格存在但沒有資料」，而不是被誤讀成軸上少了一格。
+
+**無障礙**：橫條圖的標籤與數字本來就是真文字，只有色塊軌道 `aria-hidden`；直條圖沒有可讀的文字，所以整塊掛 `role="img"` ＋ `aria-label`，內容就是改版前那行文字摘要（例如「熱門時段（當地時間）：1 點·26、3 點·17、0 點·16」），軸標列 `aria-hidden`。圖表是**加上去的**，不是拿掉文字摘要換來的。
+
+CSS 全部前綴 `.stat-card .col`，因為要蓋過同層的 `.stat-card .col ol`（特異度 0,2,1）；類別名一律 `stat*` 開頭，避免跟 Font Awesome 或其他全域規則撞名。
 
 ## 六、功能模組開關（後台可關，每張地圖各自設定）
 
-地圖核心只保留「顯示點位」這個基本功能；路線導覽、地點故事編輯、上傳投稿、嵌入碼、分享、回平台首頁、投稿者身分、管理者邀請登入這八樣都是可關的模組，管理者在後台「編輯專案描述」對話框裡逐一勾選，存在該地圖 `meta.json` 的 `features` 物件（`{"route":true,"upload":false,...}`）。單一事實來源在 `api/features.php` 的 `souliong_modules()`（key／中文說明／預設值）與 `souliong_module_on($meta, $key)`（沒設定就用預設值，舊地圖不受影響）：
+地圖核心只保留「顯示點位」這個基本功能；路線導覽、地點故事編輯、上傳投稿、嵌入碼、分享、回平台首頁、投稿者身分、依序探索、管理者邀請登入這九樣都是可關的模組，管理者在後台「編輯專案描述」對話框裡逐一勾選，存在該地圖 `meta.json` 的 `features` 物件（`{"route":true,"upload":false,...}`）。單一事實來源在 `api/features.php` 的 `souliong_modules()`（key／中文說明／預設值）與 `souliong_module_on($meta, $key)`（沒設定就用預設值，舊地圖不受影響）：
 
 - **後台**（`admin.php`）：`souliong_modules()` 逐一畫勾選框，送出後寫回 `meta.json`。
 - **樣板**（`view.php`）：`$mod = fn($key) => souliong_module_on($meta, $key);`，模組關閉時直接不輸出對應的按鈕／彈窗 HTML（不是用 CSS 藏起來）。
 - **前端邏輯**（`viewer.leaflet.js`）：`MOD(key)` 讀 `window.APP.meta.features[key]`（同樣「沒設定＝開」），`canPost()` 把 `MOD('upload')` 併進解鎖判斷；凡是對應 DOM 可能不存在的地方都要 `if (el)` 再綁事件，全域鍵盤快速鍵／Esc 關閉等會不分模組狀態一律觸發的路徑也要能安全跳過（見各 `close*()` 函式的 null 檢查）。
 
-`delegation`（管理者邀請登入）跟其他六個不一樣，不是插件檔案，而是核心裡兩段既有 UI 的開關：地圖頁品牌區塊的彩蛋入口（連點六下開啟 `#pinDialog`，見 `setupBrandEgg()`）與邀請連結兌換彈窗 `#adminRedeemDialog`（見 `handleRedeemFragment()`）。關閉後這張地圖不會再讓人透過網址 fragment 兌換出新的專案 PIN，地圖頁上也不再有快速登入入口——但完全不影響 `config['admin_pin']`／`data/admin_pins.json` 的主 PIN：主 PIN 是全域權限，一律能從 `/manager` 直接登入任何專案，這條路由不經過 `view.php`，不受這個旗標影響（見 `api/security.php` 的「主 PIN／專案 PIN」兩層設計）。適合「僅檢視、只有超級管理者能更新內容，不需要專案 PIN 或邀請代理」的部署。**已知缺口**：目前只有 `view.php`／`viewer.leaflet.js`／`api/features.php` 接上這個旗標；`admin.php` 後台的邀請連結建立介面、與 `security.php` 的 `admin_can()`/`pins_redeem()` 對「這個專案要不要接受專案 PIN」的判斷，尚未跟著收斂，待補。
+`delegation`（管理者邀請登入）跟上面那些有專屬插件檔的模組不一樣（`homeLink` 也是，它只是核心模板裡的一顆連結），不是插件檔案，而是核心裡兩段既有 UI 的開關：地圖頁品牌區塊的彩蛋入口（連點六下開啟 `#pinDialog`，見 `setupBrandEgg()`）與邀請連結兌換彈窗 `#adminRedeemDialog`（見 `handleRedeemFragment()`）。關閉後這張地圖不會再讓人透過網址 fragment 兌換出新的專案 PIN，地圖頁上也不再有快速登入入口——但完全不影響 `config['admin_pin']`／`state/admin_pins.json` 的主 PIN：主 PIN 是全域權限，一律能從 `/manager` 直接登入任何專案，這條路由不經過 `view.php`，不受這個旗標影響（見 `api/security.php` 的「主 PIN／專案 PIN」兩層設計）。適合「僅檢視、只有超級管理者能更新內容，不需要專案 PIN 或邀請代理」的部署。**已知缺口**：目前只有 `view.php`／`viewer.leaflet.js`／`api/features.php` 接上這個旗標；`admin.php` 後台的邀請連結建立介面、與 `security.php` 的 `admin_can()`/`pins_redeem()` 對「這個專案要不要接受專案 PIN」的判斷，尚未跟著收斂，待補。
 
 `personExplore`（依序探索）沿用原本的扁平旗標寫法（`meta.json` 直接存 `personExplore: true/false`），`souliong_module_on()` 對這個 key 特殊處理，行為與既有插件機制（見下一節）相容。
 
@@ -176,7 +193,7 @@ owner_hash, src_hash, contrib_id, contrib_hash, edit_of, created_at
 - **事件**：`MapApp.onHook(name, fn)` 訂閱、核心內部用 `emitHook(name, ...)` 發送。目前有 `'stateChange'`（投稿新增／刪除／編輯、投稿者篩選、全部-投稿模式切換、資料重新整理等任何「顯示內容可能變了」的時機都會發送一次，插件不需要知道確切原因，收到就重新算自己要畫什麼）、`'panelReset'`（有其他管道直接開/關地點面板時發送，插件若有自己的「聚焦」狀態應在這裡清掉）、`'closeAll'`（全域 Esc 鍵或其他「全部關閉」時機發送；插件若有自己的浮層／對話框應在這裡關閉——核心不需要知道插件的對話框 id）、`'identityUploadShortcut'`（訪客點擊身分小標籤且已有投稿權限時發送；核心自己不認得「打開上傳批次視窗」這件事，改由上傳模組訂閱這個事件自己決定要做什麼——模組關閉時核心呼叫 `emitHook` 也只是發到空氣中，不會出錯）、`'identityChanged'`（顯示用的身分狀態可能變了——長按換匿名名、或解鎖狀態改變時發送；核心自己不畫身分小標籤，改由身分插件訂閱重繪）、`'identityReroll'`（專門給「換了一個新匿名名」這個更窄的時機，跟 `'identityChanged'` 分開是因為上傳模組批次視窗的暱稱欄位只需要在真的換名時重設 placeholder，不需要每次身分狀態變動就重設，否則會把使用者已經打的字清掉）。
 - **延伸點（有回傳值）**：`MapApp.registerPhotoFilter(fn)`（`fn(photoEntry, currentPoint) => bool`，篩掉不想顯示的照片，AND 疊加）、`MapApp.registerEntriesHint(fn)`（`fn(currentPoint) => HTMLElement|null`，插進地點卡片內容裡的提示區塊，插件自己建節點、自己綁事件）、`MapApp.registerScopeParam(fn)`（`fn() => {key: value}|null`，插件自己想在分享連結／嵌入碼網址上多帶的參數，會併進 `currentScopeParams()` 的輸出；讀回來則不用核心幫忙——插件自己在 `mount()` 裡 `new URLSearchParams(location.search)` 讀自己定義的 key 即可，核心不需要知道有這個參數存在）。
 - **資料／動作**：`MapApp.personTimeline(name)`、`MapApp.pointTitle(p)`、`MapApp.photoFullUrl(item)`、`MapApp.openPanel(point)`、`MapApp.openLightbox(entry, url)`、`MapApp.openUnlock()`（跳出投稿碼／解鎖視窗）、`MapApp.refreshEntries()`（＝目前地點卡片重繪一次，通常在插件自己改了篩選狀態之後呼叫）、`MapApp.trackFeature(name)`（記一筆功能使用統計，寫進該地圖的 `stats.json`）、`MapApp.currentScopeParams()`（目前的投稿者／分類篩選狀態，序列化成 querystring 片段，分享連結／嵌入碼都靠這個帶入範圍限制）、`MapApp.effectiveEntries()`（合併「原始投稿」與其編輯紀錄後的目前有效清單，**所有型別**都在裡面，是投稿資料的單一事實來源）、`MapApp.effectivePhotos()`（同一份清單只留有照片的那些；`route-tour`／`person-explore` 這種畫面只處理得了 `<img>` 的插件用這個，不要為了「支援新型別」把它們改成吃 `effectiveEntries()`）、`MapApp.entryFullUrl(entry)` / `MapApp.entryThumbUrl(entry)`（依型別給出主檔／縮圖網址，照片走 `?api=photo`、影音走 `?api=media`，插件不需要自己判斷 kind）、`MapApp.kindOf(entry)`（一筆投稿的 kind，舊記錄沒有這個欄位時退回 `photo`）、`MapApp.contribCfg()`（這張地圖的投稿設定，見第三節的 `souliong_contrib_cfg()`）、`MapApp.fmtDur(sec)`（影音長度的顯示格式化）、`MapApp.effectivePoints()`（併入 `newpoint` 並套上 `point` 座標覆蓋後的目前點位清單）、`MapApp.getCats()`（目前地圖的分類清單）、`MapApp.submitNewPoint(fields)`（送出一筆新地點，走 `api/newpoint.php` 而非投稿端點）、`MapApp.personColor(name)`（某投稿者的固定配色，跟篩選角標同一份快取，同一頁內顏色不會兜不起來）、`MapApp.toast(html)`（畫面上方跳出的短暫提示訊息）、`MapApp.displayName()`（目前裝置設定的暱稱，沒設定就退回本次隨機匿名名）、`MapApp.anonName()`（純粹讀本次隨機匿名名，不管暱稱欄位有沒有填——輸入框 placeholder 要用這個而非 `displayName()`）、`MapApp.submitContribution(fields)`（送出一筆新投稿的共用管道；`project`/`owner`/`code`/`ctoken` 這些每筆投稿都要帶的欄位由核心統一補上，插件只要給業務欄位，例如 `{kind:'desc', item_num, name, comment, photo_time}`）、`MapApp.refreshPersonFilter()`（投稿者篩選下拉重新計算一次，新增投稿可能帶入新名字時要呼叫）、`MapApp.refreshCounts()`（只重算統計數字，不重繪地圖圖層／卡片——批次上傳中途每張都呼叫這個即可，比全套 `refreshAll()` 省事）、`MapApp.refreshAll()`（資料異動後的完整重繪：統計、地圖圖層、投稿者篩選、`'stateChange'` 事件、目前地點卡片，一次呼叫涵蓋所有連動，插件不需要自己記得哪些要重繪）、`MapApp.addTileLayer(map)`（用地圖目前的底圖設定，在插件自己建立的 `L.map` 實體上加一層底圖——例如批次上傳卡片裡的小地圖預覽）、`MapApp.fmtTime(date)`（統一的時間顯示格式化）、`MapApp.getMeta()`（目前地圖的 `meta.json` 內容；用函式而非直接暴露屬性，是因為部分欄位可能是非同步取得，插件不該假設它在 `mount()` 當下就是最終值）、`MapApp.getCurrentPoint()`（目前面板開著的地點物件，沒開面板則為 `null`——例如上傳快速鍵要「以目前地點為預設脈絡」開啟批次視窗時要用這個，而不是自己記一份）、`MapApp.nearestPoint(lat, lon)`（找離某座標最近的地點，EXIF GPS 定位配對用）、`MapApp.chairOptionsHtml(selectedNum)`（地點下拉選單的 `<option>` HTML，批次卡片讓使用者手動指定/修正地點用）、`MapApp.srcTone(src)` / `MapApp.locNote(src)`（照片定位來源的顯示文字與樣式，核心的照片編輯面板與上傳模組的批次卡片共用同一份判斷邏輯，避免兩處各自維護一份、日後兜不起來）、`MapApp.rerollAnon()`（換一個新的本次匿名名；會依序發送 `'identityChanged'` 與 `'identityReroll'`，實際換算 `SESSION_ANON` 這個私有狀態的邏輯留在核心，插件只管觸發時機，例如長按身分小標籤）、`MapApp.identityChipClick()`（身分小標籤被點擊時該做什麼——已有投稿權限就發 `'identityUploadShortcut'`、被鎖住就開解鎖視窗、上傳模組整個關閉則什麼都不做；這個判斷要用到 `MOD('upload')`/`canPost()` 等核心私有狀態，所以決策邏輯留在核心，身分插件只負責把點擊事件轉呼叫過來）。
-- **唯讀狀態**：`MapApp.getMap()`、`MapApp.getFilterPerson()`、`MapApp.isPhotoLayerOn()`、`MapApp.isUnlocked()`（裝置是否已解鎖投稿權限——核心原生的權限判斷，見上面第 5 點）、`MapApp.isEmbedMode()`（這個頁面是不是以 `?embed=1` 嵌入模式載入）、`MapApp.getProjectId()`（目前地圖的 project id，已做過安全字元過濾）。
+- **唯讀狀態**：`MapApp.getMap()`、`MapApp.getFilterPerson()`、`MapApp.isPhotoLayerOn()`、`MapApp.isUnlocked()`（裝置是否已解鎖投稿權限——核心原生的權限判斷，見上面第 5 點）、`MapApp.hasIdentity()`（這台裝置有沒有建立跨裝置的投稿者身分；跟 `isUnlocked()` 是兩件事——能投稿不代表具名，CC BY 選項就是靠這個決定顯不顯示）、`MapApp.isEmbedMode()`（這個頁面是不是以 `?embed=1` 嵌入模式載入）、`MapApp.getProjectId()`（目前地圖的 project id，已做過安全字元過濾）。
 
 參考實作：
 - `assets/js/plugins/embed-code.js`（`embed` 旗標——產生 `<iframe>` 嵌入碼；`class EmbedCodePlugin extends MapApp.Plugin` 寫法，是目前符合完整標準的範例）。
@@ -314,6 +331,26 @@ owner_hash, src_hash, contrib_id, contrib_hash, edit_of, created_at
 
 匯入是**覆蓋不是取代**：ZIP 裡沒有的舊檔不會被刪掉（同主題包）。
 
+**就地改設定**：同兩處清單的「設定」按鈕（`action=layeredit`）。開出來的對話框只有跟位置與外觀有關的那幾欄——顯示名稱、疊放層級、不透明度、版權標註、顯示範圍、縮放範圍。
+
+會這樣切的理由是成本不對稱：切一次圖磚可能產生上萬個檔，只為了改個名字或把疊圖往東挪幾公尺就要重切整包太浪費。所以**表單沒有的欄位一律原樣寫回去**（`url`、`urlDark`、`subdomains`、`detectRetina`、`type`、`desc`、`maxNativeZoom`、`generated`…）——「表單沒送」不等於「使用者想清掉」。
+
+幾個刻意的取捨：
+
+- `maxNativeZoom` **不開放編輯**。那是「圖磚實際切到第幾級」，由切圖工具寫入；改它只會讓 Leaflet 去要不存在的磚。
+- 邊界四格**要嘛全填、要嘛全空**，只填一兩格當成錯誤。全空＝移除 `bounds`（外部圖磚服務本來就沒有範圍），不是「保持原樣」。
+- 不透明度設回 `1` 就把整個 key 拿掉——1 是 Leaflet 的預設，寫進去只是雜訊。
+- 版權標註上限 500 字：內建那三張 CARTO 光是 `attribution` 就 215 字（兩個帶 `target`／`rel` 的 `<a>`），砍在 200 會把使用者從沒碰過的欄位默默截斷。
+
+**刪除**（`action=layerdelete`）擺在設定對話框最底下，用分隔線跟「儲存」隔開，送出前有 `confirm()`。整個資料夾連同圖磚一起消失，不可逆。
+
+兩道護欄：
+
+- **全站預設層刪不掉**。`default_layers` 裡的 id 回 409——刪掉它等於讓所有沒自訂圖層的地圖同時沒有底圖，這種事不該只靠一個 `confirm()` 擋。要換預設請先改設定檔。
+- 路徑解析用**作用域對應的那個 root**，不是 `souliong_layer_dir()`。後者同名時偏好專案層，用在刪除上的話，想刪全站層卻剛好有同名專案層時就會刪錯一邊。
+
+刪掉之後仍指著它的 `meta.json` **不必清理**：`souliong_layers_for()` 對找不到的 id 本來就靜靜略過（同主題包），那張地圖只會少一層，不會開天窗。
+
 ### 8.7 切圖磚工具 `<base>/tilecut`
 
 把一張自繪插畫切成圖磚金字塔，落地成一個**專案層**（`projects/<proj>/layers/<id>/`）。入口在專案卡片的「地圖圖層」對話框，以及後台「工具」分頁。權限跟著專案走（比照匯入），不是主要管理者專屬。
@@ -330,7 +367,7 @@ owner_hash, src_hash, contrib_id, contrib_hash, edit_of, created_at
 | `tile` | 收一批磚。欄位名就是座標：`tiles[<z>_<x>_<y>]`，不必另外傳一份對照表 |
 | `finish` | 寫 `layer.json` 並記一筆 audit log |
 
-**重切一定要先清舊磚**：金字塔是稀疏的，上一版畫到、這一版沒畫到的格子若留著，就成了擦不掉的殘影。刪除不可逆，所以 `tilecut_rmtree()` 用 `realpath()` 攤平後再確認目標確實落在該圖層資料夾之內，而且一律不跟隨符號連結。
+**重切一定要先清舊磚**：金字塔是稀疏的，上一版畫到、這一版沒畫到的格子若留著，就成了擦不掉的殘影。刪除不可逆，所以 `souliong_layer_rmtree()`（在 `api/layers.php`，後台刪整層也用同一支）用 `realpath()` 攤平後再確認目標確實落在該圖層資料夾之內、而且不等於 root 本身，並且一律不跟隨符號連結。
 
 **一批 16 張**：PHP 的 `max_file_uploads` 常見上限是 20，留些餘裕。上傳沿用 `admin` 限流 bucket（120 次／分），撞到 429 就照 `Retry-After` 等待續傳，不放棄整批。
 
@@ -344,7 +381,6 @@ owner_hash, src_hash, contrib_id, contrib_hash, edit_of, created_at
 
 ### 8.8 尚未完成
 
-- 後台不能刪圖層，也不能就地編輯 `layer.json`（改 `bounds`、`opacity` 要重新匯入整包，或用切圖磚工具重切一次）。
 - 切圖磚工具只吃單張圖。多張分幅的掃描稿要先在繪圖軟體裡拼成一張再進來。
 - 向量圖層還沒有對應的 `MapLayer` 子類。想要「道路粗細可調」就得走向量：protomaps-leaflet 是 `L.GridLayer`，不必離開 Leaflet，接成一個新子類即可。
 
