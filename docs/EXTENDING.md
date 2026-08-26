@@ -419,6 +419,32 @@ CSS 全部前綴 `.stat-card .col`，因為要蓋過同層的 `.stat-card .col o
 - 匯出 ZIP 還沒分「含原稿」與「僅圖磚」兩種，目前一律只帶圖磚。
 - 向量圖層還沒有對應的 `MapLayer` 子類。想要「道路粗細可調」就得走向量：protomaps-leaflet 是 `L.GridLayer`，不必離開 Leaflet，接成一個新子類即可。
 
+### 8.9 主題包的兩層作用域
+
+主題包（`api/packs.php`）原本只有全站一層；現在跟圖層共用同一套模型：
+
+| 作用域 | 位置 | 進版控？ | 用途 |
+|---|---|---|---|
+| `site` | `packs/<id>/` | 是 | 平台內建、所有地圖共用的主題包 |
+| `project` | `projects/<proj>/packs/<id>/` | 否 | 這張地圖專屬的客製材質，不想污染全站清單時用 |
+
+跟圖層完全同一套函式形狀：`souliong_pack_roots($cfg, $proj)`／`souliong_pack_list($cfg, $proj)`（manifest 補 `id`／`scope`）／`souliong_pack_dir($cfg, $id, $proj)`（專案層優先）／`souliong_pack_for($cfg, $meta, $proj)`（解析這張地圖生效的包，見函式內註解的三態邏輯）。一張地圖只套一個包，所以沒有圖層那種「有序陣列」，其餘（同名覆蓋、`projects/` 天然免版控）道理一致。
+
+包的內容目前只有 `pack.json`＋`pack.css`，素材一律走 CSS 內嵌的 `data:` URI（見 `packs/demo-loud/`），不像圖層有實體圖檔要落地，所以**沒有對應 `api/layerfile.php` 的檔案端點**——`pages/view.php` 直接 `readfile()` 整份 `pack.css`。
+
+後台的三個入口跟圖層一一對應：
+
+| | 位置 | 權限 | 落點 |
+|---|---|---|---|
+| 全站包 | 「工具」分頁 → 主題包 | 主要管理者 | `packs/<id>/` |
+| 專案包 | 專案卡片 → 主題包 | 該專案的管理者 | `projects/<proj>/packs/<id>/` |
+
+匯出（`backup=pack`）、匯入（`action=packimport`）都比照 `backup=layer`／`layerimport`：沒帶 `project`＝全站、帶了＝該地圖自己的，權限跟著包住哪裡走（`$isProj ? !$canProject($pp) : !$master`）。刪除（`action=packdelete`）也是新加的——比照 `action=layerdelete`：路徑解析用**作用域對應的那個 root**，不是 `souliong_pack_dir()`（後者同名時偏好專案層，刪除時可能刪錯邊）；全站預設包（`state/settings.json` 的 `pack`）刪不掉，回 409，要刪請先去「工具」分頁換掉全站預設。包沒有圖層那種「檔案數量不固定」問題（固定兩個檔），所以匯出不需要遞迴走訪或大小上限。
+
+「編輯專案描述」對話框的包下拉選單現在也是 `souliong_pack_list($cfg, $proj)`——專案自己的包會出現在清單裡，並標注「本地圖專屬」（沿用圖層清單同一顆翻譯字串 `layer_scope_project`，文字本來就是通用的，沒有另外開一顆 `pack_scope_project`）。全站預設下拉（「工具」分頁的 `site_pack`）刻意維持 `souliong_pack_list($cfg)`（不帶 `$proj`）——全站預設本來就只該從全站包裡選，不然某張地圖刪掉自己的專案包後，其他地圖的全站預設會突然解析不到。
+
+`Route::backupPack($packId, $project = '')` 現在也有第二個參數，網址形狀比照 `Route::backupLayer()`：`<base>/manager/packs/<id>.zip`（全站）／`<base>/manager/<project>/packs/<id>.zip`（專案），`Route::parseManager()` 對應加了一條專案層的 `PACKS` 分支。
+
 ## 九、網址表：`api/routes.php`
 
 網址長什麼樣，全站只寫在一個檔案裡。`Route` 同時負責**拆**（`index.php` 收到請求時）與**組**（其他檔案要產生連結時），兩邊共用同一組常數，所以不會出現「拆得開卻組不回去」的歪斜。
@@ -431,7 +457,8 @@ CSS 全部前綴 `.stat-card .col`，因為要蓋過同層的 `.stat-card .col o
 <base>/manager/logout                   登出
 <base>/manager/backup.zip               全站備份
 <base>/manager/<mapid>/backup.zip       單張地圖備份
-<base>/manager/packs/<id>.zip           主題包匯出
+<base>/manager/packs/<id>.zip           全站主題包匯出
+<base>/manager/<mapid>/packs/<id>.zip   專案主題包匯出
 <base>/manager/layers/<id>.zip          全站圖層匯出
 <base>/manager/<mapid>/layers/<id>.zip  專案圖層匯出
 ```

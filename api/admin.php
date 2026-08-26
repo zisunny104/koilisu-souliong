@@ -633,7 +633,7 @@ if (!$authed) {
               unset($meta['pack']);
             } elseif ($pk === '!none') {
               $meta['pack'] = '';
-            } elseif (isset(souliong_pack_list($cfg)[$pk])) {
+            } elseif (isset(souliong_pack_list($cfg, $p)[$pk])) {
               $meta['pack'] = $pk;
             }
           }
@@ -849,15 +849,18 @@ if (!$authed) {
           require_once __DIR__ . '/zip.php';
           // ── 主題包匯出：單一 pack 資料夾打包，路徑內含 <id>/ 前綴（比照 projects/<id>/ 的做法） ──
           if ($_GET['backup'] === 'pack') {
-            if (!$master) {
-              error_page(403, $t('no_permission_title'), $t('master_only_packs_msg'), Route::manager('', 'tools'), $t('back_to_admin'));
-            }
             $pid = preg_replace('/[^a-z0-9_-]/', '', $_GET['pack'] ?? '');
-            $packs = souliong_pack_list($cfg);
+            $pp  = preg_replace('/[^a-z0-9_-]/', '', $_GET['project'] ?? '');
+            $packs = souliong_pack_list($cfg, $pp);
             if ($pid === '' || !isset($packs[$pid])) {
               error_page(404, $t('error_404_title'), $t('pack_not_found_msg'), Route::manager('', 'tools'), $t('back_to_admin'));
             }
-            $pdir = rtrim($cfg['packs_dir'], '/\\') . '/' . $pid;
+            // 全站包歸主要管理者，專案包歸該專案的管理者——權限跟著包實際住在哪裡走
+            $isProj = ($packs[$pid]['scope'] ?? '') === 'project';
+            if ($isProj ? !$canProject($pp) : !$master) {
+              error_page(403, $t('no_permission_title'), $t('master_only_packs_msg'), Route::manager('', 'tools'), $t('back_to_admin'));
+            }
+            $pdir = souliong_pack_dir($cfg, $pid, $pp);
             $files = [];
             foreach (['pack.json', 'pack.css'] as $fn) {
               if (is_file($pdir . '/' . $fn)) $files[$pid . '/' . $fn] = $pdir . '/' . $fn;
@@ -1037,11 +1040,20 @@ if (!$authed) {
           exit;
         }
 
-        // ── 主題包匯入：主要管理者限定；zip 內路徑需含 <id>/ 前綴，id 只認資料夾名稱（避免 pack.json 內容偽造） ──
+        // ── 主題包匯入：zip 內路徑需含 <id>/ 前綴，id 只認資料夾名稱（避免 pack.json 內容偽造）。
+        //    跟圖層同一套「匯到哪裡」：沒帶 project ＝全站包（主要管理者限定），帶了 project ＝
+        //    該地圖自己的包。匯入不會刪掉 zip 裡沒有的舊檔（覆蓋不是取代）。 ──
         if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'packimport') {
           need_csrf($csrf);
-          if (!$master) {
-            error_page(403, $t('no_permission_title'), $t('master_only_packs_msg'), Route::manager('', 'tools'), $t('back_to_admin'));
+          $pp = preg_replace('/[^a-z0-9_-]/', '', $_POST['project'] ?? '');
+          $backTo = Route::manager($pp, 'tools');
+          if ($pp === '' ? !$master : !$canProject($pp)) {
+            error_page(403, $t('no_permission_title'), $t('master_only_packs_msg'), $backTo, $t('back_to_admin'));
+          }
+          $roots = souliong_pack_roots($cfg, $pp);
+          $destRoot = rtrim((string)($pp === '' ? ($roots['site'] ?? '') : ($roots['project'] ?? '')), '/\\');
+          if ($destRoot === '') {
+            error_page(500, $t('error_500_title'), $t('pack_dest_missing_msg'), $backTo, $t('back_to_admin'));
           }
           require_once __DIR__ . '/zip.php';
           if (isset($_FILES['pack']) && $_FILES['pack']['error'] === UPLOAD_ERR_OK) {
@@ -1051,14 +1063,14 @@ if (!$authed) {
             $ids = [];
             foreach ($entries as $nm => $content) {
               if (!preg_match('#^([a-z0-9_-]+)/(pack\.json|pack\.css)$#', str_replace('\\', '/', $nm), $mm)) continue;
-              $destDir = rtrim($cfg['packs_dir'], '/\\') . '/' . $mm[1];
+              $destDir = $destRoot . '/' . $mm[1];
               if (!is_dir($destDir)) @mkdir($destDir, 0775, true);
               @file_put_contents($destDir . '/' . $mm[2], $content, LOCK_EX);
               $ids[$mm[1]] = true;
             }
-            audit_log($cfg, $auditWho(), 'pack_import', null, implode(',', array_keys($ids)));
+            audit_log($cfg, $auditWho(), 'pack_import', $pp !== '' ? $pp : null, implode(',', array_keys($ids)));
           }
-          header('Location: ' . Route::manager('', 'tools'));
+          header('Location: ' . $backTo);
           exit;
         }
 
@@ -1218,6 +1230,36 @@ if (!$authed) {
             error_page(500, $t('error_500_title'), $t('layer_save_failed_msg'), $backTo, $t('back_to_admin'));
           }
           audit_log($cfg, $auditWho(), 'layer_edit', $lp !== '' ? $lp : null, $lid);
+          header('Location: ' . $backTo);
+          exit;
+        }
+
+        // ── 主題包刪除：整包資料夾。權限與路徑解析方式同 $layerTarget——用作用域對應的
+        //    root，不用 souliong_pack_dir()，避免同名時刪錯邊。刪掉之後仍指著它的 meta.json／
+        //    settings.json 不必清理，souliong_pack_for() 對找不到的 id 本來就靜靜略過。 ──
+        if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'packdelete') {
+          need_csrf($csrf);
+          $pp  = preg_replace('/[^a-z0-9_-]/', '', $_POST['project'] ?? '');
+          $pid = strtolower(preg_replace('/[^A-Za-z0-9_-]/', '', $_POST['pack'] ?? ''));
+          $backTo = Route::manager($pp, 'tools');
+          if ($pp === '' ? !$master : !$canProject($pp)) {
+            error_page(403, $t('no_permission_title'), $t('master_only_packs_msg'), $backTo, $t('back_to_admin'));
+          }
+          $roots = souliong_pack_roots($cfg, $pp);
+          $root = rtrim((string)($pp === '' ? ($roots['site'] ?? '') : ($roots['project'] ?? '')), '/\\');
+          $dir = ($root !== '' && preg_match('/^[a-z0-9_-]+$/', $pid)) ? $root . '/' . $pid : '';
+          if ($dir === '' || !is_dir($dir) || !is_file($dir . '/pack.json')) {
+            error_page(404, $t('error_404_title'), $t('pack_not_found_msg'), $backTo, $t('back_to_admin'));
+          }
+          // 全站預設包刪掉的話，所有沒自訂包的地圖會同時掉皮——這種「一鍵讓整站沒有主題」的
+          // 操作不該只靠一個 confirm 擋。要換預設請先去「工具」分頁改掉全站預設。
+          if ($pp === '' && $pid === souliong_site_pack($cfg)) {
+            error_page(409, $t('error_400_title'), $t('pack_is_default_msg', ['id' => $pid]), $backTo, $t('back_to_admin'));
+          }
+          if (!souliong_layer_rmtree($dir, $root)) {
+            error_page(500, $t('error_500_title'), $t('pack_delete_failed_msg'), $backTo, $t('back_to_admin'));
+          }
+          audit_log($cfg, $auditWho(), 'pack_delete', $pp !== '' ? $pp : null, $pid);
           header('Location: ' . $backTo);
           exit;
         }
@@ -2927,6 +2969,25 @@ if (!$authed) {
         </form>
       </dialog>
     <?php }; ?>
+    <?php
+      // 主題包列右側的「匯出」「刪除」兩顆按鈕。$pp === '' 代表全站包，非空代表某張地圖自己
+      // 的包——跟 $layerAdminRow 一樣，差別只在多帶一個 project 參數，權限與路徑解析都由
+      // 後端的 action=packdelete 決定。沒有設定對話框（材質變數目前只靠 pack.css 本身調），
+      // 所以不像圖層另開一層 dialog，直接把兩顆按鈕放進清單列。
+      $packAdminRow = function (string $pid, array $pinfo, string $pp) use ($t, $esc, $esc_csrf, $DICT) {
+        $delMsg = i18n_t($DICT, 'pack_delete_confirm', ['id' => $pid]);
+    ?>
+      <span class="lyacts">
+        <a class="btn" href="<?= $esc(Route::backupPack($pid, $pp)) ?>" title="<?= $t('pack_export_btn') ?>" aria-label="<?= $t('pack_export_btn') ?>"><i class="fa-solid fa-download"></i></a>
+        <form method="post" style="margin:0" onsubmit="return confirm(<?= $esc(json_encode($delMsg, JSON_UNESCAPED_UNICODE)) ?>)">
+          <input type="hidden" name="csrf" value="<?= $esc_csrf ?>">
+          <input type="hidden" name="action" value="packdelete">
+          <input type="hidden" name="pack" value="<?= $esc($pid) ?>">
+          <?php if ($pp !== ''): ?><input type="hidden" name="project" value="<?= $esc($pp) ?>"><?php endif; ?>
+          <button class="btn danger" title="<?= $t('pack_delete_btn') ?>" aria-label="<?= $t('pack_delete_btn') ?>"><i class="fa-solid fa-trash-can"></i></button>
+        </form>
+      </span>
+    <?php }; ?>
     <h2><?= $t('project_access_heading') ?></h2>
     <?php foreach ($viewProjects as $p):
       $meta = json_decode((string)@file_get_contents($cfg['projects_dir'] . '/' . $p . '/meta.json'), true);
@@ -2954,7 +3015,7 @@ if (!$authed) {
                 // 三態下拉（對應上面 action=meta 的 pack 處理）：沒有 pack 欄位＝跟隨全站，
                 // 空字串＝這張地圖明確不套用。順便把全站目前設的是哪一包寫在選項裡，
                 // 才不用切到「工具」分頁才知道「跟隨全站」實際上會長什麼樣。
-                $packList = souliong_pack_list($cfg);
+                $packList = souliong_pack_list($cfg, $p);
                 $packHas  = is_array($meta) && array_key_exists('pack', $meta) && is_string($meta['pack']);
                 $packSel  = $packHas ? $meta['pack'] : null;
                 $sitePack = souliong_site_pack($cfg);
@@ -2966,8 +3027,10 @@ if (!$authed) {
                 <select name="pack">
                   <option value="" <?= $packSel === null ? 'selected' : '' ?>><?= $t('pack_follow_site_option', ['pack' => $siteName]) ?></option>
                   <option value="!none" <?= $packSel === '' ? 'selected' : '' ?>><?= $t('no_pack_option') ?></option>
-                  <?php foreach ($packList as $pid => $pinfo): ?>
-                  <option value="<?= $esc($pid) ?>" <?= $packSel === $pid ? 'selected' : '' ?>><?= $esc($pinfo['label'] ?? $pid) ?></option>
+                  <?php foreach ($packList as $pid => $pinfo):
+                    $plabel = ($pinfo['label'] ?? $pid) . (($pinfo['scope'] ?? '') === 'project' ? ' · ' . i18n_t($DICT, 'layer_scope_project') : '');
+                  ?>
+                  <option value="<?= $esc($pid) ?>" <?= $packSel === $pid ? 'selected' : '' ?>><?= $esc($plabel) ?></option>
                   <?php endforeach; ?>
                 </select>
               </label>
@@ -3099,6 +3162,41 @@ if (!$authed) {
                 <span class="badge"><i class="fa-solid fa-upload"></i> <?= $t('layer_import_badge') ?></span>
                 <label class="btn" style="cursor:pointer"><i class="fa-solid fa-folder-open"></i> <span data-file><?= $t('choose_zip_btn') ?></span>
                   <input type="file" name="layer" accept=".zip" required hidden onchange="this.parentNode.querySelector('[data-file]').textContent=this.files[0]?this.files[0].name:<?= json_encode(i18n_t($DICT, 'choose_zip_btn'), JSON_UNESCAPED_UNICODE) ?>"></label>
+                <button class="btn"><i class="fa-solid fa-upload"></i> <?= $t('restore_btn') ?></button>
+              </form>
+              <div class="dlgactions">
+                <button type="button" class="btn" onclick="this.closest('dialog').close()"><?= $t('close') ?></button>
+              </div>
+            </div>
+          </dialog>
+          <?php
+            // 這張地圖自己的主題包（projects/<id>/packs/）。跟上面的圖層對話框同一個道理：
+            // 客製材質不想污染全站清單時，直接匯進這裡。全站包在這裡只列不給刪改。
+            $projPacks = array_filter(souliong_pack_list($cfg, $p), fn($pk) => ($pk['scope'] ?? '') === 'project');
+          ?>
+          <button type="button" class="btn" onclick="document.getElementById('pkrdlg-<?= $esc($p) ?>').showModal()"><i class="fa-solid fa-swatchbook"></i> <?= $t('packs_heading') ?></button>
+          <dialog id="pkrdlg-<?= $esc($p) ?>" class="metadlg" onclick="if(event.target===this)this.close()">
+            <div class="metaform">
+              <h3><i class="fa-solid fa-swatchbook"></i> <?= $t('project_packs_heading') ?></h3>
+              <div class="hint"><?= $t('project_packs_hint') ?></div>
+              <?php if ($projPacks): ?>
+              <div class="lylist">
+                <?php foreach ($projPacks as $pid => $pinfo): ?>
+                <div class="lyrow">
+                  <span style="flex:1 1 auto;min-width:0;font-size:0.8125rem"><b><?= $esc($pinfo['label'] ?? $pid) ?></b>
+                    <span class="hint mono"><?= $esc($pid) ?></span></span>
+                  <?php $packAdminRow($pid, $pinfo, $p); ?>
+                </div>
+                <?php endforeach; ?>
+              </div>
+              <?php else: ?>
+              <div class="hint"><?= $t('no_project_packs_msg') ?></div>
+              <?php endif; ?>
+              <form method="post" enctype="multipart/form-data" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+                <input type="hidden" name="csrf" value="<?= $esc_csrf ?>"><input type="hidden" name="action" value="packimport"><input type="hidden" name="project" value="<?= $esc($p) ?>">
+                <span class="badge"><i class="fa-solid fa-upload"></i> <?= $t('pack_import_badge') ?></span>
+                <label class="btn" style="cursor:pointer"><i class="fa-solid fa-folder-open"></i> <span data-file><?= $t('choose_zip_btn') ?></span>
+                  <input type="file" name="pack" accept=".zip" required hidden onchange="this.parentNode.querySelector('[data-file]').textContent=this.files[0]?this.files[0].name:<?= json_encode(i18n_t($DICT, 'choose_zip_btn'), JSON_UNESCAPED_UNICODE) ?>"></label>
                 <button class="btn"><i class="fa-solid fa-upload"></i> <?= $t('restore_btn') ?></button>
               </form>
               <div class="dlgactions">
@@ -3591,7 +3689,7 @@ if (!$authed) {
           <?php foreach ($installedPacks as $pid => $pinfo): ?>
           <div style="display:flex;align-items:center;gap:8px;justify-content:space-between">
             <span><b><?= $esc($pinfo['label'] ?? $pid) ?></b> <span class="hint mono"><?= $esc($pid) ?></span></span>
-            <a class="btn" href="<?= $esc(Route::backupPack($pid)) ?>"><i class="fa-solid fa-download"></i> <?= $t('pack_export_btn') ?></a>
+            <?php $packAdminRow($pid, $pinfo, ""); ?>
           </div>
           <?php endforeach; ?>
         </div>

@@ -118,10 +118,12 @@ final class Route
         return self::base() . self::MANAGER . '/' . rawurlencode($project) . '/' . self::BACKUP;
     }
 
-    /** 主題包匯出（全站資源，只有主要管理者能用） */
-    public static function backupPack(string $packId): string
+    /** 主題包匯出。$project 留空＝全站層，非空＝該地圖的專案層（兩層作用域見 api/packs.php） */
+    public static function backupPack(string $packId, string $project = ''): string
     {
-        return self::base() . self::MANAGER . '/' . self::PACKS . '/' . rawurlencode($packId) . '.zip';
+        $u = self::base() . self::MANAGER;
+        if ($project !== '') $u .= '/' . rawurlencode($project);
+        return $u . '/' . self::PACKS . '/' . rawurlencode($packId) . '.zip';
     }
 
     /** 圖層匯出。$project 留空＝全站層，非空＝該地圖的專案層（兩層作用域見 api/layers.php） */
@@ -193,6 +195,9 @@ final class Route
         } elseif ($sub === self::LAYERS && isset($rest[1])) {
             $out['backup'] = 'layer';
             $out['layer'] = self::unzip($rest[1]);
+        } elseif ($sub === self::PACKS && isset($rest[1])) {
+            $out['backup'] = 'pack';
+            $out['pack'] = self::unzip($rest[1]);
         } elseif (in_array($sub, self::PANES, true)) {
             $out['pane'] = $sub;
         }

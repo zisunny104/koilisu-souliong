@@ -40,7 +40,7 @@ $mod = fn(string $key): bool => souliong_module_on($meta, $key);
 // 每個模組解析後（含未來的相依關係）的開關結果，前端 MOD() 直接讀這份、不再自己重算預設值邏輯，
 // 避免 PHP 端 $mod() 與 JS 端各自判斷、日後模組間有相依時兩邊算出不同答案。
 $moduleState = array_combine(array_keys(souliong_modules()), array_map($mod, array_keys(souliong_modules())));
-$pack = souliong_pack_for($apiCfg, $meta);
+$pack = souliong_pack_for($apiCfg, $meta, $proj);
 // 這張地圖由下往上要疊哪幾層圖磚／插畫。跟 $pack 同樣是「用哪一包」而非布林開關，差別只在
 // 圖層是有序陣列。相對路徑的圖檔在這裡就被改寫成 <base>/layer/... 絕對網址，前端不必分辨。
 $layers = souliong_layers_public($apiCfg, $meta, $proj, $base);
@@ -94,7 +94,10 @@ foreach ($cssFiles as $f) {
 // 主題包接在 base 主題之後,純靠 cascade 順序覆寫 --pack-* 變數；沒選包就不會 readfile,
 // 各面板裡的 var(--pack-*, <預設值>) 全部退回預設值，畫面與拆分之前一致。
 if ($pack) {
-    readfile($apiCfg['packs_dir'] . '/' . $pack['id'] . '/pack.css');
+    $packDir = souliong_pack_dir($apiCfg, $pack['id'], $proj);
+    if ($packDir !== null) {
+        readfile($packDir . '/pack.css');
+    }
 }
 ?></style>
 <script>try{var t=localStorage.getItem('theme');if(t==='dark'||t==='light')document.documentElement.dataset.theme=t;}catch(e){}</script>
