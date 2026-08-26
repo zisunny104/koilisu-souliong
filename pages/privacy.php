@@ -5,13 +5,18 @@
  * 內容為平台通則；不含任何個別使用者資料。
  */
 $cfg = @include __DIR__ . '/../config.php';
-$path = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH);
-$appName = $_APP['name'] ?? basename(dirname(__DIR__));
-$i = strpos($path, '/' . $appName);
-$base = $i !== false ? substr($path, 0, $i + strlen($appName) + 1) . '/' : '/';
-$base = '/' . trim(str_replace('\\', '/', $base), '/');
-$base = $base === '/' ? '/' : $base . '/';
+require_once __DIR__ . '/../api/routes.php';   // 網址表：掛載根目錄的算法只有這一份（見 api/routes.php）
+require_once __DIR__ . '/../api/markdown.php';
+$base = Route::base();
 $b = htmlspecialchars($base, ENT_QUOTES);
+
+// 內容單一來源：docs/PRIVACY.md。開頭的最後更新日期／給 .md 讀者看的版本說明／
+// 開場白這三段頁面已經另外排版（見下方 <h1>／.lead），所以從 site:content 標記之後才算繪。
+$md = file_get_contents(__DIR__ . '/../docs/PRIVACY.md') ?: '';
+$marker = '<!-- site:content -->';
+$pos = strpos($md, $marker);
+$body = Markdown::toHtml($pos !== false ? substr($md, $pos + strlen($marker)) : $md, ['heading_offset' => 1]);
+
 header('Content-Type: text/html; charset=utf-8');
 ?>
 <!DOCTYPE html>
@@ -103,19 +108,18 @@ header('Content-Type: text/html; charset=utf-8');
       margin: 0 0 1.75rem
     }
 
-    h2 {
+    h3 {
       font-size: 1.15rem;
       font-weight: 800;
       margin: 2rem 0 .5rem
     }
 
-    .en {
-      color: var(--muted);
-      font-size: .9rem
+    p {
+      margin: .75rem 0
     }
 
-    ul {
-      margin: .4rem 0 0;
+    ul, ol {
+      margin: .4rem 0;
       padding-left: 1.2rem
     }
 
@@ -123,12 +127,22 @@ header('Content-Type: text/html; charset=utf-8');
       margin: .3rem 0
     }
 
-    .card {
+    blockquote {
       background: var(--card);
       border: 1px solid var(--line);
       border-radius: var(--r);
-      padding: 1.1rem 1.3rem;
-      margin-top: .75rem
+      margin: .75rem 0;
+      padding: 1.1rem 1.3rem
+    }
+
+    blockquote p {
+      margin: 0
+    }
+
+    hr {
+      border: none;
+      border-top: 1px solid var(--line);
+      margin: 2rem 0
     }
 
     .back {
@@ -163,44 +177,7 @@ header('Content-Type: text/html; charset=utf-8');
     <h1>隱私與資料說明</h1>
     <p class="lead">Privacy &amp; Data Notice — 我們盡量少收資料、以去識別方式處理，且不使用第三方追蹤或廣告。<br>We collect as little as possible, keep it de-identified, and use no third-party tracking or ads.</p>
 
-    <h2>存在你裝置上的資料 <span class="en">/ Stored on your device</span></h2>
-    <div class="card">
-      以瀏覽器 <code>localStorage</code> 儲存（僅在你的裝置、可自行清除）：
-      <ul>
-        <li>主題偏好（淺／深／系統）<span class="en">— theme preference</span></li>
-        <li>你輸入的暱稱 <span class="en">— the nickname you type</span></li>
-        <li>投稿權限（解鎖後記住投稿碼）<span class="en">— contribution code once unlocked</span></li>
-        <li>投稿「擁有者標記」，用來讓你在原裝置刪除自己的投稿；此標記有期限，逾期後即無法用它刪除。<span class="en">— an owner marker (time-limited) so you can delete your own posts from this device</span></li>
-        <li>若你自選了 PIN 建立可跨裝置延續的投稿者身分：一組由該 PIN 衍生的識別權杖，用來在別的裝置編輯／刪除同一身分投稿過的內容。<span class="en">— if you set a PIN to create a portable contributor identity, a token derived from it, so you can edit/delete that identity's posts from another device</span></li>
-      </ul>
-      公開地圖頁不設 Cookie；只有進入後台登入時，會使用一個功能性的 <code>httpOnly</code> Cookie 維持登入，並非追蹤用途。<br>
-      <span class="en">The public map sets no cookies; only admin login uses a functional httpOnly cookie (not for tracking).</span>
-    </div>
-
-    <h2>伺服器記錄的資料 <span class="en">/ Recorded on the server</span></h2>
-    <div class="card">
-      <ul>
-        <li><b>投稿內容</b>：照片、影片、音訊、文字、你填的暱稱、時間、以及你選擇的地點座標——這些會公開顯示於地圖。<span class="en">— your posts (photo, video, audio, text, nickname, time, chosen location), shown publicly.</span></li>
-        <li><b>匿名使用統計</b>：瀏覽次數、工作階段、裝置類別（手機／桌機）、功能使用次數、照片的相機型號等彙總數字，<b>不含個人身分</b>。<span class="en">— aggregate, non-identifying usage stats.</span></li>
-        <li><b>防冒名的來源標記</b>：為了在發生冒名或濫用時界定影響範圍，系統會儲存一段<b>加鹽雜湊</b>後的來源標記。它經過去識別、無法還原成 IP，僅供管理者鑑識，<b>不對外顯示</b>。<span class="en">— a salted, de-identified source hash for abuse forensics; never shown publicly and not reversible to an IP.</span></li>
-      </ul>
-      上傳的照片會轉存為 WebP，過程<b>移除原始 EXIF</b>（僅另存我們讀到的拍攝時間、座標，以及相機廠牌／型號／鏡頭／軟體、光圈、快門、ISO、焦距等有限的拍攝參數；不含機身序號等可唯一識別裝置的欄位）。<br>
-      <span class="en">Photos are re-encoded to WebP on upload and <b>original EXIF is stripped</b> — only shot time, coordinates, and a limited set of shooting parameters are kept (camera make/model/lens/software, aperture, shutter, ISO, focal length); no serial numbers or other uniquely-identifying fields.</span><br>
-      影片與音訊則<b>依原檔保存、不重新編碼</b>，因此檔案內原有的中繼資料（部分手機會寫入拍攝地點與機型）也會一併留在伺服器上。直接在網頁上錄下的聲音不含這些欄位；若你上傳的是相簿裡的既有檔案且介意這件事，請先自行清除中繼資料再上傳。<br>
-      <span class="en">Video and audio are kept <b>exactly as uploaded — not re-encoded</b>, so any metadata already inside the file (some phones embed location and device model) stays on the server too. Audio recorded in the browser has none of this; if you upload an existing file and this matters to you, strip its metadata first.</span>
-    </div>
-
-    <h2>刪除與內容處理 <span class="en">/ Deletion &amp; takedown</span></h2>
-    <div class="card">
-      投稿者可在<b>當初上傳的裝置</b>上、於擁有者標記的<b>有效期限內</b>自行移除自己的投稿。逾期、或發現不當、疑似侵權的內容，可向網站管理者反映協助移除。<br>
-      <span class="en">Contributors can remove their own posts from the original device while the owner marker is valid. For expired posts or inappropriate/infringing content, ask the site administrator to remove it.</span>
-    </div>
-
-    <h2>第三方 <span class="en">/ Third parties</span></h2>
-    <div class="card">
-      地圖以 Leaflet 顯示、預設圖磚來自 CARTO、圖資 © OpenStreetMap 貢獻者；QR 產生在你的瀏覽器本機完成。個別地圖可能改用其他圖磚來源或加上自繪疊圖，實際來源標示在地圖的圖資出處列。這些用於顯示功能，非廣告或追蹤。授權詳見 <a href="https://github.com/zisunny104/koilisu-souliong/blob/main/LICENSE" target="_blank" rel="noopener">LICENSE</a>。<br>
-      <span class="en">Map via Leaflet, default tiles by CARTO, data © OpenStreetMap contributors; QR generated locally in your browser. Individual maps may use other tile sources or hand-drawn overlays, credited in the map's attribution line. For display only — no ads or tracking.</span>
-    </div>
+    <?= $body ?>
 
     <footer>© 2026 prjToka · Souliong 循跡 · 本頁為平台通則，各地圖另可能有自訂的投稿說明。</footer>
   </div>

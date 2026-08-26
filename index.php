@@ -12,6 +12,11 @@
 ini_set('display_errors', '0');
 error_reporting(E_ALL);
 $config = include __DIR__ . '/config.php';
+require_once __DIR__ . '/api/routes.php';   // 網址表：路徑段怎麼拆、網址怎麼組，全站只有這一份定義
+
+// 判斷一個代號是不是真的存在的地圖。後台路徑拆解要靠它消歧義（見 Route::parseManager()）
+$isProject = fn(string $id): bool =>
+    $id !== '' && preg_match('/^[a-z0-9_-]+$/', $id) === 1 && is_dir(__DIR__ . '/projects/' . $id);
 
 $appName = $_APP['name'] ?? basename(__DIR__);
 $reqPath = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH);
@@ -75,7 +80,11 @@ switch ($action) {
         return;
     case 'admin':
     case 'manager':
-        require __DIR__ . '/api/admin.php';        // 主站管理：<base>/manager（相容 /admin、?api=admin）
+        // 後台：<base>/manager[/<mapid>][/<pane>|/backup.zip|/layers/<id>.zip]、<base>/manager/logout。
+        // 完整清單與拆解規則都在 api/routes.php，這裡只把拆出來的結果餵進 $_GET；路徑贏過 query string，
+        // 這樣 /manager/100chairs?project=別的 不會出現兩個真相。相容 /admin 與 ?api=admin（admin.php 會導正）。
+        $_GET = Route::parseManager(array_slice($seg, 1), $isProject) + $_GET;
+        require __DIR__ . '/api/admin.php';
         return;
     case 'privacy':
         include __DIR__ . '/pages/privacy.php';    // 隱私與資料說明：<base>/privacy
@@ -85,9 +94,10 @@ switch ($action) {
         $proj = ($action !== 'index' && $action !== '') ? $action : ($_GET['p'] ?? '');
         $proj = preg_replace('/[^a-z0-9_-]/', '', $proj);
         if ($proj !== '' && is_dir(__DIR__ . '/projects/' . $proj)) {
-            // <base>/<mapid>/manager|edit → 該專案管理
-            if (isset($seg[1]) && in_array($seg[1], ['manager', 'edit', 'admin'], true)) {
-                $_GET['project'] = $proj;
+            // 舊形狀 <base>/<mapid>/manager|edit|admin → 該專案管理。正規網址已改成 <base>/manager/<mapid>，
+            // 這條留著讓既有書籤與印出去的東西不失效；admin.php 收到後會把 GET 導向正規網址。
+            if (isset($seg[1]) && in_array($seg[1], Route::MANAGER_ALIASES, true)) {
+                $_GET = Route::parseManager(array_merge([$proj], array_slice($seg, 2)), $isProject) + $_GET;
                 require __DIR__ . '/api/admin.php';
                 return;
             }

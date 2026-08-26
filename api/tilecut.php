@@ -21,6 +21,7 @@
 require __DIR__ . '/store.php';
 require __DIR__ . '/security.php';
 require __DIR__ . '/i18n.php';
+require_once __DIR__ . '/routes.php';   // 網址表：後台網址只有這一份定義（見 api/routes.php）
 require_once __DIR__ . '/layers.php';
 $cfg = require __DIR__ . '/config.php';
 rate_limit($cfg, 'admin');
@@ -29,14 +30,9 @@ $t  = fn(string $key, array $vars = []): string => htmlspecialchars(i18n_t($DICT
 $tr = fn(string $key, array $vars = []): string => i18n_t($DICT, $key, $vars);
 $esc = fn($s) => htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8');
 
-// 還原 app 掛載根目錄，組「回後台」連結用（理由同 thumbfix.php：不能用相對的 ?api=admin）
-$appName = $_APP['name'] ?? basename(dirname(__DIR__));
-$reqPathOnly = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH);
-$appMarkerPos = strpos($reqPathOnly, '/' . $appName);
-$basePath = $appMarkerPos !== false ? rtrim(substr($reqPathOnly, 0, $appMarkerPos + strlen($appName) + 1), '/') . '/' : '/';
-$origin = ((!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http') . '://' . ($_SERVER['HTTP_HOST'] ?? '');
+// 「回後台」連結一律由 Route 產生（理由同 thumbfix.php：相對網址會被路由誤判）
 $backProject = preg_replace('/[^a-z0-9_-]/', '', $_GET['project'] ?? '');
-$adminUrl = $esc($origin . $basePath . '?api=admin' . ($backProject !== '' ? '&project=' . urlencode($backProject) : '') . '#tools');
+$adminUrl = $esc(Route::abs(Route::manager($backProject, 'tools')));
 
 // 這支寫的是專案層，所以權限跟著專案走（比照 admin.php 的 layerimport）：主要管理者通吃，
 // 專案管理者只能動自己那張地圖。thumbfix 之類的全站維護工具是 master only，這支不是。
@@ -56,6 +52,37 @@ function tilecut_dir(array $cfg, string $project, string $id): ?string
         return null;
     }
     return rtrim($root, '/\\') . '/' . $id;
+}
+
+// ── 讀回原稿（GET）：這是「保留原稿」唯一的出口 ──
+// layerfile.php 走不到 layersrc/（不同的母目錄，見 souliong_layersrc_dir() 的說明），所以沒有
+// 「網址猜對就拿得到高解析手稿」這種事。這條路查的是專案管理權，跟寫入端同一套。
+if (($_GET['action'] ?? '') === 'srcfile') {
+    $project = preg_replace('/[^a-z0-9_-]/', '', $_GET['project'] ?? '');
+    $id   = strtolower(preg_replace('/[^A-Za-z0-9_-]/', '', $_GET['id'] ?? ''));
+    $file = (string)($_GET['file'] ?? '');
+    $sdir = souliong_layersrc_dir($cfg, $project, $id);
+    // 檔名不是「使用者取的那個」而是工具自己編的 p<idx>.<ext>，所以這裡可以整個寫死成一條規則
+    if (!$canProj($project) || $sdir === null || !preg_match('/^p\d{1,2}\.(png|webp|jpg|jpeg|svg)$/', $file)) {
+        http_response_code(404);
+        exit;
+    }
+    $path = $sdir . '/' . $file;
+    if (is_link($path) || !is_file($path)) {
+        http_response_code(404);
+        exit;
+    }
+    $ext = strtolower(pathinfo($file, PATHINFO_EXTENSION));
+    header('Content-Type: ' . souliong_layer_mimes()[$ext]);
+    header('Content-Length: ' . (string)filesize($path));
+    header('X-Content-Type-Options: nosniff');
+    header('Cache-Control: private, no-store');   // 原稿不該躺在任何共用快取裡
+    if ($ext === 'svg') {
+        // 同 layerfile.php：SVG 可能內嵌 <script>，靠 CSP 讓它什麼都做不了
+        header("Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline'; sandbox");
+    }
+    readfile($path);
+    exit;
 }
 
 // ── 開工：建立（或清空）圖層資料夾（POST，JSON 回應） ──
@@ -78,6 +105,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'begin
     }
     // 清不乾淨就不往下走：舊磚留著會變成擦不掉的殘影，寧可當場說失敗，也不要交出一張半新半舊的圖層。
     if ($existed && is_dir($dir . '/tiles') && !souliong_layer_rmtree($dir . '/tiles', $dir)) {
+        json_out(['error' => $tr('tilecut_clear_failed_msg')], 500);
+    }
+    // 原稿一樣要清。留著上一版的圖片，「載回重編」就會拿到一疊跟現在的圖磚對不起來的東西；
+    // 這一版到底有沒有要留原稿，由接下來有沒有 srcput 決定——沒有就是真的沒有了（UI 有說明）。
+    $sdir = souliong_layersrc_dir($cfg, $project, $id);
+    if ($sdir !== null && is_dir($sdir) && !souliong_layer_rmtree($sdir, dirname($sdir))) {
         json_out(['error' => $tr('tilecut_clear_failed_msg')], 500);
     }
     if (!is_dir($dir) && !@mkdir($dir, 0775, true)) {
@@ -135,6 +168,96 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'tile'
     json_out(['ok' => true, 'saved' => $saved, 'rejected' => $rejected]);
 }
 
+// ── 收原稿：分塊上傳（POST，JSON 回應） ──
+//
+// 為什麼要分塊：原稿動輒數十 MB，而 upload_max_filesize 常見的預設值是 2M，虛擬主機又多半不
+// 給改。與其要求使用者去動 php.ini，不如切成「伺服器一定吞得下」的大小送——每一塊多大由
+// 這一頁自己讀 ini 算出來告訴前端（見 $srcChunk）。
+//
+// 每一塊都帶 offset，伺服器比對現有長度符合才接：重送一塊已經落地的資料不會變成接兩次，
+// 這是分塊上傳唯一真正麻煩的地方（限流重試時一定會發生）。
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'srcput') {
+    if (!hash_equals(admin_derived($cfg), (string)($_POST['csrf'] ?? ''))) {
+        json_out(['error' => $tr('csrf_invalid_ajax_msg')], 403);
+    }
+    $project = preg_replace('/[^a-z0-9_-]/', '', $_POST['project'] ?? '');
+    if (!$canProj($project)) {
+        json_out(['error' => $tr('no_permission_title')], 403);
+    }
+    $id  = strtolower(preg_replace('/[^A-Za-z0-9_-]/', '', $_POST['id'] ?? ''));
+    $dir = tilecut_dir($cfg, $project, $id);
+    $sdir = souliong_layersrc_dir($cfg, $project, $id);
+    if ($dir === null || $sdir === null || !is_dir($dir)) {
+        json_out(['error' => $tr('layer_not_found_msg')], 404);   // begin 沒跑過就不該有原稿
+    }
+    $idx = (int)($_POST['idx'] ?? -1);
+    $off = (int)($_POST['offset'] ?? -1);
+    $tmp = (string)($_FILES['chunk']['tmp_name'] ?? '');
+    if ($idx < 0 || $idx > 63 || $off < 0
+        || ($_FILES['chunk']['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK || !is_uploaded_file($tmp)) {
+        json_out(['error' => $tr('tilecut_src_chunk_failed_msg')], 400);
+    }
+    if (!is_dir($sdir) && !@mkdir($sdir, 0775, true)) {
+        json_out(['error' => $tr('tilecut_mkdir_failed_msg')], 500);
+    }
+    $lim  = souliong_layersrc_limits($cfg);
+    $size = (int)($_FILES['chunk']['size'] ?? 0);
+    // 半成品先叫 .p<idx>：驗過型別才改名成 p<idx>.<ext>，中途斷線留下的殘骸不會被當成原稿
+    $part = $sdir . '/.p' . $idx;
+    if ($off === 0) {
+        @unlink($part);
+    }
+    $have = is_file($part) ? (int)filesize($part) : 0;
+    if ($have !== $off) {
+        json_out(['error' => $tr('tilecut_src_resend_msg'), 'have' => $have], 409);
+    }
+    if ($off + $size > $lim['file'] || souliong_layersrc_bytes($sdir) + $size > $lim['total']) {
+        json_out(['error' => $tr('tilecut_src_too_big_msg', [
+            'file'  => (string)(int)round($lim['file'] / 1048576),
+            'total' => (string)(int)round($lim['total'] / 1048576),
+        ])], 413);
+    }
+    $in  = @fopen($tmp, 'rb');
+    $out = $in ? @fopen($part, $off === 0 ? 'wb' : 'ab') : false;
+    $ok  = $in && $out && stream_copy_to_stream($in, $out) !== false;
+    if ($in) {
+        fclose($in);
+    }
+    if ($out) {
+        fclose($out);
+    }
+    if (!$ok) {
+        json_out(['error' => $tr('tilecut_src_chunk_failed_msg')], 500);
+    }
+    if (empty($_POST['last'])) {
+        json_out(['ok' => true, 'have' => (int)filesize($part)]);
+    }
+    // 最後一塊到齊，整個檔在手上了才驗型別——分塊送到一半的檔案本來就認不出是什麼
+    $info = @getimagesize($part);
+    $ext  = null;
+    if (is_array($info)) {
+        $ext = ['image/png' => 'png', 'image/webp' => 'webp', 'image/jpeg' => 'jpg'][$info['mime'] ?? ''] ?? null;
+        if ($ext !== null && ((int)$info[0] > 65500 || (int)$info[1] > 65500)) {
+            $ext = null;   // 邊長超過這個數的圖，瀏覽器自己也畫不出來
+        }
+    } elseif (stripos((string)@file_get_contents($part, false, null, 0, 1024), '<svg') !== false) {
+        // getimagesize() 不認 SVG。內容不細看：送出去的那條路（srcfile）本來就掛 CSP sandbox，
+        // 跟 layerfile.php 對匯入的 SVG 是同一套處理。
+        $ext = 'svg';
+    }
+    if ($ext === null) {
+        @unlink($part);
+        json_out(['error' => $tr('tilecut_src_bad_type_msg')], 415);
+    }
+    foreach (array_keys(souliong_layer_mimes()) as $e2) {
+        @unlink($sdir . '/p' . $idx . '.' . $e2);   // 同一格換過格式時，舊副檔名的那個要跟著走
+    }
+    if (!@rename($part, $sdir . '/p' . $idx . '.' . $ext)) {
+        json_out(['error' => $tr('tilecut_mkdir_failed_msg')], 500);
+    }
+    json_out(['ok' => true, 'file' => 'p' . $idx . '.' . $ext]);
+}
+
 // ── 收尾：寫 layer.json（POST，JSON 回應） ──
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'finish') {
     if (!hash_equals(admin_derived($cfg), (string)($_POST['csrf'] ?? ''))) {
@@ -189,6 +312,66 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'finis
     if (@file_put_contents($dir . '/layer.json', $json, LOCK_EX) === false) {
         json_out(['error' => $tr('tilecut_mkdir_failed_msg')], 500);
     }
+    // ── 保留原稿：把整疊的位置與設定寫成 edit.json ──
+    // 圖磚是壓平後的結果，壓平是不可逆的：少了這一份，下次想把某一張往東挪三公尺就只能整套重來。
+    // 只有原稿真的落地了才寫——沒有圖片的 edit.json 只會讓後台長出一顆按了沒東西的「重新編輯」。
+    $sdir = souliong_layersrc_dir($cfg, $project, $id);
+    $edit = json_decode((string)($_POST['edit'] ?? ''), true);
+    if ($sdir !== null && is_dir($sdir) && is_array($edit) && is_array($edit['pieces'] ?? null)) {
+        $names = [];
+        foreach (scandir($sdir) ?: [] as $e2) {
+            if (preg_match('/^\.p\d{1,2}$/', $e2)) {
+                @unlink($sdir . '/' . $e2);   // 中斷留下的半截檔，收尾時順手清掉
+            } elseif (preg_match('/^p\d{1,2}\.[a-z]+$/', $e2)) {
+                $names[$e2] = true;
+            }
+        }
+        // 逐欄重建，不直接把對方送來的 JSON 寫進去：這份檔案下次會被讀回來當成工具的狀態，
+        // 原封不動存起來等於把「使用者送什麼就吃什麼」延後到下一次開啟才發作。
+        $ps = [];
+        foreach ($edit['pieces'] as $pc) {
+            $f = is_array($pc) ? (string)($pc['file'] ?? '') : '';
+            if (!isset($names[$f])) {
+                continue;   // 檔案沒落地就不記，免得載回來是一排破圖
+            }
+            $bb = is_array($pc['bounds'] ?? null) ? $pc['bounds'] : [];
+            $g  = fn(string $k): float => is_numeric($bb[$k] ?? null) ? (float)$bb[$k] : 0.0;
+            if (!souliong_layer_bounds_valid($g('s'), $g('w'), $g('n'), $g('e'))) {
+                continue;
+            }
+            $ps[] = [
+                'file'    => $f,
+                'name'    => mb_substr(preg_replace('/[[:cntrl:]]/', '', (string)($pc['name'] ?? $f)), 0, 120),
+                'w'       => max(1, min(200000, (int)($pc['w'] ?? 1))),
+                'h'       => max(1, min(200000, (int)($pc['h'] ?? 1))),
+                'bounds'  => ['n' => $g('n'), 's' => $g('s'), 'w' => $g('w'), 'e' => $g('e')],
+                'opacity' => max(0.0, min(1.0, is_numeric($pc['opacity'] ?? null) ? (float)$pc['opacity'] : 1.0)),
+                'on'      => !empty($pc['on']),
+            ];
+        }
+        if ($ps) {
+            $doc = [
+                'v'      => 1,
+                'tool'   => 'tilecut',
+                'at'     => gmdate('c'),
+                'layer'  => [
+                    'label'       => $manifest['label'],
+                    'pane'        => $pane,
+                    'opacity'     => $manifest['opacity'],
+                    'attribution' => $manifest['attribution'] ?? '',
+                    'ext'         => $ext,
+                    'minZoom'     => $z0,
+                    'maxZoom'     => $z1,
+                ],
+                'pieces' => $ps,
+            ];
+            @file_put_contents(
+                $sdir . '/edit.json',
+                json_encode($doc, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+                LOCK_EX
+            );
+        }
+    }
     audit_log($cfg, $auditWho($project), 'layer_tilecut', $project, $id . ' x' . $count);
     json_out(['ok' => true, 'id' => $id]);
 }
@@ -201,8 +384,162 @@ if (!$master && !$allProjects) {
     echo '<p>' . $tr('tilecut_login_required_msg', ['url' => $adminUrl]) . '</p>';
     exit;
 }
+
+// ── 說明書（GET ?help=1）：冗長的操作說明搬進 docs/TILECUT.md，工具本身的畫面維持乾淨 ──
+if (($_GET['help'] ?? '') !== '') {
+    require_once __DIR__ . '/markdown.php';
+    $helpMd = file_get_contents(__DIR__ . '/../docs/TILECUT.md') ?: '';
+    $helpMarker = '<!-- site:content -->';
+    $helpPos = strpos($helpMd, $helpMarker);
+    $helpBody = Markdown::toHtml($helpPos !== false ? substr($helpMd, $helpPos + strlen($helpMarker)) : $helpMd, ['heading_ids' => false]);
+    $toolUrl = $esc(Route::tool('tilecut', $backProject));
+    header('Content-Type: text/html; charset=utf-8');
+    ?>
+<!doctype html>
+<html lang="zh-Hant">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title><?= $t('tilecut_help_title') ?></title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #fafafa;
+      --fg: #1b1b1d;
+      --muted: #6b6b70;
+      --line: #e7e7ea;
+      --card: #fff;
+      --accent: #1b1b1d;
+      --r: 1.25rem
+    }
+
+    @media(prefers-color-scheme:dark) {
+      :root {
+        --bg: #141416;
+        --fg: #f1f1f3;
+        --muted: #9c9ca3;
+        --line: #2e2e31;
+        --card: #1d1d20;
+        --accent: #f1f1f3
+      }
+    }
+
+    * {
+      box-sizing: border-box
+    }
+
+    body {
+      margin: 0;
+      font-family: system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--fg);
+      line-height: 1.75;
+      -webkit-font-smoothing: antialiased
+    }
+
+    .wrap {
+      max-width: 42rem;
+      margin: 0 auto;
+      padding: 2.5rem 1.25rem 4rem
+    }
+
+    a {
+      color: inherit
+    }
+
+    h1 {
+      font-size: 1.4rem;
+      font-weight: 800;
+      margin: 0 0 1.5rem
+    }
+
+    h2 {
+      font-size: 1.05rem;
+      font-weight: 800;
+      margin: 2rem 0 .5rem
+    }
+
+    p {
+      margin: .75rem 0
+    }
+
+    ul,
+    ol {
+      margin: .4rem 0;
+      padding-left: 1.2rem
+    }
+
+    li {
+      margin: .3rem 0
+    }
+
+    strong {
+      font-weight: 700
+    }
+
+    code {
+      font-family: ui-monospace, Consolas, monospace;
+      font-size: .85em;
+      background: var(--line);
+      padding: .1em .35em;
+      border-radius: .3em
+    }
+
+    .back {
+      display: inline-block;
+      margin-bottom: 1.5rem;
+      font-size: .9rem;
+      color: var(--muted);
+      text-decoration: none
+    }
+  </style>
+</head>
+
+<body>
+  <div class="wrap">
+    <a class="back" href="<?= $toolUrl ?>"><i class="fa-solid fa-arrow-left"></i> <?= $t('tilecut_help_back_btn') ?></a>
+    <h1><i class="fa-solid fa-scissors"></i> <?= $t('tilecut_h1') ?></h1>
+    <?= $helpBody ?>
+  </div>
+</body>
+
+</html>
+<?php
+    exit;
+}
+
 $csrf = admin_derived($cfg);
 $reqProject = in_array($backProject, $allProjects, true) ? $backProject : ($allProjects[0] ?? '');
+
+// 分塊多大：取 upload_max_filesize 與 post_max_size 的較小者再留兩成給表單其他欄位。
+// 寫死一個「安全值」的話，設定寬鬆的主機會白白多送幾十趟。
+$iniBytes = function (string $k): int {
+    $v = trim((string)ini_get($k));
+    $mul = ['k' => 1024, 'm' => 1048576, 'g' => 1073741824][strtolower(substr($v, -1))] ?? 1;
+    $n = (int)((float)$v * $mul);
+    return $n > 0 ? $n : PHP_INT_MAX;   // 0 或空值在 PHP 裡是「不限制」
+};
+$srcChunk = max(256 * 1024, min(4 * 1024 * 1024, (int)(min($iniBytes('upload_max_filesize'), $iniBytes('post_max_size')) * 0.8)));
+
+// 「重新編輯」：帶 load=<id> 進來時把上次存的 edit.json 讀出來，前端據此把整疊重建回去。
+// 圖片本身不塞進頁面（可能上百 MB），前端再逐張用 action=srcfile 抓。
+$EDIT = null;
+$loadId = strtolower(preg_replace('/[^A-Za-z0-9_-]/', '', $_GET['load'] ?? ''));
+if ($loadId !== '' && $reqProject !== '') {
+    $sdir = souliong_layersrc_dir($cfg, $reqProject, $loadId);
+    $doc = $sdir !== null && is_file($sdir . '/edit.json')
+        ? json_decode((string)@file_get_contents($sdir . '/edit.json'), true) : null;
+    if (is_array($doc) && !empty($doc['pieces']) && is_array($doc['pieces'])) {
+        $EDIT = [
+            'id'     => $loadId,
+            'layer'  => (array)($doc['layer'] ?? []),
+            'pieces' => array_values($doc['pieces']),
+        ];
+    }
+}
 ?>
 <!doctype html>
 <html lang="<?= $LANG === 'en' ? 'en' : 'zh-Hant' ?>">
@@ -297,6 +634,13 @@ $reqProject = in_array($backProject, $allProjects, true) ? $backProject : ($allP
       gap: 0 var(--sp-2)
     }
 
+    .helplink {
+      font-size: 0.8125rem;
+      font-weight: 400;
+      color: var(--muted);
+      text-decoration: none
+    }
+
     h2 {
       font-size: 0.875rem;
       margin: 0 0 var(--sp-2);
@@ -340,6 +684,17 @@ $reqProject = in_array($backProject, $allProjects, true) ? $backProject : ($allP
       padding: var(--sp-2) var(--sp-3);
       font-size: 0.875rem;
       min-height: 2.25rem
+    }
+
+    input[type=range] {
+      width: 100%;
+      accent-color: var(--accent);
+      min-height: 2.25rem
+    }
+
+    label span {
+      font-weight: 700;
+      color: var(--fg)
     }
 
     /* 兩欄以上的欄位排成流動格線，窄螢幕自動疊成一欄 */
@@ -617,11 +972,11 @@ $reqProject = in_array($backProject, $allProjects, true) ? $backProject : ($allP
 
 <body>
   <div class="langsw">
-    <a href="?<?= $backProject !== '' ? 'project=' . rawurlencode($backProject) . '&' : '' ?>lang=zh_TW" class="<?= $LANG === 'zh_TW' ? 'on' : '' ?>">中文</a>
-    <a href="?<?= $backProject !== '' ? 'project=' . rawurlencode($backProject) . '&' : '' ?>lang=en" class="<?= $LANG === 'en' ? 'on' : '' ?>">English</a>
+    <a href="<?= $esc(Route::tool('tilecut', $backProject, ['lang' => 'zh_TW'])) ?>" class="<?= $LANG === 'zh_TW' ? 'on' : '' ?>">中文</a>
+    <a href="<?= $esc(Route::tool('tilecut', $backProject, ['lang' => 'en'])) ?>" class="<?= $LANG === 'en' ? 'on' : '' ?>">English</a>
   </div>
   <div class="wrap">
-    <h1><i class="fa-solid fa-scissors"></i> <?= $t('tilecut_h1') ?></h1>
+    <h1><i class="fa-solid fa-scissors"></i> <?= $t('tilecut_h1') ?> <a class="helplink" href="<?= $esc(Route::tool('tilecut', $backProject, ['help' => 1])) ?>" title="<?= $t('tilecut_help_btn') ?>"><i class="fa-solid fa-circle-question"></i></a></h1>
     <div class="warn"><?= $t('tilecut_warn') ?></div>
 
     <div class="card">
@@ -635,7 +990,7 @@ $reqProject = in_array($backProject, $allProjects, true) ? $backProject : ($allP
         </div>
         <div>
           <label for="lid"><?= $t('tilecut_layer_id_label') ?></label>
-          <input type="text" id="lid" value="artwork" pattern="[a-z0-9][a-z0-9_-]*" maxlength="32" spellcheck="false">
+          <input type="text" id="lid" value="<?= $esc($EDIT !== null ? $EDIT['id'] : 'artwork') ?>" pattern="[a-z0-9][a-z0-9_-]*" maxlength="32" spellcheck="false">
         </div>
         <div>
           <label for="llabel"><?= $t('tilecut_label_label') ?></label>
@@ -643,6 +998,9 @@ $reqProject = in_array($backProject, $allProjects, true) ? $backProject : ($allP
         </div>
       </div>
       <div class="hint" style="margin-bottom:var(--sp-3)"><?= $t('tilecut_layer_id_hint') ?></div>
+      <?php if ($EDIT !== null): ?>
+      <div class="hint ok" style="margin-bottom:var(--sp-3)"><i class="fa-solid fa-rotate-left"></i> <?= $t('tilecut_loaded_msg', ['id' => $EDIT['id']]) ?></div>
+      <?php endif; ?>
       <div class="row">
         <label class="filebtn"><span class="ghost" style="display:inline-flex;align-items:center;gap:.5rem;border:1px solid var(--line);border-radius:.625rem;padding:.5rem 1rem;background:var(--card)"><i class="fa-solid fa-images"></i> <?= $t('tilecut_choose_image_btn') ?></span>
           <input type="file" id="src" accept="image/png,image/webp,image/jpeg,image/svg+xml" multiple hidden></label>
@@ -674,13 +1032,16 @@ $reqProject = in_array($backProject, $allProjects, true) ? $backProject : ($allP
           <div><label for="south"><?= $t('tilecut_south') ?></label><input type="number" id="south" step="0.000001"></div>
           <div><label for="west"><?= $t('tilecut_west') ?></label><input type="number" id="west" step="0.000001"></div>
           <div><label for="east"><?= $t('tilecut_east') ?></label><input type="number" id="east" step="0.000001"></div>
-          <div><label for="popacity"><?= $t('tilecut_piece_opacity') ?></label><input type="number" id="popacity" min="0" max="1" step="any" value="1"></div>
+          <div><label for="popacity"><?= $t('tilecut_piece_opacity') ?> <span id="popacityval">100%</span></label><input type="range" id="popacity" min="0" max="1" step="0.01" value="1"></div>
         </div>
       </div>
     </div>
 
     <div class="card">
       <h2><i class="fa-solid fa-3"></i> <?= $t('tilecut_step_output') ?></h2>
+      <div class="row" style="margin-bottom:var(--sp-3)">
+        <button type="button" class="ghost" id="usenativez"><i class="fa-solid fa-wand-magic-sparkles"></i> <?= $t('tilecut_zoom_use_native_btn') ?></button>
+      </div>
       <div class="grid">
         <div><label for="zmin"><?= $t('tilecut_zoom_min') ?></label><input type="number" id="zmin" min="0" max="22" step="1" value="12"></div>
         <div><label for="zmax"><?= $t('tilecut_zoom_max') ?></label><input type="number" id="zmax" min="0" max="22" step="1" value="17"></div>
@@ -693,7 +1054,7 @@ $reqProject = in_array($backProject, $allProjects, true) ? $backProject : ($allP
             <option value="base"><?= $t('tilecut_pane_base') ?></option>
           </select>
         </div>
-        <div><label for="opacity"><?= $t('tilecut_opacity_label') ?></label><input type="number" id="opacity" min="0" max="1" step="0.05" value="1"></div>
+        <div><label for="opacity"><?= $t('tilecut_opacity_label') ?> <span id="opacityval">100%</span></label><input type="range" id="opacity" min="0" max="1" step="0.01" value="1"></div>
       </div>
       <div>
         <label for="attr"><?= $t('tilecut_attr_label') ?></label>
@@ -702,8 +1063,12 @@ $reqProject = in_array($backProject, $allProjects, true) ? $backProject : ($allP
       <div class="hint" style="margin-top:var(--sp-2)"><?= $t('tilecut_zoom_hint') ?></div>
       <div class="hint" id="estimate" style="margin-top:var(--sp-3)"></div>
       <div class="row" style="margin-top:var(--sp-3)">
-        <label class="chk"><input type="checkbox" id="overwrite"> <?= $t('tilecut_overwrite_label') ?></label>
+        <label class="chk"><input type="checkbox" id="overwrite" <?= $EDIT !== null ? 'checked' : '' ?>> <?= $t('tilecut_overwrite_label') ?></label>
       </div>
+      <div class="row" style="margin-top:var(--sp-2)">
+        <label class="chk"><input type="checkbox" id="keepsrc" checked> <?= $t('tilecut_keepsrc_label') ?></label>
+      </div>
+      <div class="hint" style="margin-top:var(--sp-2)"><?= $t('tilecut_keepsrc_hint') ?></div>
       <div class="row" style="margin-top:var(--sp-3)">
         <button id="go"><i class="fa-solid fa-scissors"></i> <?= $t('tilecut_start_btn') ?></button>
         <button id="stop" class="ghost" disabled><i class="fa-solid fa-stop"></i> <?= $t('tilecut_stop_btn') ?></button>
@@ -744,11 +1109,18 @@ $reqProject = in_array($backProject, $allProjects, true) ? $backProject : ($allP
       'move_up'      => i18n_t($DICT, 'layer_move_up_aria'),
       'move_down'    => i18n_t($DICT, 'layer_move_down_aria'),
       'remove'       => i18n_t($DICT, 'remove_title'),
+      'src_size'     => i18n_t($DICT, 'tilecut_src_size_msg'),
+      'src_upload'   => i18n_t($DICT, 'tilecut_src_uploading_msg'),
+      'load_failed'  => i18n_t($DICT, 'tilecut_load_failed_msg'),
     ], JSON_UNESCAPED_UNICODE) ?>;
     const fmt = (str, vars) => str.replace(/\{(\w+)\}/g, (_, k) => (vars[k] != null ? vars[k] : ''));
     const csrf = <?= json_encode($csrf) ?>;
     // 跨端點請求一律用絕對 base（同 thumbfix.php：這頁可能從 <base>/tilecut 進來，相對 ?api= 會被路徑路由搶走）
-    const BASE = <?= json_encode($origin . $basePath) ?>;
+    const BASE = <?= json_encode(Route::abs(Route::base()), JSON_UNESCAPED_SLASHES) ?>;
+    // 「重新編輯」帶進來的上一次狀態；null＝這是全新的一層。圖片本身不在裡面，逐張去 srcfile 抓。
+    const EDIT = <?= json_encode($EDIT, JSON_UNESCAPED_UNICODE) ?>;
+    // 原稿分塊多大，由伺服器的 upload_max_filesize／post_max_size 算出來
+    const SRCCHUNK = <?= (int)$srcChunk ?>;
 
     const TILE = 256;         // 標準圖磚邊長；Leaflet 預設也是 256
     const BATCH = 16;         // 一次 POST 幾張。PHP 的 max_file_uploads 常見上限是 20，留些餘裕
@@ -781,15 +1153,34 @@ $reqProject = in_array($backProject, $allProjects, true) ? $backProject : ($allP
     }
 
     /**
+     * 讀一張圖回來量尺寸。SVG 沒有像素尺寸的保證，createImageBitmap 對它的支援也不一致；
+     * 一律走 <img> 取 naturalWidth／naturalHeight，SVG 會用它自己宣告的 width／height。
+     */
+    function loadImage(url) {
+      return new Promise((res, rej) => {
+        const i = new Image();
+        i.onload = () => {
+          // 沒有內建尺寸的 SVG（只給 viewBox、不給 width/height）量不出長寬比，也就無從對位
+          if (!(i.naturalWidth || i.width) || !(i.naturalHeight || i.height)) rej(new Error('no intrinsic size'));
+          else res(i);
+        };
+        i.onerror = () => rej(new Error('decode'));
+        i.src = url;
+      });
+    }
+
+    /**
      * 一張來源圖片。清單裡的每一列就是一個 Piece，切磚時由下往上疊成一張。
-     * 位置與不透明度刻意都是純值（bounds / opacity / on），之後要把整疊寫成 edit.json
-     * 存回伺服器「保留原稿」時，直接就是這個形狀，不必再翻譯一次。
+     * 位置與不透明度刻意都是純值（bounds / opacity / on），寫進 edit.json「保留原稿」時
+     * 直接就是這個形狀，載回來也照這個形狀還原，不必兩邊各翻譯一次。
      */
     class Piece {
-      constructor(name, img, url) {
+      constructor(name, img, url, blob) {
         this.name = name;
         this.img = img;
         this.url = url;                          // objectURL；移除時要 revoke，否則整張圖留在記憶體裡
+        this.blob = blob || null;                // 原稿的位元組。使用者選的 File 背後是磁碟，留著不佔記憶體
+        this.file = '';                          // 伺服器上的檔名（p0.png…）；載回來的一開始就有
         this.w = img.naturalWidth || img.width;
         this.h = img.naturalHeight || img.height;
         this.bounds = null;                      // {n,s,w,e}
@@ -990,6 +1381,13 @@ $reqProject = in_array($backProject, $allProjects, true) ? $backProject : ($allP
       return best === null ? null : Math.max(0, Math.min(22, best));
     }
 
+    /** 把 zmin／zmax 直接帶到「原生」那一級（見說明書），供自動帶入與手動按鈕共用。 */
+    function applyNativeZoom() {
+      const nz = nativeZoom();
+      if (nz !== null) { $('zmax').value = nz; $('zmin').value = Math.max(0, nz - 5); }
+      estimate();
+    }
+
     function estimate() {
       const u = unionBounds();
       const z0 = parseInt($('zmin').value, 10), z1 = parseInt($('zmax').value, 10);
@@ -998,6 +1396,14 @@ $reqProject = in_array($backProject, $allProjects, true) ? $backProject : ($allP
       const nz = nativeZoom();
       let msg = fmt(I18N.estimate, { tiles: total.toLocaleString() });
       if (nz !== null) msg += ' · ' + fmt(I18N.native_hint, { z: nz });
+      if ($('keepsrc').checked) {
+        const bytes = pieces.reduce((s, p) => s + (p.blob ? p.blob.size : 0), 0);
+        // 幾百 KB 的插畫用 MB 顯示會變成「0.0 MB」，看起來像沒算到
+        if (bytes > 0) {
+          const size = bytes >= 1048576 ? (bytes / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(bytes / 1024)) + ' KB';
+          msg += ' · ' + fmt(I18N.src_size, { size });
+        }
+      }
       if (total > MAX_TILES) { msg = fmt(I18N.too_many, { tiles: total.toLocaleString(), max: MAX_TILES.toLocaleString() }); estEl.className = 'hint no'; }
       else estEl.className = 'hint';
       estEl.textContent = msg;
@@ -1093,6 +1499,7 @@ $reqProject = in_array($backProject, $allProjects, true) ? $backProject : ($allP
       if (p) {
         if (validBounds(p.bounds)) writeFields(p.bounds);
         $('popacity').value = p.opacity;
+        $('popacityval').textContent = Math.round(p.opacity * 100) + '%';
       }
       refresh();
     }
@@ -1135,14 +1542,20 @@ $reqProject = in_array($backProject, $allProjects, true) ? $backProject : ($allP
       if (p && b) commit(p, b, { fields: false });
     }));
     ['zmin', 'zmax'].forEach(k => $(k).addEventListener('input', estimate));
+    $('usenativez').addEventListener('click', applyNativeZoom);
+    $('keepsrc').addEventListener('change', estimate);
     $('popacity').addEventListener('input', () => {
       const p = pieces[sel];
       if (!p) return;
       const v = parseFloat($('popacity').value);
       p.opacity = isFinite(v) ? Math.max(0, Math.min(1, v)) : 1;
+      $('popacityval').textContent = Math.round(p.opacity * 100) + '%';
       p.draw($('ghost').checked);
       renderList();
       estimate();
+    });
+    $('opacity').addEventListener('input', () => {
+      $('opacityval').textContent = Math.round(parseFloat($('opacity').value) * 100) + '%';
     });
     $('ghost').addEventListener('change', () => {
       const g = $('ghost').checked;
@@ -1175,21 +1588,13 @@ $reqProject = in_array($backProject, $allProjects, true) ? $backProject : ($allP
         const url = URL.createObjectURL(f);
         let img;
         try {
-          // SVG 沒有像素尺寸的保證，createImageBitmap 對它的支援也不一致；一律走 <img> 取
-          // naturalWidth/Height，SVG 會用它自己宣告的 width/height（沒宣告則瀏覽器給預設值）。
-          img = await new Promise((res, rej) => {
-            const i = new Image();
-            i.onload = () => res(i); i.onerror = () => rej(new Error('decode'));
-            i.src = url;
-          });
-          // 沒有內建尺寸的 SVG（只給 viewBox、不給 width/height）量不出長寬比，也就無從對位
-          if (!(img.naturalWidth || img.width) || !(img.naturalHeight || img.height)) throw new Error('no intrinsic size');
+          img = await loadImage(url);
         } catch (e) {
           URL.revokeObjectURL(url);
           failed.push(f.name);
           continue;
         }
-        const p = new Piece(f.name, img, url);
+        const p = new Piece(f.name, img, url, f);
         p.bounds = defaultBounds(p);
         pieces.unshift(p);         // 後加的蓋在前面加的上面，跟繪圖軟體「置入」的行為一致
         if (!firstName) firstName = f.name;
@@ -1197,10 +1602,7 @@ $reqProject = in_array($backProject, $allProjects, true) ? $backProject : ($allP
       statusEl.textContent = failed.map(n => fmt(I18N.img_failed, { name: n })).join(' ');
       if (firstName && !$('llabel').value) $('llabel').value = firstName.replace(/\.[^.]+$/, '');
       // zoom 只在「從空清單開始」時自動帶，之後再加圖不覆蓋使用者調過的值
-      if (wasEmpty) {
-        const nz = nativeZoom();
-        if (nz !== null) { $('zmax').value = nz; $('zmin').value = Math.max(0, nz - 5); }
-      }
+      if (wasEmpty) applyNativeZoom();
       select(0);
     });
 
@@ -1260,12 +1662,17 @@ $reqProject = in_array($backProject, $allProjects, true) ? $backProject : ($allP
       return new Promise(r => canvas.toBlob(r, fmtInfo.mime, fmtInfo.q));
     }
 
-    async function post(body) {
+    /**
+     * 送一次 POST。soft 列出「不算失敗、直接把 JSON 交回去」的狀態碼：原稿分塊的 409
+     * （offset 對不上）得由呼叫端自己接手續傳，而不是把整個流程炸掉。
+     */
+    async function post(body, soft) {
       // 磚很多時一定會撞到限流（admin bucket 120/分）：照 Retry-After 等一下再送，不放棄整批
       for (let attempt = 0; attempt < 6; attempt++) {
         const res = await fetch(BASE + '?api=tilecut', { method: 'POST', body });
         if (res.status !== 429) {
           const j = await res.json().catch(() => ({}));
+          if (soft && soft.indexOf(res.status) >= 0) { j.status = res.status; return j; }
           if (!res.ok || !j.ok) throw new Error(j.error || ('HTTP ' + res.status));
           return j;
         }
@@ -1274,6 +1681,87 @@ $reqProject = in_array($backProject, $allProjects, true) ? $backProject : ($allP
         await new Promise(r => setTimeout(r, wait * 1000));
       }
       throw new Error('429');
+    }
+
+    // ── 原稿 ──
+    /**
+     * 把整疊原稿送上去，回傳要寫進 edit.json 的那幾筆（沒勾「保留原稿」就回 null）。
+     *
+     * 排在切磚之前：容量不夠、格式不認得這類問題，最好在使用者等了十分鐘之前就講。
+     * 每一塊都自報 offset，伺服器對不上會回 409 並附上它手上的長度，照那個續傳——限流
+     * 重試時「送出去了但回應掉了」一定會發生，不處理就會把同一段接兩次。
+     */
+    async function uploadSources(project, id) {
+      if (!$('keepsrc').checked) return null;
+      for (let i = 0; i < pieces.length; i++) {
+        const p = pieces[i];
+        p.file = '';          // 這一輪重新落地；上一輪的檔名可能連副檔名都不一樣
+        if (!p.blob) continue;
+        let off = 0, stuck = 0;
+        while (off < p.blob.size) {
+          if (aborted) return null;
+          const end = Math.min(p.blob.size, off + SRCCHUNK);
+          const fd = new FormData();
+          fd.append('action', 'srcput'); fd.append('csrf', csrf);
+          fd.append('project', project); fd.append('id', id);
+          fd.append('idx', i); fd.append('offset', off);
+          if (end >= p.blob.size) fd.append('last', '1');
+          fd.append('chunk', p.blob.slice(off, end), 'c');
+          statusEl.textContent = fmt(I18N.src_upload, {
+            i: i + 1, n: pieces.length, pct: Math.round(end / p.blob.size * 100)
+          });
+          const j = await post(fd, [409]);
+          if (j.status === 409) {
+            // 對不上就照伺服器手上的長度接下去。連續三次還對不上代表不是掉回應而是別的問題
+            if (++stuck > 3) throw new Error(j.error || '409');
+            off = Math.max(0, j.have | 0);
+            continue;
+          }
+          stuck = 0;
+          off = end;
+          if (j.file) p.file = j.file;
+        }
+      }
+      return pieces
+        .map(p => ({ file: p.file, name: p.name, w: p.w, h: p.h, bounds: p.bounds, opacity: p.opacity, on: p.on }))
+        .filter(x => x.file);
+    }
+
+    /** 「重新編輯」：把上次留下的原稿抓回來，重建成清單上的那幾張。 */
+    async function loadEdit() {
+      if (!EDIT) return;
+      const L = EDIT.layer || {};
+      const set = (el, v) => { if (v !== undefined && v !== null && v !== '') $(el).value = v; };
+      set('llabel', L.label); set('opacity', L.opacity); set('attr', L.attribution);
+      set('zmin', L.minZoom); set('zmax', L.maxZoom);
+      $('opacityval').textContent = Math.round(parseFloat($('opacity').value) * 100) + '%';
+      if (L.pane) $('pane').value = L.pane;
+      const project = $('project').value;
+      const failed = [];
+      for (const it of EDIT.pieces) {
+        let url = '';
+        try {
+          const res = await fetch(BASE + '?api=tilecut&action=srcfile&project=' + encodeURIComponent(project)
+            + '&id=' + encodeURIComponent(EDIT.id) + '&file=' + encodeURIComponent(it.file));
+          if (!res.ok) throw new Error('HTTP ' + res.status);
+          const blob = await res.blob();
+          url = URL.createObjectURL(blob);
+          const p = new Piece(it.name || it.file, await loadImage(url), url, blob);
+          p.file = it.file;
+          p.bounds = validBounds(it.bounds) ? it.bounds : defaultBounds(p);
+          p.opacity = isFinite(it.opacity) ? Math.max(0, Math.min(1, it.opacity)) : 1;
+          p.on = it.on !== false;
+          pieces.push(p);     // edit.json 存的就是「上層在前」，照順序接上去
+        } catch (e) {
+          if (url) URL.revokeObjectURL(url);
+          failed.push(it.name || it.file);
+        }
+      }
+      if (failed.length) statusEl.textContent = failed.map(n => fmt(I18N.load_failed, { name: n })).join(' ');
+      if (!pieces.length) return;
+      select(0);
+      const u = unionBounds();
+      if (validBounds(u)) map.fitBounds([[u.s, u.w], [u.n, u.e]]);
     }
 
     $('stop').addEventListener('click', () => { aborted = true; });
@@ -1302,6 +1790,9 @@ $reqProject = in_array($backProject, $allProjects, true) ? $backProject : ($allP
         fd0.append('project', project); fd0.append('id', id);
         if ($('overwrite').checked) fd0.append('overwrite', '1');
         await post(fd0);
+
+        // 原稿先送。切了十分鐘才發現空間不夠，那十分鐘就白費了
+        const editPieces = await uploadSources(project, id);
 
         let batch = new FormData(), inBatch = 0;
         const flush = async () => {
@@ -1352,6 +1843,7 @@ $reqProject = in_array($backProject, $allProjects, true) ? $backProject : ($allP
           fdF.append('south', b.s); fdF.append('west', b.w); fdF.append('north', b.n); fdF.append('east', b.e);
           fdF.append('minZoom', z0); fdF.append('maxZoom', z1);
           fdF.append('count', sent); fdF.append('pieces', order.length);
+          if (editPieces && editPieces.length) fdF.append('edit', JSON.stringify({ pieces: editPieces }));
           await post(fdF);
           statusEl.textContent = fmt(I18N.complete, { sent, skipped, ext: fmtInfo.ext });
           doneEl.className = 'hint ok';
@@ -1364,7 +1856,9 @@ $reqProject = in_array($backProject, $allProjects, true) ? $backProject : ($allP
       running = false; $('stop').disabled = true; estimate();
     });
 
+    // 載回原稿是非同步的（要一張張抓），先畫一次空清單，畫面才不會在那之前是一片空白
     refresh();
+    loadEdit().then(refresh);
   </script>
 </body>
 

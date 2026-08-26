@@ -9,13 +9,8 @@ $apiCfg = require __DIR__ . '/../api/config.php';
 $randomExplore = souliong_random_explore_on($apiCfg);
 [$LANG, $DICT] = i18n_init();
 $t = fn(string $key, array $vars = []): string => htmlspecialchars(i18n_t($DICT, $key, $vars), ENT_QUOTES);
-$appName = $_APP['name'] ?? basename(dirname(__DIR__));
-$path = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH);
-$i = strpos($path, '/' . $appName);
-$base = $i !== false ? substr($path, 0, $i + strlen($appName) + 1) . '/' : dirname($path);
-$base = str_replace('\\', '/', $base);
-$base = '/' . trim($base, '/');
-$base = ($base === '/') ? '/' : $base . '/';
+require_once __DIR__ . '/../api/routes.php';   // 網址表：掛載根目錄的算法只有這一份（見 api/routes.php）
+$base = Route::base();
 
 $maps = [];
 // 用 scandir 而不是 glob()：glob 會把路徑裡的中括號當成「字元集合」樣式，

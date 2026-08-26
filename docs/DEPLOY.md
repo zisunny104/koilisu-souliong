@@ -71,7 +71,7 @@ Nginx：`client_max_body_size 70m;`　PHP：`upload_max_filesize=64M`、`post_ma
 
 ## 三、管理 / 審閱 / 分析
 
-- 管理頁：`?api=admin`（或 `/<mapid>/manager`），輸入 PIN 登入（POST，httpOnly cookie 保持登入，PIN 不進網址）。
+- 管理頁：`<base>/manager`（全部地圖總覽）、`<base>/manager/<mapid>`（單張地圖），輸入 PIN 登入（POST，httpOnly cookie 保持登入，PIN 不進網址）。分頁、備份與匯出都是這底下的路徑（`/manager/<mapid>/records`、`/manager/backup.zip`…），完整清單見 [EXTENDING.md](EXTENDING.md) 第九節。舊網址 `?api=admin`、`/<mapid>/manager` 仍然有效，開啟時會自動導向上面的形式。
   - **主 PIN**（`config.admin_pin`）：開所有專案。**專案 PIN**：只開該專案，由主 PIN 在後台新增/移除，可個別授權下列權限旗標（`admin_perm`，預設關閉）：`delete_others`（刪別人的投稿）、`edit_others`（改別人的投稿）、`edit_points`（改定位點）、`delegate_admin`（可建立「管理PIN」型分享連結）。
   - 投稿者身分是**純自助**的：參與者用投稿碼進地圖後，在解鎖視窗自行設 PIN 建立身分；後台「身分管理」只顯示/撤銷，不能代為建立，身分本身也不帶到期／次數（那是投稿碼的事）。
   - 「管理 PIN」同樣是**純自助**的：後台只建立**邀請連結**（可設到期時間／兌換次數上限），收到連結的人自行輸入 PIN／暱稱兌換；兌換出來的身分預設無任何權限，需由主 PIN 事後逐項授權（`admin_perm`）。連結的秘密只透過網址 fragment（`#redeem=...`）傳遞，不進伺服器紀錄。

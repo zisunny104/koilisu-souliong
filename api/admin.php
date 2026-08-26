@@ -1,11 +1,13 @@
 <?php
-// 管理頁：?api=admin （httpOnly cookie 認證；PIN 走 POST。主 PIN 全域、各專案 PIN 僅該專案）
+// 管理頁：<base>/manager（httpOnly cookie 認證；PIN 走 POST。主 PIN 全域、各專案 PIN 僅該專案）
+// 網址一律用 api/routes.php 的 Route:: 組出來，本檔不自己黏字串——形狀改一次就好，也不會有漏改的角落。
 require __DIR__ . '/store.php';
 require __DIR__ . '/security.php';
 require __DIR__ . '/stats.php';
 require __DIR__ . '/features.php';
 require_once __DIR__ . '/packs.php';
 require_once __DIR__ . '/layers.php';     // 地圖圖層註冊表（底圖／疊圖），形狀同 packs.php
+require_once __DIR__ . '/routes.php';    // 網址表：後台網址只有這一份定義，不在各處黏字串
 require_once __DIR__ . '/settings.php';   // packs.php 內部也會載它，兩邊都用 require_once 才不會重複宣告
 require __DIR__ . '/../pages/error.php';
 require_once __DIR__ . '/i18n.php';
@@ -27,7 +29,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'login
   $userid = trim((string)($_POST['userid'] ?? ''));
   $pw = (string)($_POST['pw'] ?? '');
   $ok = false;
-  $go = '?api=admin';
+  $go = Route::manager();
   $label = '';
   if ($userid !== '') {
     // 帳號登入（userid+密碼）：與 PIN 互斥的另一種憑證，欄位有填 userid 就走這條，不落入下面的 PIN 分支
@@ -39,7 +41,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'login
       $label = (string)($acc['label'] !== '' ? $acc['label'] : $acc['userid']);
       if (($acc['role'] ?? '') !== 'master') {
         $aprojects = account_project_list($cfg, (string)$acc['id']);
-        if (count($aprojects) === 1) $go = '?api=admin&project=' . urlencode($aprojects[0]);
+        if (count($aprojects) === 1) $go = Route::manager($aprojects[0]);
       }
     } else {
       $loginErrMsg = i18n_t($DICT, $r['error'] === 'locked' ? 'account_locked_msg' : 'account_login_failed_msg');
@@ -52,7 +54,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'login
     if (pins_check_and_bump($cfg, $proj, (string)$ppMatch['id'])) {
       padm_set_cookie($cfg, $proj, (string)$ppMatch['id']);
       $ok = true;
-      $go = '?api=admin&project=' . urlencode($proj);
+      $go = Route::manager($proj);
       $label = project_pin_label($cfg, $proj, $pin);
     } else {
       $loginErrMsg = i18n_t($DICT, 'share_link_expired');
@@ -76,7 +78,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'login
 if (isset($_GET['logout'])) {
   admin_clear_cookie();
   account_clear_cookie();
-  header('Location: ?api=admin');
+  header('Location: ' . Route::manager());
   exit;
 }
 
@@ -99,7 +101,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'accou
     $res = account_register($cfg, (string)($_POST['userid'] ?? ''), (string)($_POST['pw'] ?? ''), (string)($_POST['label'] ?? ''));
     if ($res['ok']) {
       account_set_cookie($cfg, (string)$res['account']['id']);
-      header('Location: ?api=admin');
+      header('Location: ' . Route::manager());
       exit;
     }
     $registerErr = $accountErrMsg((string)$res['error']);
@@ -119,7 +121,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'accou
   );
   if ($res['ok']) {
     account_set_cookie($cfg, (string)$res['account']['id']);
-    header('Location: ?api=admin');
+    header('Location: ' . Route::manager());
     exit;
   }
   $activateErr = $accountErrMsg((string)$res['error']);
@@ -151,6 +153,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'admin
 
 // ── 認證與範圍 ──
 $reqProject = preg_replace('/[^a-z0-9_-]/', '', $_GET['project'] ?? '');
+// 目前停在哪個分頁。網址上寫得出來才能加書籤／分享，所以 pane 是路徑的一段而不是 fragment；
+// 拆解在 Route::parseManager()，這裡只認 Route::PANES 之內的值。
+$reqPane = in_array((string)($_GET['pane'] ?? ''), Route::PANES, true) ? (string)$_GET['pane'] : '';
+
+// 舊網址（?api=admin、/admin、/<mapid>/manager|edit）一律導向正規形式，讓書籤與貼出去的連結
+// 收斂成同一種寫法。只導 GET：POST 帶著表單內容，302 會把 body 丟掉；下載類請求也不導，
+// 那不是「頁面」，導了只會讓瀏覽器多跑一趟。
+if ($_SERVER['REQUEST_METHOD'] === 'GET' && !isset($_GET['backup'])) {
+    $canonical = Route::manager($reqProject, $reqPane);
+    if (rawurldecode((string)parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH)) !== rawurldecode($canonical)) {
+        $keep = $_GET;
+        unset($keep['api'], $keep['project'], $keep['pane']);
+        header('Location: ' . $canonical . ($keep ? '?' . http_build_query($keep) : ''), true, 302);
+        exit;
+    }
+}
 $master = admin_authed($cfg);
 // 帳號登入者可能同時管理多個專案，不像 PIN 綁死單一 $reqProject：$acctProjects 是他有權限的專案清單，
 // 沒有 ?project= 時（例如剛登入、或多專案帳號查看總覽）也要能通過 $authed。
@@ -521,7 +539,7 @@ if (!$authed) {
         {
           if (!hash_equals($csrf, (string)($_POST['csrf'] ?? ''))) {
             global $scopeProject, $t;
-            error_page(403, $t('csrf_expired_title'), $t('csrf_expired_msg'), '?api=admin' . ($scopeProject !== '' ? '&project=' . urlencode($scopeProject) : ''), $t('back_to_admin'));
+            error_page(403, $t('csrf_expired_title'), $t('csrf_expired_msg'), Route::manager($scopeProject), $t('back_to_admin'));
           }
         }
 
@@ -535,15 +553,9 @@ if (!$authed) {
         // 專案清單（供備份/檢視）
         $allProjects = store_projects($cfg);
 
-        // 組公開地圖網址用（分享連結／邀請碼共用）；basePath 還原成 app 掛載根目錄本身，
-        // 不能只是「目前網址去掉 query string」──因為 admin 頁可能是用 /<project>/manager 這種路徑式網址進來，
-        // 那樣算出來的 basePath 會多黏 manager、專案代碼等片段，組出的公開網址／分享連結會整個是壞的。
-        $origin = ((!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http') . '://' . ($_SERVER['HTTP_HOST'] ?? '');
-        $appName = $_APP['name'] ?? basename(dirname(__DIR__));
-        $reqPathOnly = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH);
-        $appMarkerPos = strpos($reqPathOnly, '/' . $appName);
-        $basePath = $appMarkerPos !== false ? rtrim(substr($reqPathOnly, 0, $appMarkerPos + strlen($appName) + 1), '/') . '/' : '/';
-        $mapUrl = fn($p) => $origin . $basePath . $p;
+        // 分享連結／邀請碼要給人複製貼上，所以組成絕對網址（Route::abs）；站內導覽用 Route 的相對路徑就好。
+        // 掛載根目錄怎麼還原見 Route::base()——後台可能是從 /manager/<mapid>/tools 這種深路徑進來的。
+        $mapUrl = fn($p) => Route::abs(Route::map($p));
 
         // ── 動作 ──
         if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'delete') {
@@ -556,7 +568,7 @@ if (!$authed) {
             if ($removed) audit_log($cfg, $auditWho(), 'delete_others', $p, $id);
             store_purge_files($cfg, $removed);   // 照片與影音的主檔＋縮圖一起清（見 store.php）
           }
-          header('Location: ?api=admin' . ($scopeProject !== '' ? '&project=' . urlencode($scopeProject) : '') . '#records');
+          header('Location: ' . Route::manager($scopeProject, 'records'));
           exit;
         }
         // 編輯專案描述（只改標題/副標/說明/資料來源，其餘欄位保留；免手改 meta.json）
@@ -564,7 +576,7 @@ if (!$authed) {
           need_csrf($csrf);
           $p = preg_replace('/[^a-z0-9_-]/', '', $_POST['project'] ?? '');
           if ($p === '' || !$canProject($p)) {
-            error_page(403, $t('no_permission_title'), $t('no_project_permission_msg'), '?api=admin' . ($scopeProject !== '' ? '&project=' . urlencode($scopeProject) : '') . '#access', $t('back_to_admin'));
+            error_page(403, $t('no_permission_title'), $t('no_project_permission_msg'), Route::manager($scopeProject, 'access'), $t('back_to_admin'));
           }
           $mf = $cfg['projects_dir'] . '/' . $p . '/meta.json';
           $meta = is_file($mf) ? json_decode((string)@file_get_contents($mf), true) : [];
@@ -648,14 +660,14 @@ if (!$authed) {
           if ($json !== false && is_dir(dirname($mf))) {
             @file_put_contents($mf, $json, LOCK_EX);
           }   // 編碼失敗絕不覆寫，避免清空 meta
-          header('Location: ?api=admin' . ($scopeProject !== '' ? '&project=' . urlencode($p) : '') . '#access');
+          header('Location: ' . Route::manager($scopeProject !== '' ? $p : '', 'access'));
           exit;
         }
         // 平台全域設定（跨地圖，非單一專案，僅主 PIN 可改）
         if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'settings') {
           need_csrf($csrf);
           if (!$master) {
-            error_page(403, $t('no_permission_title'), $t('master_only_settings_msg'), '?api=admin' . ($scopeProject !== '' ? '&project=' . urlencode($scopeProject) : '') . '#tools', $t('back_to_admin'));
+            error_page(403, $t('no_permission_title'), $t('master_only_settings_msg'), Route::manager($scopeProject, 'tools'), $t('back_to_admin'));
           }
           $s = souliong_settings_load($cfg);
           $s['random_explore'] = isset($_POST['random_explore']);
@@ -664,13 +676,13 @@ if (!$authed) {
           $sp = (string)($_POST['site_pack'] ?? '');
           $s['pack'] = isset(souliong_pack_list($cfg)[$sp]) ? $sp : '';
           souliong_settings_save($cfg, $s);
-          header('Location: ?api=admin' . ($scopeProject !== '' ? '&project=' . urlencode($scopeProject) : '') . '#tools');
+          header('Location: ' . Route::manager($scopeProject, 'tools'));
           exit;
         }
         if ($_SERVER['REQUEST_METHOD'] === 'POST' && in_array(($_POST['action'] ?? ''), ['addpin', 'delpin', 'setperm'], true)) {
           need_csrf($csrf);
           if (!$master) {
-            error_page(403, $t('no_permission_title'), $t('master_only_pin_perm_msg'), '?api=admin' . ($scopeProject !== '' ? '&project=' . urlencode($scopeProject) : '') . '#access', $t('back_to_admin'));
+            error_page(403, $t('no_permission_title'), $t('master_only_pin_perm_msg'), Route::manager($scopeProject, 'access'), $t('back_to_admin'));
           }   // 權限管理限主 PIN
           $scope = ($_POST['scope'] ?? '') === 'master' ? 'master' : 'project';
           $tp = preg_replace('/[^a-z0-9_-]/', '', $_POST['project'] ?? '');
@@ -712,7 +724,7 @@ if (!$authed) {
             }
           }
           pins_save($cfg, $d);
-          header('Location: ?api=admin' . ($scope === 'project' && $tp !== '' ? '&project=' . urlencode($tp) : '') . '#access');
+          header('Location: ' . Route::manager($scope === 'project' ? $tp : '', 'access'));
           exit;
         }
         // 建立「分享編輯連結」：投稿PIN（私人／僅限匿名）任何該專案管理者皆可建立；管理PIN 僅限主 PIN 或已被授權 delegate_admin 者。
@@ -723,11 +735,11 @@ if (!$authed) {
           need_csrf($csrf);
           $p = preg_replace('/[^a-z0-9_-]/', '', $_POST['project'] ?? '');
           if ($p === '' || !$canProject($p)) {
-            error_page(403, $t('no_permission_title'), $t('no_project_permission_msg'), '?api=admin' . ($scopeProject !== '' ? '&project=' . urlencode($scopeProject) : '') . '#access', $t('back_to_admin'));
+            error_page(403, $t('no_permission_title'), $t('no_project_permission_msg'), Route::manager($scopeProject, 'access'), $t('back_to_admin'));
           }
           $kind = in_array(($_POST['kind'] ?? ''), ['code', 'admin'], true) ? $_POST['kind'] : 'code';
           if ($kind === 'admin' && !($master || admin_perm($cfg, $p, 'delegate_admin'))) {
-            error_page(403, $t('no_permission_title'), $t('admin_pin_share_permission_msg'), '?api=admin&project=' . urlencode($p) . '#access', $t('back_to_admin'));
+            error_page(403, $t('no_permission_title'), $t('admin_pin_share_permission_msg'), Route::manager($p, 'access'), $t('back_to_admin'));
           }
           $label = substr(trim((string)($_POST['label'] ?? '')), 0, 80);
           $expiresRaw = trim((string)($_POST['expires_at'] ?? ''));
@@ -761,11 +773,11 @@ if (!$authed) {
             ? ($mProject !== '' && ($master || admin_perm($cfg, $mProject, 'delegate_admin')))
             : $master;   // master／bootstrap 兩種來源（全域身分）僅限主 PIN 本人操作
           if ($mSource === '' || !$canMigrate) {
-            error_page(403, $t('no_permission_title'), $t('master_only_pin_perm_msg'), '?api=admin' . ($scopeProject !== '' ? '&project=' . urlencode($scopeProject) : '') . '#access', $t('back_to_admin'));
+            error_page(403, $t('no_permission_title'), $t('master_only_pin_perm_msg'), Route::manager($scopeProject, 'access'), $t('back_to_admin'));
           }
           $pending = account_migrate_create($cfg, $mSource, $mProject, $mLegacyId, $mLabel !== '' ? $mLabel : 'user', $mLabel);
           audit_log($cfg, $auditWho(), 'migrate_create', $mProject, $mSource . ':' . ($mLegacyId ?? ''));
-          $justCreatedMigrate = ['source' => $mSource, 'project' => $mProject, 'kind' => 'migrate', 'url' => $origin . $basePath . '?api=admin#activate=' . rawurlencode($pending['token']), 'note' => $t('migrate_link_hint')];
+          $justCreatedMigrate = ['source' => $mSource, 'project' => $mProject, 'kind' => 'migrate', 'url' => Route::abs(Route::manager('', '', 'activate=' . rawurlencode($pending['token']))), 'note' => $t('migrate_link_hint')];
         }
         // 撤銷管理PIN邀請連結（尚未兌換）：跟建立邀請同一權限門檻——主 PIN 或已被授權 delegate_admin 的專案 PIN 皆可
         if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'delinvite') {
@@ -777,7 +789,7 @@ if (!$authed) {
             $d['projects'][$p] = array_values(array_filter($d['projects'][$p] ?? [], fn($e) => !(($e['kind'] ?? '') === 'invite' && (string)($e['id'] ?? '') === $iid)));
             pins_save($cfg, $d);
           }
-          header('Location: ?api=admin' . ($scopeProject !== '' ? '&project=' . urlencode($scopeProject) : '') . '#access');
+          header('Location: ' . Route::manager($scopeProject, 'access'));
           exit;
         }
         // 移除附加投稿碼（立即失效；常駐碼另走 rotate）
@@ -788,7 +800,7 @@ if (!$authed) {
           if ($p !== '' && $dc !== '' && $canProject($p)) {
             codes_save($cfg, $p, array_values(array_filter(codes_load($cfg, $p), fn($e) => (string)($e['code'] ?? '') !== $dc)));
           }
-          header('Location: ?api=admin' . ($scopeProject !== '' ? '&project=' . urlencode($scopeProject) : '') . '#access');
+          header('Location: ' . Route::manager($scopeProject, 'access'));
           exit;
         }
         // 移除投稿身分（含分享連結建立的、使用者自行設定的皆可）
@@ -800,7 +812,7 @@ if (!$authed) {
             $cd = contrib_load($cfg, $p);
             if (isset($cd[$cid])) { unset($cd[$cid]); contrib_save($cfg, $p, $cd); }
           }
-          header('Location: ?api=admin' . ($scopeProject !== '' ? '&project=' . urlencode($scopeProject) : '') . '#access');
+          header('Location: ' . Route::manager($scopeProject, 'access'));
           exit;
         }
         // 鎖定／解除鎖定某個投稿身分（PIN 投稿者用 contrib_id、匿名裝置用 owner_hash）：只擋日後投稿，不影響已投稿內容
@@ -813,7 +825,7 @@ if (!$authed) {
             if (($_POST['action']) === 'blockid') block_add($cfg, $p, $kind === 'owner' ? $key : null, $kind === 'contrib' ? $key : null);
             else block_remove($cfg, $p, $kind === 'owner' ? $key : null, $kind === 'contrib' ? $key : null);
           }
-          header('Location: ?api=admin' . ($scopeProject !== '' ? '&project=' . urlencode($scopeProject) : '') . '#access');
+          header('Location: ' . Route::manager($scopeProject, 'access'));
           exit;
         }
         // 刪除某身分的全部投稿：跟單筆刪除同一權限規則（動別人的東西預設限主 PIN，或已授權 delete_others 的專案 PIN）
@@ -829,7 +841,7 @@ if (!$authed) {
             }
             if ($removedList) audit_log($cfg, $auditWho(), 'delete_by_' . $field, $p, $key . ' (' . count($removedList) . ')');
           }
-          header('Location: ?api=admin' . ($scopeProject !== '' ? '&project=' . urlencode($scopeProject) : '') . '#access');
+          header('Location: ' . Route::manager($scopeProject, 'access'));
           exit;
         }
         // ── 備份（ZIP，含照片；純 PHP zip，零擴充依賴） ──
@@ -838,12 +850,12 @@ if (!$authed) {
           // ── 主題包匯出：單一 pack 資料夾打包，路徑內含 <id>/ 前綴（比照 projects/<id>/ 的做法） ──
           if ($_GET['backup'] === 'pack') {
             if (!$master) {
-              error_page(403, $t('no_permission_title'), $t('master_only_packs_msg'), '?api=admin#tools', $t('back_to_admin'));
+              error_page(403, $t('no_permission_title'), $t('master_only_packs_msg'), Route::manager('', 'tools'), $t('back_to_admin'));
             }
             $pid = preg_replace('/[^a-z0-9_-]/', '', $_GET['pack'] ?? '');
             $packs = souliong_pack_list($cfg);
             if ($pid === '' || !isset($packs[$pid])) {
-              error_page(404, $t('error_404_title'), $t('pack_not_found_msg'), '?api=admin#tools', $t('back_to_admin'));
+              error_page(404, $t('error_404_title'), $t('pack_not_found_msg'), Route::manager('', 'tools'), $t('back_to_admin'));
             }
             $pdir = rtrim($cfg['packs_dir'], '/\\') . '/' . $pid;
             $files = [];
@@ -871,17 +883,17 @@ if (!$authed) {
             $lp  = preg_replace('/[^a-z0-9_-]/', '', $_GET['project'] ?? '');
             $all = souliong_layer_list($cfg, $lp);
             if ($lid === '' || !isset($all[$lid])) {
-              error_page(404, $t('error_404_title'), $t('layer_not_found_msg'), '?api=admin#tools', $t('back_to_admin'));
+              error_page(404, $t('error_404_title'), $t('layer_not_found_msg'), Route::manager('', 'tools'), $t('back_to_admin'));
             }
             // 全站層歸主要管理者，專案層歸該專案的管理者——權限跟著圖層實際住在哪裡走
             $isProj = ($all[$lid]['scope'] ?? '') === 'project';
             if ($isProj ? !$canProject($lp) : !$master) {
-              error_page(403, $t('no_permission_title'), $t('master_only_layers_msg'), '?api=admin#tools', $t('back_to_admin'));
+              error_page(403, $t('no_permission_title'), $t('master_only_layers_msg'), Route::manager('', 'tools'), $t('back_to_admin'));
             }
             $ldir = souliong_layer_dir($cfg, $lid, $lp);
             $files = souliong_layer_files($ldir, $lid, $err);
             if ($err !== '') {
-              error_page(413, $t('error_413_title'), $t($err), '?api=admin#tools', $t('back_to_admin'));
+              error_page(413, $t('error_413_title'), $t($err), Route::manager('', 'tools'), $t('back_to_admin'));
             }
             $name = 'souliong-layer-' . $lid . '-' . date('Ymd-His') . '.zip';
             $tmp = tempnam(sys_get_temp_dir(), 'sklyr');
@@ -898,10 +910,10 @@ if (!$authed) {
           }
           $bp = $_GET['backup'] === 'project' ? preg_replace('/[^a-z0-9_-]/', '', $_GET['project'] ?? '') : null;
           if ($bp === null && !$master) {
-            error_page(403, $t('no_permission_title'), $t('master_only_backup_all_msg'), '?api=admin' . ($scopeProject !== '' ? '&project=' . urlencode($scopeProject) : '') . '#tools', $t('back_to_admin'));
+            error_page(403, $t('no_permission_title'), $t('master_only_backup_all_msg'), Route::manager($scopeProject, 'tools'), $t('back_to_admin'));
           }
           if ($bp !== null && !$canProject($bp)) {
-            error_page(403, $t('no_permission_title'), $t('no_project_permission_msg'), '?api=admin' . ($bp !== '' ? '&project=' . urlencode($bp) : '') . '#tools', $t('back_to_admin'));
+            error_page(403, $t('no_permission_title'), $t('no_project_permission_msg'), Route::manager((string)$bp, 'tools'), $t('back_to_admin'));
           }
           if ($bp === null) audit_log($cfg, $auditWho(), 'backup_all', null, '');
           $files = [];
@@ -938,7 +950,7 @@ if (!$authed) {
         if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'import') {
           need_csrf($csrf);
           if (!$master) {
-            error_page(403, $t('no_permission_title'), $t('master_only_import_msg'), '?api=admin' . ($scopeProject !== '' ? '&project=' . urlencode($scopeProject) : '') . '#tools', $t('back_to_admin'));
+            error_page(403, $t('no_permission_title'), $t('master_only_import_msg'), Route::manager($scopeProject, 'tools'), $t('back_to_admin'));
           }
           require_once __DIR__ . '/zip.php';
           $imported = 0;
@@ -1021,7 +1033,7 @@ if (!$authed) {
             }
             audit_log($cfg, $auditWho(), 'import', null, $mode . ', +' . $imported . ' 筆');
           }
-          header('Location: ?api=admin#tools');
+          header('Location: ' . Route::manager('', 'tools'));
           exit;
         }
 
@@ -1029,7 +1041,7 @@ if (!$authed) {
         if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'packimport') {
           need_csrf($csrf);
           if (!$master) {
-            error_page(403, $t('no_permission_title'), $t('master_only_packs_msg'), '?api=admin#tools', $t('back_to_admin'));
+            error_page(403, $t('no_permission_title'), $t('master_only_packs_msg'), Route::manager('', 'tools'), $t('back_to_admin'));
           }
           require_once __DIR__ . '/zip.php';
           if (isset($_FILES['pack']) && $_FILES['pack']['error'] === UPLOAD_ERR_OK) {
@@ -1046,7 +1058,7 @@ if (!$authed) {
             }
             audit_log($cfg, $auditWho(), 'pack_import', null, implode(',', array_keys($ids)));
           }
-          header('Location: ?api=admin#tools');
+          header('Location: ' . Route::manager('', 'tools'));
           exit;
         }
 
@@ -1057,7 +1069,7 @@ if (!$authed) {
         if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'layerimport') {
           need_csrf($csrf);
           $lp = preg_replace('/[^a-z0-9_-]/', '', $_POST['project'] ?? '');
-          $backTo = '?api=admin' . ($lp !== '' ? '&project=' . urlencode($lp) : '') . '#tools';
+          $backTo = Route::manager($lp, 'tools');
           if ($lp === '' ? !$master : !$canProject($lp)) {
             error_page(403, $t('no_permission_title'), $t('master_only_layers_msg'), $backTo, $t('back_to_admin'));
           }
@@ -1096,7 +1108,7 @@ if (!$authed) {
         //    souliong_layer_dir()——後者同名時會偏好專案層，用在這裡的話，想刪全站層卻剛好有
         //    同名專案層時就會刪錯一邊。權限規則與 layerimport 相同：圖層住哪，權限就跟到哪。 ──
         $layerTarget = function (string $lp, string $lid) use ($cfg, $master, $canProject, $t): array {
-          $backTo = '?api=admin' . ($lp !== '' ? '&project=' . urlencode($lp) : '') . '#tools';
+          $backTo = Route::manager($lp, 'tools');
           if ($lp === '' ? !$master : !$canProject($lp)) {
             error_page(403, $t('no_permission_title'), $t('master_only_layers_msg'), $backTo, $t('back_to_admin'));
           }
@@ -1125,7 +1137,12 @@ if (!$authed) {
           if (!souliong_layer_rmtree($dir, $root)) {
             error_page(500, $t('error_500_title'), $t('layer_delete_failed_msg'), $backTo, $t('back_to_admin'));
           }
-          audit_log($cfg, $auditWho(), 'layer_delete', $lp !== '' ? $lp : null, $lid);
+          // 保留的原稿跟著走。刪了圖層卻留下一份沒有任何入口進得去的高解析手稿，只是佔空間，
+          // 而且是一份沒人記得自己還存著的東西。清不掉不擋流程（圖層已經沒了，退不回去），
+          // 但要留在 audit log 裡，不然沒有人會發現。
+          $lsrc = $lp !== '' ? souliong_layersrc_dir($cfg, $lp, $lid) : null;
+          $srcLeft = $lsrc !== null && is_dir($lsrc) && !souliong_layer_rmtree($lsrc, dirname($lsrc));
+          audit_log($cfg, $auditWho(), 'layer_delete', $lp !== '' ? $lp : null, $lid . ($srcLeft ? ' (layersrc left)' : ''));
           header('Location: ' . $backTo);
           exit;
         }
@@ -2728,10 +2745,10 @@ if (!$authed) {
 
 <body>
   <div class="wrap">
-    <?php $langQs = $scopeProject !== '' ? 'project=' . rawurlencode($scopeProject) . '&api=admin&' : 'api=admin&'; ?>
+    <?php $langUrl = fn(string $l) => $esc(Route::manager($scopeProject, $reqPane) . '?lang=' . $l); ?>
     <div class="langsw">
-      <a href="?<?= $langQs ?>lang=zh_TW" class="<?= $LANG === 'zh_TW' ? 'on' : '' ?>">中文</a>
-      <a href="?<?= $langQs ?>lang=en" class="<?= $LANG === 'en' ? 'on' : '' ?>">English</a>
+      <a href="<?= $langUrl('zh_TW') ?>" class="<?= $LANG === 'zh_TW' ? 'on' : '' ?>">中文</a>
+      <a href="<?= $langUrl('en') ?>" class="<?= $LANG === 'en' ? 'on' : '' ?>">English</a>
     </div>
     <div class="top">
       <?php
@@ -2749,12 +2766,12 @@ if (!$authed) {
       <h1><i class="fa-solid <?= $scopeProject !== '' ? 'fa-map-location-dot' : 'fa-layer-group' ?>"></i> <?= $esc($headName) ?> <span class="sub"><?php if ($scopeProject !== '' && $headName !== $scopeProject): ?><span class="mono"><?= $esc($scopeProject) ?></span> · <?php endif; ?><?= $master ? $t('master_admin_label') : $t('project_admin_label') ?> · <?= $t('records_count_suffix', ['n' => count($rows)]) ?></span></h1>
       <?php
         // 回到公開網站。有指定專案就直接回那張地圖，沒有（主要管理者的總覽）就回平台首頁。
-        // 一定要用 $origin . $basePath 組絕對網址：後台可能是從 /<project>/manager 這種路徑式網址進來的，
-        // 寫相對連結會被 index.php 的路由當成「同一個專案底下的動作」而回不去。
-        $frontUrl = $scopeProject !== '' ? $mapUrl($scopeProject) : $mapUrl('');
+        // 走 Route 而不是寫相對連結：後台網址是 /manager/<mapid>/<pane> 這種深路徑，相對連結會被
+        // index.php 的路由當成「同一張地圖底下的動作」而回不去。
+        $frontUrl = $mapUrl($scopeProject);
       ?>
       <a class="btn" href="<?= $esc($frontUrl) ?>"><i class="fa-solid fa-arrow-left"></i> <?= $t($scopeProject !== '' ? 'back_to_map_btn' : 'back_to_site_btn') ?></a>
-      <a class="btn" href="?api=admin&logout=1"><i class="fa-solid fa-right-from-bracket"></i> <?= $t('logout_btn') ?></a>
+      <a class="btn" href="<?= $esc(Route::logout()) ?>"><i class="fa-solid fa-right-from-bracket"></i> <?= $t('logout_btn') ?></a>
     </div>
 
     <?php if (!is_writable($cfg['projects_dir'])): ?>
@@ -2767,27 +2784,28 @@ if (!$authed) {
     <?php if ($master && $scopeProject === ''): ?>
       <div class="tabs">
         <a class="tab on"><?= $t('tab_all_count', ['n' => count($allProjects)]) ?></a>
-        <?php foreach ($allProjects as $tp): ?><a class="tab" href="?api=admin&project=<?= $esc($tp) ?>"><?= $esc($tp) ?></a><?php endforeach; ?>
+        <?php foreach ($allProjects as $tp): ?><a class="tab" href="<?= $esc(Route::manager($tp)) ?>"><?= $esc($tp) ?></a><?php endforeach; ?>
       </div>
     <?php elseif ($master): ?>
       <div class="tabs">
-        <a class="tab" href="?api=admin"><i class="fa-solid fa-arrow-left"></i> <?= $t('back_to_all_projects') ?></a>
+        <a class="tab" href="<?= $esc(Route::manager()) ?>"><i class="fa-solid fa-arrow-left"></i> <?= $t('back_to_all_projects') ?></a>
       </div>
     <?php elseif ($acct !== null && count($acctProjects) > 1 && $scopeProject === ''): ?>
       <div class="tabs">
         <a class="tab on"><?= $t('tab_all_count', ['n' => count($acctProjects)]) ?></a>
-        <?php foreach ($acctProjects as $tp): ?><a class="tab" href="?api=admin&project=<?= $esc($tp) ?>"><?= $esc($tp) ?></a><?php endforeach; ?>
+        <?php foreach ($acctProjects as $tp): ?><a class="tab" href="<?= $esc(Route::manager($tp)) ?>"><?= $esc($tp) ?></a><?php endforeach; ?>
       </div>
     <?php elseif ($acct !== null && count($acctProjects) > 1): ?>
       <div class="tabs">
-        <a class="tab" href="?api=admin"><i class="fa-solid fa-arrow-left"></i> <?= $t('back_to_all_my_projects') ?></a>
+        <a class="tab" href="<?= $esc(Route::manager()) ?>"><i class="fa-solid fa-arrow-left"></i> <?= $t('back_to_all_my_projects') ?></a>
       </div>
     <?php endif; ?>
 
     <?php
       // 表單送出後回到對應分頁，避免每次都跳回總覽：多數動作走 redirect，目的地已經帶好 #pane 片段（見上方各 header('Location: …#…')）；
       // 只有 sharelink 例外——它不 redirect、直接在同一次回應內把頁面畫出來，此時網址列還沒有片段，得靠這裡補上
-      $forcePane = in_array(($_POST['action'] ?? ''), ['sharelink', 'migrate_create'], true) ? 'access' : '';
+      // 送出分享／邀請表單後強制跳到「權限與碼」，否則就照網址（Route::parseManager 拆出的 $reqPane）
+      $forcePane = in_array(($_POST['action'] ?? ''), ['sharelink', 'migrate_create'], true) ? 'access' : $reqPane;
     ?>
     <div class="subnav">
       <button type="button" class="subtab on" data-pane="overview"><i class="fa-solid fa-chart-simple"></i> <?= $t('overview_tab') ?></button>
@@ -2835,18 +2853,26 @@ if (!$authed) {
       // 全站圖層清單長得不一樣，但「能對一個圖層做什麼」該是同一組，所以只寫這一份。
       // $lp === '' 代表全站層，非空代表某張地圖自己的層——差別只在多帶一個 project 參數，
       // 權限與路徑解析都由後端的 $layerTarget 決定，不靠前端少畫一顆按鈕來把關。
-      $layerAdminRow = function (string $lid, array $linfo, string $lp) use ($t, $esc, $esc_csrf, $DICT) {
+      $layerAdminRow = function (string $lid, array $linfo, string $lp) use ($t, $esc, $esc_csrf, $DICT, $cfg) {
         $dlgId = 'lyedit-' . ($lp !== '' ? $lp : 'site') . '-' . $lid;
-        $qs = '&layer=' . urlencode($lid) . ($lp !== '' ? '&project=' . urlencode($lp) : '');
+        // 留著原稿的那幾層可以直接回切磚工具改，不必把來源檔再找出來一次。只有專案層有原稿
+        // （全站層進版控，數十 MB 的手稿本來就不該塞進 repo）。
+        $reedit = $lp !== '' && souliong_layersrc_editable($cfg, $lp, $lid)
+          ? Route::tool('tilecut', $lp, ['load' => $lid])
+          : '';
         $bnd = (array)($linfo['bounds'] ?? []);
         $bv = fn(int $i, int $j) => isset($bnd[$i][$j]) && is_numeric($bnd[$i][$j]) ? (string)$bnd[$i][$j] : '';
         $zv = fn(string $k) => isset($linfo[$k]) && is_numeric($linfo[$k]) ? (string)(int)$linfo[$k] : '';
         $curPane = (string)($linfo['pane'] ?? 'art');
-        $delMsg = i18n_t($DICT, 'layer_delete_confirm', ['id' => $lid]);
+        $delMsg = i18n_t($DICT, 'layer_delete_confirm', ['id' => $lid])
+          . ($reedit !== '' ? ' ' . i18n_t($DICT, 'layer_delete_src_note') : '');
     ?>
       <span class="lyacts">
+        <?php if ($reedit !== ''): ?>
+        <a class="btn" href="<?= $esc($reedit) ?>" title="<?= $t('layer_reedit_title') ?>"><i class="fa-solid fa-rotate-left"></i> <?= $t('layer_reedit_btn') ?></a>
+        <?php endif; ?>
         <button type="button" class="btn" onclick="document.getElementById('<?= $esc($dlgId) ?>').showModal()"><i class="fa-solid fa-sliders"></i> <?= $t('layer_edit_btn') ?></button>
-        <a class="btn" href="?api=admin&backup=layer<?= $esc($qs) ?>" title="<?= $t('pack_export_btn') ?>" aria-label="<?= $t('pack_export_btn') ?>"><i class="fa-solid fa-download"></i></a>
+        <a class="btn" href="<?= $esc(Route::backupLayer($lid, $lp)) ?>" title="<?= $t('pack_export_btn') ?>" aria-label="<?= $t('pack_export_btn') ?>"><i class="fa-solid fa-download"></i></a>
       </span>
       <dialog id="<?= $esc($dlgId) ?>" class="metadlg" onclick="if(event.target===this)this.close()">
         <form method="post" class="metaform">
@@ -2912,7 +2938,7 @@ if (!$authed) {
       <div class="projhead">
         <div class="projtitle"><i class="fa-solid fa-map-location-dot"></i> <?= $esc($meta['title'] ?? $p) ?>（<?= $esc($p) ?>）</div>
         <div class="projactions">
-          <a class="btn" href="?api=admin&backup=project&project=<?= $esc($p) ?>"><i class="fa-solid fa-download"></i> <?= $t('backup_project_btn') ?></a>
+          <a class="btn" href="<?= $esc(Route::backupProject($p)) ?>"><i class="fa-solid fa-download"></i> <?= $t('backup_project_btn') ?></a>
           <?php if ($canProject($p)): ?>
           <button type="button" class="btn" onclick="document.getElementById('metadlg-<?= $esc($p) ?>').showModal()"><i class="fa-solid fa-pen-to-square"></i> <?= $t('edit_project_desc_btn') ?></button>
           <dialog id="metadlg-<?= $esc($p) ?>" class="metadlg" onclick="if(event.target===this)this.close()">
@@ -3052,7 +3078,7 @@ if (!$authed) {
               <div class="hint"><?= $t('project_layers_hint') ?></div>
               <?php // 切圖磚工具是「產生一個新的專案層」的另一條路（匯入 ZIP 是既有的那條），所以入口擺在一起 ?>
               <div class="row" style="margin:2px 0 4px">
-                <a class="btn" href="<?= $esc($origin . $basePath . 'tilecut?project=' . urlencode($p)) ?>"><i class="fa-solid fa-scissors"></i> <?= $t('open_tilecut_btn') ?></a>
+                <a class="btn" href="<?= $esc(Route::tool('tilecut', $p)) ?>"><i class="fa-solid fa-scissors"></i> <?= $t('open_tilecut_btn') ?></a>
                 <span class="hint"><?= $t('tilecut_entry_hint') ?></span>
               </div>
               <?php if ($projLayers): ?>
@@ -3475,8 +3501,8 @@ if (!$authed) {
           $dispPhoto = !empty($r['photo']) ? $r['photo'] : ($refOrig['photo'] ?? null);
           $dispThumb = !empty($r['thumb']) ? $r['thumb'] : ($refOrig['thumb'] ?? null);
           $dispExif  = is_array($r['exif'] ?? null) ? $r['exif'] : (is_array($refOrig['exif'] ?? null) ? $refOrig['exif'] : null);
-          $photoUrl  = $dispPhoto ? $basePath . '?api=photo&f=' . rawurlencode($dispPhoto) : null;
-          $thumbUrl  = $dispThumb ? $basePath . '?api=photo&f=' . rawurlencode($dispThumb) : ($photoUrl !== null ? $photoUrl . '&th=1' : null);   // 縮圖預覽，點開連到原圖；舊投稿沒 thumb 欄位就請 photo.php 自動產（&th=1）
+          $photoUrl  = $dispPhoto ? Route::api('photo', ['f' => $dispPhoto]) : null;
+          $thumbUrl  = $dispThumb ? Route::api('photo', ['f' => $dispThumb]) : ($photoUrl !== null ? $photoUrl . '&th=1' : null);   // 縮圖預覽，點開連到原圖；舊投稿沒 thumb 欄位就請 photo.php 自動產（&th=1）
         ?>
           <tr data-row>
             <td class="mono"><?= $idx-- ?></td>
@@ -3550,11 +3576,11 @@ if (!$authed) {
       <div class="card section-card">
         <div class="badge"><i class="fa-solid fa-kit-medical"></i> <?= $t('data_repair_badge') ?></div>
         <div class="hint" style="margin-top:6px"><?= $t('data_repair_hint') ?></div>
-        <?php $toolQs = $scopeProject !== '' ? '?project=' . urlencode($scopeProject) : ''; // 目前在看哪個專案就帶著走；「全部」時不硬塞一個專案給工具頁 ?>
-        <div class="row" style="margin-top:8px"><a class="btn" href="<?= $esc($origin . $basePath . 'exiffix' . $toolQs) ?>"><i class="fa-solid fa-kit-medical"></i> <?= $t('open_exiffix_btn') ?></a>
-          <a class="btn" href="<?= $esc($origin . $basePath . 'thumbfix' . $toolQs) ?>"><i class="fa-solid fa-images"></i> <?= $t('open_thumbfix_btn') ?></a>
-          <a class="btn" href="<?= $esc($origin . $basePath . 'tilecut' . $toolQs) ?>"><i class="fa-solid fa-scissors"></i> <?= $t('open_tilecut_btn') ?></a>
-          <a class="btn" href="?api=admin&backup=all"><i class="fa-solid fa-download"></i> <?= $t('backup_all_btn') ?></a></div>
+        <?php // 目前在看哪個專案就帶著走；「全部」時不硬塞一個專案給工具頁 ?>
+        <div class="row" style="margin-top:8px"><a class="btn" href="<?= $esc(Route::tool('exiffix', $scopeProject)) ?>"><i class="fa-solid fa-kit-medical"></i> <?= $t('open_exiffix_btn') ?></a>
+          <a class="btn" href="<?= $esc(Route::tool('thumbfix', $scopeProject)) ?>"><i class="fa-solid fa-images"></i> <?= $t('open_thumbfix_btn') ?></a>
+          <a class="btn" href="<?= $esc(Route::tool('tilecut', $scopeProject)) ?>"><i class="fa-solid fa-scissors"></i> <?= $t('open_tilecut_btn') ?></a>
+          <a class="btn" href="<?= $esc(Route::backupAll()) ?>"><i class="fa-solid fa-download"></i> <?= $t('backup_all_btn') ?></a></div>
       </div>
       <div class="card section-card">
         <div class="badge"><i class="fa-solid fa-swatchbook"></i> <?= $t('packs_heading') ?></div>
@@ -3565,7 +3591,7 @@ if (!$authed) {
           <?php foreach ($installedPacks as $pid => $pinfo): ?>
           <div style="display:flex;align-items:center;gap:8px;justify-content:space-between">
             <span><b><?= $esc($pinfo['label'] ?? $pid) ?></b> <span class="hint mono"><?= $esc($pid) ?></span></span>
-            <a class="btn" href="?api=admin&backup=pack&pack=<?= $esc($pid) ?>"><i class="fa-solid fa-download"></i> <?= $t('pack_export_btn') ?></a>
+            <a class="btn" href="<?= $esc(Route::backupPack($pid)) ?>"><i class="fa-solid fa-download"></i> <?= $t('pack_export_btn') ?></a>
           </div>
           <?php endforeach; ?>
         </div>
@@ -3733,18 +3759,22 @@ if (!$authed) {
       });
     });
 
-    // ── 分頁切換：hash > 表單送出後指定 > 上次停留，重新整理不迷路 ──
+    // ── 分頁切換：網址 > 表單送出後指定 > 上次停留，重新整理不迷路 ──
+    // 分頁全部都已經在同一頁裡渲染好了，切換只是換 class，所以不重新載入；但網址還是要跟著換成
+    // 該分頁的正規路徑（一樣由 Route::manager() 產生，前端不自己拼），加書籤與貼給別人才會停在同一頁。
+    var PANE_URL = <?= json_encode(array_combine(Route::PANES, array_map(fn($pn) => Route::manager($scopeProject, $pn), Route::PANES)), JSON_UNESCAPED_SLASHES) ?>;
     function showPane(name) {
       if (!document.getElementById('pane-' + name)) return;
       document.querySelectorAll('.subtab').forEach(function(b) { b.classList.toggle('on', b.dataset.pane === name); });
       document.querySelectorAll('.pane').forEach(function(p) { p.classList.toggle('on', p.id === 'pane-' + name); });
       try { sessionStorage.setItem('adminTab', name); } catch (e) {}
-      try { history.replaceState(null, '', '#' + name); } catch (e) {}
+      if (PANE_URL[name]) { try { history.replaceState(null, '', PANE_URL[name] + location.search); } catch (e) {} }
     }
     document.querySelectorAll('.subtab').forEach(function(b) {
       b.addEventListener('click', function() { showPane(b.dataset.pane); });
     });
     var forcePane = <?= json_encode($forcePane) ?>;
+    // forcePane 已含網址上的分頁；hash 那條是為了舊書籤（#tools 這種）而留著
     var initPane = forcePane || (location.hash || '').replace('#', '');
     if (!document.getElementById('pane-' + initPane)) {
       try { initPane = sessionStorage.getItem('adminTab') || ''; } catch (e) { initPane = ''; }

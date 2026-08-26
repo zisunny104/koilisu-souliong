@@ -342,12 +342,16 @@ CSS 全部前綴 `.stat-card .col`，因為要蓋過同層的 `.stat-card .col o
 - 不透明度設回 `1` 就把整個 key 拿掉——1 是 Leaflet 的預設，寫進去只是雜訊。
 - 版權標註上限 500 字：內建那三張 CARTO 光是 `attribution` 就 215 字（兩個帶 `target`／`rel` 的 `<a>`），砍在 200 會把使用者從沒碰過的欄位默默截斷。
 
-**刪除**（`action=layerdelete`）擺在設定對話框最底下，用分隔線跟「儲存」隔開，送出前有 `confirm()`。整個資料夾連同圖磚一起消失，不可逆。
+留著原稿的圖層（見 8.7）會在「設定」旁邊多一顆**「重新編輯」**，連到 `tilecut` 的 `?load=<id>`。沒留原稿的就沒有這顆按鈕——按鈕在不在，本身就是「這一層還能不能改」的答案，不必按下去才知道。
+
+**刪除**（`action=layerdelete`）擺在設定對話框最底下，用分隔線跟「儲存」隔開，送出前有 `confirm()`。整個資料夾連同圖磚一起消失，不可逆；留著原稿的話 `layersrc/<id>/` 也一併刪掉，`confirm()` 的文字會多一句提醒。
 
 兩道護欄：
 
 - **全站預設層刪不掉**。`default_layers` 裡的 id 回 409——刪掉它等於讓所有沒自訂圖層的地圖同時沒有底圖，這種事不該只靠一個 `confirm()` 擋。要換預設請先改設定檔。
 - 路徑解析用**作用域對應的那個 root**，不是 `souliong_layer_dir()`。後者同名時偏好專案層，用在刪除上的話，想刪全站層卻剛好有同名專案層時就會刪錯一邊。
+
+原稿刪不掉**不會擋下整個刪除**：圖磚都沒了，這時中止只會留下一個半死的圖層。照樣完成，並把 `(layersrc left)` 記進 audit log——那是給管理者事後清理用的線索，不是需要當場處理的錯誤。
 
 刪掉之後仍指著它的 `meta.json` **不必清理**：`souliong_layers_for()` 對找不到的 id 本來就靜靜略過（同主題包），那張地圖只會少一層，不會開天窗。
 
@@ -359,13 +363,15 @@ CSS 全部前綴 `.stat-card .col`，因為要蓋過同層的 `.stat-card .col o
 
 **切割在瀏覽器做，不在 PHP**。理由同 `api/thumbfix.php`：PHP 要吃下一張上億像素的來源圖，`memory_limit` 與 `max_execution_time` 會先倒下，而且主機不一定編了 WebP。canvas 沒有這些限制，還天然吃得下 SVG。PHP 端只負責收下切好的 256×256 小圖，且每一張都重新驗過座標形狀、該 zoom 的合法範圍、檔案大小、真實 MIME 與像素尺寸——「這些檔是客戶端剛剛才產生的」不構成信任的理由。
 
-三個 POST 動作，全部檢查 CSRF、全部回 JSON：
+四個 POST 動作，全部檢查 CSRF、全部回 JSON；另外一個 GET 把原稿讀回來：
 
 | action | 做什麼 |
 |---|---|
-| `begin` | 建立圖層資料夾；同 id 已存在時要勾「覆蓋」才會繼續，並先清掉舊的 `tiles/` |
+| `begin` | 建立圖層資料夾；同 id 已存在時要勾「覆蓋」才會繼續，並先清掉舊的 `tiles/`（沒勾「保留原稿」時連 `layersrc/` 一起清） |
+| `srcput` | 收原稿。分段上傳，每段帶明確 offset |
 | `tile` | 收一批磚。欄位名就是座標：`tiles[<z>_<x>_<y>]`，不必另外傳一份對照表 |
-| `finish` | 寫 `layer.json` 並記一筆 audit log |
+| `finish` | 寫 `layer.json` 與 `edit.json`，並記一筆 audit log |
+| `srcfile`（GET） | 把某一張原稿讀回來，只有該專案的管理者拿得到 |
 
 **重切一定要先清舊磚**：金字塔是稀疏的，上一版畫到、這一版沒畫到的格子若留著，就成了擦不掉的殘影。刪除不可逆，所以 `souliong_layer_rmtree()`（在 `api/layers.php`，後台刪整層也用同一支）用 `realpath()` 攤平後再確認目標確實落在該圖層資料夾之內、而且不等於 root 本身，並且一律不跟隨符號連結。
 
@@ -391,12 +397,60 @@ CSS 全部前綴 `.stat-card .col`，因為要蓋過同層的 `.stat-card .col o
 
 切完**還要回「編輯專案描述」把這一層勾起來**——工具只負責產生圖層，不會自作主張改動任何一張地圖的疊法。
 
+**保留原稿**（第三步的核取方塊，預設勾著）把這次用的原圖一起存起來，之後可以載回來挪一挪重切；不勾就只留圖磚，壓平之後沒有任何辦法把其中一張拆回來。
+
+原稿放在 `projects/<proj>/layersrc/<id>/`，**跟圖磚是兄弟目錄，不是塞在圖層資料夾裡**。這是刻意的：8.5 的圖檔端點靠副檔名白名單把關，而原稿本來就是合法的圖片，只要放進 `layers/` 底下，任何猜到網址的人都拿得到。`souliong_layer_roots()` 走不到 `layersrc/`，所以「結構上拿不到」，比「規則上不准拿」可靠。要讀原稿只有 `srcfile` 一條路：先驗管理權限，再用 `^p\d{1,2}\.(png|webp|jpg|jpeg|svg)$` 卡死檔名，回應一律 `Cache-Control: private, no-store`。全站層沒有這一層——它進版控，數十 MB 的手稿本來就不該塞進 repo。
+
+`edit.json` 記下每張的檔名、原始尺寸、四角座標、不透明度與可見狀態，外加圖層本身那幾欄。它是**伺服器重建的**，不是把前端送來的 JSON 原樣寫下去：對不上檔案的、座標不合法的，整筆丟掉。壞掉的 `edit.json` 比沒有更麻煩——載回來的東西看起來像對的，其實已經歪了。
+
+**分段上傳**是為了 `upload_max_filesize`：它常見的預設是 2M，而要保留的原稿動輒數十 MB。頁面載入時就把 `upload_max_filesize` 與 `post_max_size` 取小的那個乘 0.8 當分段大小（夾在 256 KB 到 4 MB 之間），前端照這個切。每段都帶**明確的 offset**，伺服器用 `filesize()` 比對，對不上就回 409 並附上自己手上的 `have`，前端從那裡續傳。這比「照順序 append 就好」多一次比對，換到的是：回應在路上掉了、前端重送同一段，也不會把檔案接成兩倍長。
+
+型別驗證在**全部收齊之後**才做（`getimagesize()`，SVG 另外看開頭有沒有 `<svg>`），因為半截的檔案本來就驗不過。收的期間檔名是 `.p<idx>`，驗過才改名成 `p<idx>.<ext>`——沒有任何一刻會有「副檔名說是圖片、內容還沒驗過」的檔案躺在那裡。上限預設單檔 64 MB、整層 256 MB（`layersrc_max_file`／`layersrc_max_total`）。
+
+原稿在 `begin` 之後、切磚之前上傳：空間不夠要當場知道，切了十分鐘才發現存不下，那十分鐘就白費了。
+
+**載回**是 `?load=<id>`：頁面只內嵌 `edit.json`，圖片本身由前端逐張走 `srcfile` 抓回來重建，順便把「覆蓋」預先勾起來——會走這條路的人十之八九就是要重切同一層。原稿被刪掉或從沒留過時，`?load=` 靜靜退回空白頁面，不是錯誤。
+
+**重切時沒勾「保留原稿」，等於把上一次留的原稿刪掉**：`begin` 一律先清 `layersrc/<id>/`。理由跟清舊磚一樣——留著跟這一版對不起來的原稿，比沒有更危險。
+
 ### 8.8 尚未完成
 
-- 切完的圖磚**無法載回編輯**，原稿也不會留在伺服器上。要改就得自己留著本機的來源檔重切一次。
+- 沒留原稿的圖層仍然**無法載回編輯**。可行的降級路徑是把已落地的圖磚拼回一張大圖再當單一來源重切，但拼回來的是壓平後的結果，分層已經回不去了。
+- 匯出 ZIP 還沒分「含原稿」與「僅圖磚」兩種，目前一律只帶圖磚。
 - 向量圖層還沒有對應的 `MapLayer` 子類。想要「道路粗細可調」就得走向量：protomaps-leaflet 是 `L.GridLayer`，不必離開 Leaflet，接成一個新子類即可。
 
-## 九、命名與品牌
+## 九、網址表：`api/routes.php`
+
+網址長什麼樣，全站只寫在一個檔案裡。`Route` 同時負責**拆**（`index.php` 收到請求時）與**組**（其他檔案要產生連結時），兩邊共用同一組常數，所以不會出現「拆得開卻組不回去」的歪斜。
+
+```
+<base>/manager                          全部地圖總覽（登入後的落點）
+<base>/manager/<pane>                   總覽的分頁
+<base>/manager/<mapid>                  單張地圖
+<base>/manager/<mapid>/<pane>           分頁：overview｜records｜access｜tools
+<base>/manager/logout                   登出
+<base>/manager/backup.zip               全站備份
+<base>/manager/<mapid>/backup.zip       單張地圖備份
+<base>/manager/packs/<id>.zip           主題包匯出
+<base>/manager/layers/<id>.zip          全站圖層匯出
+<base>/manager/<mapid>/layers/<id>.zip  專案圖層匯出
+```
+
+要產生網址就呼叫 `Route::manager()`／`Route::logout()`／`Route::backupAll()`／`Route::backupProject()`／`Route::backupPack()`／`Route::backupLayer()`／`Route::tool()`／`Route::map()`／`Route::api()`，**不要自己黏字串**。前端也一樣：`view.php` 把 `Route::manager($proj)` 放進 `APP.manager`，`viewer.leaflet.js` 讀 `MANAGER_URL` 就好。
+
+之所以要這一層，是因為原本沒有：`?api=admin` 光一支 `admin.php` 就出現 47 次，「還原掛載根目錄」那段計算被複製了七份（其中兩份的邊界情況還算得不一樣）。改一次網址形狀就得全域搜尋改一輪，漏改的地方不會報錯，只會在某些部署下靜靜連到錯的地方。
+
+幾個刻意的決定：
+
+- **後台自成一區**，單張地圖掛在總覽底下（`/manager/<mapid>`），而不是掛在地圖底下（`/<mapid>/manager`）。「管全部」才是登入後的落點，它需要一個自己的根；地圖代號是它的下一層。
+- **分頁寫在路徑裡**，不是 fragment，這樣才貼得出「你看這頁」的連結、重新整理也停在原地。切換分頁本身不重新載入（各分頁早就一起渲染好了），只用 `history.replaceState()` 換網址，而那些網址一樣是 `Route::manager()` 產生後塞進前端的 `PANE_URL`。舊的 `#tools` 書籤仍然認得。
+- **`backup.zip` 用副檔名而不是 `?backup=1`**：地圖代號只允許 `[a-z0-9_-]`，含點的字串永遠不可能跟它撞名，而且瀏覽器與使用者一看就知道那是下載。
+- **地圖代號撞到保留字時，真實資料優先**。`Route::parseManager()` 收一個 `$isProject` 回呼（由 `index.php` 提供，實作是「`projects/<id>/` 在不在」），所以一張真的叫 `tools` 的地圖仍然打得開（`/manager/tools`），代價是總覽的工具分頁得寫成 `/manager/tools/tools`。反過來用保留字黑名單的話，那張地圖會永遠打不開——那才是真的壞掉。
+- **`?api=photo` 這類資料出口維持 query 形式**（`Route::api()`）。它們不是「頁面」，參數本身含斜線（`f=<project>/<file>`），改成路徑只是多一層轉義。
+- **舊網址不打斷**：`?api=admin`、`/admin`、`/<mapid>/manager|admin|edit` 都還在，`admin.php` 對 **GET** 回 302 導向正規形式。只導 GET——POST 帶著表單內容，302 會把 body 丟掉；下載類請求也不導，那不是「頁面」，導了只是讓瀏覽器多跑一趟。
+- **掛載根目錄 `Route::base()` 只算一次**：不能用「目前網址去掉 query」代替，後台可能是從 `/manager/<mapid>/tools` 這種深路徑進來的，那樣算出來的 base 會多黏幾段，組出來的公開網址與分享連結會整個是壞的。
+
+## 十、命名與品牌
 
 - 平台：**Souliong｜循跡**（原創詞，靈感取自客語拼音音韻與 Soul＝地方精神；非客語單字）。
 - Slogan：Every place leaves traces. Every trace tells a story.（每個地方都留下痕跡，每一道痕跡都有故事。）

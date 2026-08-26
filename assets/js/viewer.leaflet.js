@@ -13,6 +13,9 @@ window.MapApp = (() => {
   const PROJECT = (APP.project || params.get('p') || 'chairs').replace(/[^a-z0-9_-]/gi, '');
   const EMBED = !!(APP.embed) || params.get('embed') === '1';
   const apiUrl = (action) => APP.base + '?api=' + action;
+  // 後台網址由伺服器端的 Route::manager() 算好塞進 APP.manager；前端不自己拼路徑，
+  // 後台網址形狀要改時只動 api/routes.php 一個檔案。
+  const MANAGER_URL = APP.manager || '';
   const catOrder = ['green', 'pink', 'blue'];
 
   // 這張地圖的投稿設定（由 view.php 依 souliong_contrib_cfg() 算好塞進 APP.contrib）。
@@ -393,7 +396,7 @@ window.MapApp = (() => {
       const fd = new FormData();
       fd.append('action', 'admin_redeem'); fd.append('project', pendingRedeem.project);
       fd.append('token', pendingRedeem.token); fd.append('pin', pin); fd.append('label', label);
-      const res = await fetch(apiUrl('admin'), { method: 'POST', body: fd });
+      const res = await fetch(MANAGER_URL, { method: 'POST', body: fd });
       const j = await res.json().catch(() => ({}));
       if (res.ok && j.ok) {
         pendingRedeem = null;
@@ -1558,11 +1561,11 @@ window.MapApp = (() => {
     if (!pin) return;
     try {
       const fd = new FormData(); fd.append('action', 'login'); fd.append('json', '1'); fd.append('pin', pin); fd.append('project', PROJECT);
-      const res = await fetch(APP.base + '?api=admin', { method: 'POST', body: fd });
+      const res = await fetch(MANAGER_URL, { method: 'POST', body: fd });
       const j = await res.json().catch(() => ({}));
       if (res.ok && j.ok) {
         if (j.label) { try { localStorage.setItem('myName', j.label); } catch (e) {} }
-        closePin(); location.href = APP.base + encodeURIComponent(PROJECT) + '/manager'; return;
+        closePin(); location.href = MANAGER_URL; return;
       }
     } catch (e) {}
     if (input) { input.value = ''; input.dispatchEvent(new Event('input')); }

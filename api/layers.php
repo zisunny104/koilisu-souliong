@@ -95,6 +95,68 @@ function souliong_layer_dir(array $cfg, string $id, string $proj = ''): ?string
 }
 
 /**
+ * 「保留原稿」的落點：`projects/<proj>/layersrc/<id>/`，跟圖磚那份 `layers/<id>/` 是兄弟目錄。
+ * 裡面放 `edit.json`（整疊圖片的位置與設定）與工具自己命名的原稿檔（`p0.png`、`p1.webp`…）。
+ *
+ * 為什麼擺在圖層搜尋路徑「之外」，而不是放進圖層資料夾裡再加一條黑名單：layerfile.php 的
+ * 把關是副檔名白名單，而原稿本身就是合法圖檔——只要放得到那底下，網址猜對就送得出去，一張
+ * 沒公開過的高解析手稿因此外流。結構上拿不到，比規則上不准拿可靠。原稿一律走
+ * `tilecut.php?action=srcfile`，那條路查的是專案管理權。
+ *
+ * 只有專案層有原稿。全站層進版控，數十 MB 的手稿本來就不該塞進 repo。
+ */
+function souliong_layersrc_dir(array $cfg, string $proj, string $id): ?string
+{
+    $pdir = rtrim((string)($cfg['projects_dir'] ?? ''), "/\\");
+    if ($pdir === '' || !preg_match('/^[a-z0-9_-]+$/', $proj) || !preg_match('/^[a-z0-9][a-z0-9_-]{0,31}$/', $id)) {
+        return null;
+    }
+    return $pdir . '/' . $proj . '/layersrc/' . $id;
+}
+
+/** 這一層留著可以載回重編的原稿嗎。後台要靠它決定顯不顯示「重新編輯」。 */
+function souliong_layersrc_editable(array $cfg, string $proj, string $id): bool
+{
+    $d = souliong_layersrc_dir($cfg, $proj, $id);
+    return $d !== null && is_file($d . '/edit.json');
+}
+
+/**
+ * 原稿佔多少空間。上傳每一塊之前都會問一次，所以只數這一層自己的檔案（不遞迴，本來就是平的）。
+ */
+function souliong_layersrc_bytes(?string $dir): int
+{
+    if ($dir === null || !is_dir($dir)) {
+        return 0;
+    }
+    $sum = 0;
+    foreach (scandir($dir) ?: [] as $e) {
+        $p = $dir . '/' . $e;
+        if ($e !== '.' && $e !== '..' && !is_link($p) && is_file($p)) {
+            $sum += (int)filesize($p);
+        }
+    }
+    return $sum;
+}
+
+/**
+ * 原稿的體積上限：單檔與單層各一個。
+ *
+ * 會設上限是因為這條路徑跟圖磚不同——圖磚是工具切出來的、大小可預期，原稿是使用者手上的檔案，
+ * 一張 A1 掃描稿就可能上百 MB，而 projects/ 通常跟照片共用同一顆硬碟。超過就當場說不行，
+ * 比事後發現硬碟滿了、投稿的照片存不進去要好。
+ */
+function souliong_layersrc_limits(array $cfg): array
+{
+    $file  = (int)($cfg['layersrc_max_file'] ?? 0);
+    $total = (int)($cfg['layersrc_max_total'] ?? 0);
+    return [
+        'file'  => $file > 0 ? $file : 64 * 1024 * 1024,
+        'total' => $total > 0 ? $total : 256 * 1024 * 1024,
+    ];
+}
+
+/**
  * 沒有自己指定圖層的地圖套用哪一組。
  *
  * 預設值不是空陣列而是 ['carto-voyager']：這是「圖層化之前寫死在 viewer.leaflet.js 裡的

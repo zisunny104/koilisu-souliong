@@ -53,7 +53,7 @@ php -S localhost:8000                      # 或掛你的 Nginx/PHP-FPM
 ```
 點位每筆：`num, theme, area, chair, material, lat, lon, cat, catLabel, color, story`。詳見 [EXTENDING.md](docs/EXTENDING.md)（投稿型別、模組開關、圖層系統）。
 
-網址：`/koilisu/souliong/<id>`；`/koilisu/souliong/` 首頁自動列出所有地圖。
+網址：`/koilisu/souliong/<id>`；`/koilisu/souliong/` 首頁自動列出所有地圖；後台在 `/koilisu/souliong/manager`。
 
 ## 投稿碼（給參與者上傳）
 
@@ -63,7 +63,7 @@ php -S localhost:8000                      # 或掛你的 Nginx/PHP-FPM
 
 ## 管理後台 · PIN 權限
 
-- 進入：地圖頁**連點標題**（點→線→…→六角）叫出 PIN 面板，或首頁**連點 logo**；輸入 PIN。PIN 走 POST、以 httpOnly cookie 保持登入，**不進網址**。
+- 進入：直接開 `<base>/manager`，或在地圖頁**連點標題**（點→線→…→六角）叫出 PIN 面板、首頁**連點 logo**；輸入 PIN。PIN 走 POST、以 httpOnly cookie 保持登入，**不進網址**。登入後的落點是全部地圖總覽，單張地圖在 `<base>/manager/<mapid>`。
 - **雙層 PIN（很多房間鎖 + 一把 Master Key）**：
   - **主 PIN**：`config.admin_pin` ＋ 後台可再新增多把（各可加暱稱）。開**所有專案**、擁有全部權限。
   - **專案 PIN**：每個專案可設**多把**（各可加暱稱），只能管理**該專案**；預設不能動別人投稿的內容，主 PIN 可個別授權權限旗標：`delete_others`（刪別人投稿）、`edit_others`（改別人投稿）、`edit_points`（改定位點）、`delegate_admin`（可建立「管理PIN」型分享連結）。

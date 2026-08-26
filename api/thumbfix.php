@@ -5,6 +5,7 @@
 require __DIR__ . '/store.php';
 require __DIR__ . '/security.php';
 require __DIR__ . '/i18n.php';
+require_once __DIR__ . '/routes.php';   // 網址表：後台網址只有這一份定義（見 api/routes.php）
 $cfg = require __DIR__ . '/config.php';
 rate_limit($cfg, 'admin');
 [$LANG, $DICT] = i18n_init();
@@ -12,15 +13,10 @@ $t  = fn(string $key, array $vars = []): string => htmlspecialchars(i18n_t($DICT
 $tr = fn(string $key, array $vars = []): string => i18n_t($DICT, $key, $vars);
 $esc = fn($s) => htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8');
 
-// 還原 app 掛載根目錄，組「回後台」連結用（理由同 exiffix.php：不能用相對的 ?api=admin）
-$appName = $_APP['name'] ?? basename(dirname(__DIR__));
-$reqPathOnly = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH);
-$appMarkerPos = strpos($reqPathOnly, '/' . $appName);
-$basePath = $appMarkerPos !== false ? rtrim(substr($reqPathOnly, 0, $appMarkerPos + strlen($appName) + 1), '/') . '/' : '/';
-$origin = ((!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http') . '://' . ($_SERVER['HTTP_HOST'] ?? '');
-// 從哪個專案點進來就回哪個專案（後台工具連結會帶 ?project=），沒帶就回全站總覽，不硬塞一個專案；一律回工具分頁（#tools）
+// 「回後台」連結一律由 Route 產生（理由同 exiffix.php：相對網址會被路由誤判）
+// 從哪個專案點進來就回哪個專案（後台的工具連結會帶 ?project=），沒帶就回全站總覽；一律回工具分頁
 $backProject = preg_replace('/[^a-z0-9_-]/', '', $_GET['project'] ?? '');
-$adminUrl = $esc($origin . $basePath . '?api=admin' . ($backProject !== '' ? '&project=' . urlencode($backProject) : '') . '#tools');
+$adminUrl = $esc(Route::abs(Route::manager($backProject, 'tools')));
 
 if (!admin_authed($cfg)) {
     http_response_code(401);
@@ -335,8 +331,8 @@ $reqProject = preg_replace('/[^a-z0-9_-]/', '', $_GET['project'] ?? ($allProject
 
 <body>
   <div class="langsw">
-    <a href="?<?= $backProject !== '' ? 'project=' . rawurlencode($backProject) . '&' : '' ?>lang=zh_TW" class="<?= $LANG === 'zh_TW' ? 'on' : '' ?>">中文</a>
-    <a href="?<?= $backProject !== '' ? 'project=' . rawurlencode($backProject) . '&' : '' ?>lang=en" class="<?= $LANG === 'en' ? 'on' : '' ?>">English</a>
+    <a href="<?= $esc(Route::tool('thumbfix', $backProject, ['lang' => 'zh_TW'])) ?>" class="<?= $LANG === 'zh_TW' ? 'on' : '' ?>">中文</a>
+    <a href="<?= $esc(Route::tool('thumbfix', $backProject, ['lang' => 'en'])) ?>" class="<?= $LANG === 'en' ? 'on' : '' ?>">English</a>
   </div>
   <div class="wrap">
     <h1><i class="fa-solid fa-images"></i> <?= $t('thumbfix_h1') ?></h1>
@@ -374,7 +370,7 @@ $reqProject = preg_replace('/[^a-z0-9_-]/', '', $_GET['project'] ?? ($allProject
     const fmt = (str, vars) => str.replace(/\{(\w+)\}/g, (_, k) => (vars[k] != null ? vars[k] : ''));
     const csrf = <?= json_encode($csrf) ?>;
     // 跨端點請求一律用絕對 base：這頁可能是從 <base>/thumbfix 路徑進來的，相對 ?api= 會被路徑路由搶走
-    const BASE = <?= json_encode($origin . $basePath) ?>;
+    const BASE = <?= json_encode(Route::abs(Route::base()), JSON_UNESCAPED_SLASHES) ?>;
     const THUMB_MAX = 640, THUMB_Q = 0.78;   // 跟前端上傳的縮圖規格一致
     const go = document.getElementById('go');
     const statusEl = document.getElementById('status');

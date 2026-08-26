@@ -10,6 +10,7 @@
 require __DIR__ . '/store.php';
 require __DIR__ . '/security.php';
 require __DIR__ . '/i18n.php';
+require_once __DIR__ . '/routes.php';   // 網址表：後台網址只有這一份定義（見 api/routes.php）
 $cfg = require __DIR__ . '/config.php';
 rate_limit($cfg, 'admin');
 [$LANG, $DICT] = i18n_init();
@@ -17,18 +18,12 @@ $t  = fn(string $key, array $vars = []): string => htmlspecialchars(i18n_t($DICT
 $tr = fn(string $key, array $vars = []): string => i18n_t($DICT, $key, $vars);
 $esc = fn($s) => htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8');
 
-// 還原 app 掛載根目錄，組「回後台」連結用──不能用相對的 ?api=admin：
-// 這支工具本身就是走 /exiffix 這個路徑進來的，若後台是用 /<project>/manager 這種路徑式網址開的，
-// 相對連結會被路由誤判成同一個專案頁面，回不去後台首頁。
-$appName = $_APP['name'] ?? basename(dirname(__DIR__));
-$reqPathOnly = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH);
-$appMarkerPos = strpos($reqPathOnly, '/' . $appName);
-$basePath = $appMarkerPos !== false ? rtrim(substr($reqPathOnly, 0, $appMarkerPos + strlen($appName) + 1), '/') . '/' : '/';
-$origin = ((!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http') . '://' . ($_SERVER['HTTP_HOST'] ?? '');
-// 從哪個專案點進來就回哪個專案（後台工具連結會帶 ?project=），沒帶就回全站總覽，不硬塞一個專案；
-// 一律回工具分頁（#tools），不是回後台第一頁的「總覽」──不然等於又是一次「跳到別的地方」。
+// 「回後台」連結一律由 Route 產生（見 api/routes.php），不寫相對網址：這支工具本身是走
+// /exiffix 這個路徑進來的，相對連結會被路由誤判成同一個專案底下的動作，回不去後台。
+// 從哪個專案點進來就回哪個專案（後台的工具連結會帶 ?project=），沒帶就回全站總覽，不硬塞一個專案；
+// 一律回工具分頁，不是回後台第一頁的「總覽」──不然等於又是一次「跳到別的地方」。
 $backProject = preg_replace('/[^a-z0-9_-]/', '', $_GET['project'] ?? '');
-$adminUrl = $esc($origin . $basePath . '?api=admin' . ($backProject !== '' ? '&project=' . urlencode($backProject) : '') . '#tools');
+$adminUrl = $esc(Route::abs(Route::manager($backProject, 'tools')));
 
 if (!admin_authed($cfg)) {
     http_response_code(401);
@@ -441,8 +436,8 @@ $reqProject = preg_replace('/[^a-z0-9_-]/', '', $_GET['project'] ?? ($allProject
 
 <body>
   <div class="langsw">
-    <a href="?<?= $backProject !== '' ? 'project=' . rawurlencode($backProject) . '&' : '' ?>lang=zh_TW" class="<?= $LANG === 'zh_TW' ? 'on' : '' ?>">中文</a>
-    <a href="?<?= $backProject !== '' ? 'project=' . rawurlencode($backProject) . '&' : '' ?>lang=en" class="<?= $LANG === 'en' ? 'on' : '' ?>">English</a>
+    <a href="<?= $esc(Route::tool('exiffix', $backProject, ['lang' => 'zh_TW'])) ?>" class="<?= $LANG === 'zh_TW' ? 'on' : '' ?>">中文</a>
+    <a href="<?= $esc(Route::tool('exiffix', $backProject, ['lang' => 'en'])) ?>" class="<?= $LANG === 'en' ? 'on' : '' ?>">English</a>
   </div>
   <div class="wrap">
     <h1><i class="fa-solid fa-kit-medical"></i> <?= $t('exiffix_h1') ?></h1>

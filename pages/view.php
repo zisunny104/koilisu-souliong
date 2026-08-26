@@ -4,18 +4,8 @@
  * ?embed=1 → 精簡檢視模式（僅供瀏覽）。?p=<project> → 切換項目。
  */
 $cfg = include __DIR__ . '/../config.php';
-$appName = $_APP['name'] ?? basename(dirname(__DIR__));
-$path = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH);
-$needle = '/' . $appName;
-$i = strpos($path, $needle);
-if ($i !== false) {
-    $base = substr($path, 0, $i + strlen($needle)) . '/';
-} else {
-    $base = dirname($path);
-}
-$base = str_replace('\\', '/', $base);
-$base = '/' . trim($base, '/');
-$base = ($base === '/') ? '/' : $base . '/';
+require_once __DIR__ . '/../api/routes.php';   // 網址表：掛載根目錄與各種網址的算法，全站只有這一份
+$base = Route::base();
 
 $b       = htmlspecialchars($base, ENT_QUOTES);
 $embed   = (($_GET['embed'] ?? '') === '1');
@@ -67,6 +57,9 @@ if ($contribFiles && ($contribCfg['newPoint'] === 'contributor' || ($contribCfg[
 
 $APP = [
     'base'        => $base,
+    // 這張地圖的後台網址。前端有三個地方要用到（登入 POST、邀請兌換 POST、登入後跳轉），
+    // 由伺服器端算好給它，網址形狀就只寫在 api/routes.php 一處。
+    'manager'     => Route::manager($proj),
     'project'     => $proj,
     'embed'       => $embed,
     'gated'       => $gated,
