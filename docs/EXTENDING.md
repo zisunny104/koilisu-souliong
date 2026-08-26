@@ -417,7 +417,7 @@ CSS 全部前綴 `.stat-card .col`，因為要蓋過同層的 `.stat-card .col o
 
 - 沒留原稿的圖層仍然**無法載回編輯**。可行的降級路徑是把已落地的圖磚拼回一張大圖再當單一來源重切，但拼回來的是壓平後的結果，分層已經回不去了。
 - 匯出 ZIP 還沒分「含原稿」與「僅圖磚」兩種，目前一律只帶圖磚。
-- 向量圖層還沒有對應的 `MapLayer` 子類。想要「道路粗細可調」就得走向量：protomaps-leaflet 是 `L.GridLayer`，不必離開 Leaflet，接成一個新子類即可。
+- 向量圖層還沒有對應的 `MapLayer` 子類。想要「道路粗細可調」就得走向量：protomaps-leaflet 是 `L.GridLayer`，不必離開 Leaflet，接成一個新子類即可。**注意這跟 8.10 的「保持向量」不是同一件事**——8.10 是單張 SVG 原封不動當 `type:"image"` 疊圖用，本質還是點陣模型裡的一張圖；這裡講的是真正的向量*圖磚*（`.pbf`/`.mvt` 那種，樣式在瀏覽器端即時渲染），兩者的資料模型完全不同。目前刻意排在其他圖磚來源支援之後，不急著做。
 
 ### 8.9 主題包的兩層作用域
 
@@ -444,6 +444,22 @@ CSS 全部前綴 `.stat-card .col`，因為要蓋過同層的 `.stat-card .col o
 「編輯專案描述」對話框的包下拉選單現在也是 `souliong_pack_list($cfg, $proj)`——專案自己的包會出現在清單裡，並標注「本地圖專屬」（沿用圖層清單同一顆翻譯字串 `layer_scope_project`，文字本來就是通用的，沒有另外開一顆 `pack_scope_project`）。全站預設下拉（「工具」分頁的 `site_pack`）刻意維持 `souliong_pack_list($cfg)`（不帶 `$proj`）——全站預設本來就只該從全站包裡選，不然某張地圖刪掉自己的專案包後，其他地圖的全站預設會突然解析不到。
 
 `Route::backupPack($packId, $project = '')` 現在也有第二個參數，網址形狀比照 `Route::backupLayer()`：`<base>/manager/packs/<id>.zip`（全站）／`<base>/manager/<project>/packs/<id>.zip`（專案），`Route::parseManager()` 對應加了一條專案層的 `PACKS` 分支。
+
+### 8.10 保持向量輸出
+
+`layer.json` 的 `type:"image"`（`imageOverlay`）從一開始就跟 `type:"raster"`（`tileLayer`）一樣是一等公民（見 8.3）——`layerfile.php`、`admin.php`、前端 viewer 全都同時支援兩種。8.7 一直沒有的，只是**產生**一份 `type:"image"` manifest 的路：`tilecut.php` 原本永遠切磚、永遠輸出 `type:"raster"`。這裡補的是產生端，不是消費端。
+
+**適用條件**：清單裡剛好一張、而且是 SVG。前端 `vectorEligible()`／`vectorActive()`（`api/tilecut.php` 內嵌 script）判斷是否顯示「保持向量」核取方塊；伺服器端在 `finish` 動作裡獨立再驗一次——`$_POST['vector']` 非空時要求 `edit.pieces` 剛好一筆、且檔名符合 `/^p\d{1,2}\.svg$/`，兩者有一個不成立就回 `tilecut_vector_bad_source_msg`（400）。前端的判斷只是省一次來回，真正擋壞資料的是後者。
+
+**輸出的差異**：勾起來之後，`finish` 不進切磚迴圈，也不呼叫 `estimate()` 算圖磚數；直接把已經上傳好的原稿（`layersrc/<id>/p0.svg`）**複製**（不是搬移）成 `layers/<id>/vector.svg`，manifest 寫 `type:"image"`、`url:"vector.svg"`，不含 `minZoom`／`maxNativeZoom`／`maxZoom`（`type:"image"` 本來就不看這幾欄）。`opacity` 是圖層不透明度乘上這張圖自己的不透明度（清單裡每張圖都能個別調，即使只有一張）。
+
+**複製而不是搬移**是刻意的：`layersrc/<id>/` 本來就是「保留原稿」機制落地的地方，複製一份出來當圖層本體，原稿還留在原處，8.7 的「重新編輯」（`?load=<id>` → `loadEdit()`）完全不用另外處理就自動能用。也因為原稿本身就是圖層本體，**保持向量模式下「保留原稿」核取方塊會被強制隱藏**（`applyVectorUI()` 連帶隱藏 `#keepsrcrow`／`#keepsrchint`）——這不是使用者可以選的事，`uploadSources()` 在向量模式下一律帶 `force=true` 送出原稿，不看 `#keepsrc` 的勾選狀態。
+
+**`edit.json` 的差異**：向量模式寫入的 `layer` 子物件不含 `ext`／`minZoom`／`maxZoom`（沒有切磚，這幾欄沒有意義）。`loadEdit()` 就是靠**這幾欄不存在**反推「上一版是保持向量輸出」，回填時把 `#vecmode` 核取方塊勾回去（見 script 內對應註解）——`edit.json` 本身沒有存一個明確的 `mode` 欄位，是靠欄位的有無倒推的，改動這幾欄的寫入邏輯時要留意這個隱性耦合。
+
+**在 `raster` 與 `vector` 之間切換**：同一個圖層 id 從向量模式改回一般切磚模式（或反過來）時，`begin` 動作在 `overwrite=1` 時會清掉舊有的 `layers/<id>/vector.svg`，避免它變成孤兒檔案——新版 `layer.json` 已經改指向 `tiles/`，但沒人會再去讀 `vector.svg`，它就只是佔空間又容易讓人誤會目前是哪個模式。
+
+**沒有動到的部分**：`layerfile.php`、`admin.php`、`pages/view.php`、viewer 端的 `MapLayer` 相關程式碼全部不用改——`type:"image"` 的讀取、後台圖層清單顯示、匯出 ZIP，這些機制在這次改動之前就已經對兩種 `type` 一視同仁。
 
 ## 九、網址表：`api/routes.php`
 

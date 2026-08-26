@@ -113,6 +113,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'begin
     if ($sdir !== null && is_dir($sdir) && !souliong_layer_rmtree($sdir, dirname($sdir))) {
         json_out(['error' => $tr('tilecut_clear_failed_msg')], 500);
     }
+    // 上一版若是「保持向量」，這一版改切磚時，vector.svg 不會被上面兩段清到，會變成孤兒檔：
+    // layer.json 已經改指向 tiles/，但它還留在資料夾裡，得在這裡順手清掉。
+    if ($existed && is_file($dir . '/vector.svg') && !@unlink($dir . '/vector.svg')) {
+        json_out(['error' => $tr('tilecut_clear_failed_msg')], 500);
+    }
     if (!is_dir($dir) && !@mkdir($dir, 0775, true)) {
         json_out(['error' => $tr('tilecut_mkdir_failed_msg')], 500);
     }
@@ -277,47 +282,87 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'finis
     $w = $num('west');
     $n = $num('north');
     $e = $num('east');
-    $z0 = max(0, min(24, (int)$num('minZoom')));
-    $z1 = max(0, min(24, (int)$num('maxZoom')));
     // 邊界的合理範圍由 souliong_layer_bounds_valid() 定義（Web Mercator 在南北極附近發散），
     // 後台的就地編輯用同一支，兩邊對「畫得出來」的定義才會一致。
-    if (!souliong_layer_bounds_valid($s, $w, $n, $e) || $z0 > $z1) {
+    if (!souliong_layer_bounds_valid($s, $w, $n, $e)) {
         json_out(['error' => $tr('tilecut_bad_bounds_msg')], 400);
     }
-    $ext = in_array($_POST['ext'] ?? '', ['png', 'webp'], true) ? $_POST['ext'] : 'png';
     $pane = in_array($_POST['pane'] ?? '', souliong_layer_panes(), true) ? $_POST['pane'] : 'art';
     $label = trim((string)($_POST['label'] ?? ''));
-    $count = max(0, (int)$num('count'));
-    $manifest = [
-        'label' => mb_substr($label !== '' ? $label : $id, 0, 60),
-        'desc'  => $tr('tilecut_manifest_desc', ['at' => gmdate('Y-m-d H:i') . ' UTC', 'tiles' => $count]),
-        'type'  => 'raster',
-        'pane'  => $pane,
-        'url'   => 'tiles/{z}/{x}/{y}.' . $ext,
-        'bounds' => [[$s, $w], [$n, $e]],
-        'minZoom' => $z0,
-        // 切到哪一級就 maxNativeZoom 到哪一級，maxZoom 再放寬：再放大時 Leaflet 會把最後一級
-        // 拉伸上去，總比整層消失好（手繪稿放大本來就是糊的，使用者預期得到）。
-        'maxNativeZoom' => $z1,
-        'maxZoom' => min(24, $z1 + 4),
-        'opacity' => max(0.0, min(1.0, $num('opacity', 1.0))),
-    ];
+    $opacity = max(0.0, min(1.0, $num('opacity', 1.0)));
     $attr = trim((string)($_POST['attribution'] ?? ''));
-    if ($attr !== '') {
-        $manifest['attribution'] = mb_substr($attr, 0, 500);
+    $sdir = souliong_layersrc_dir($cfg, $project, $id);
+    $edit = json_decode((string)($_POST['edit'] ?? ''), true);
+    $editList = is_array($edit) && is_array($edit['pieces'] ?? null) ? $edit['pieces'] : [];
+    $isVector = !empty($_POST['vector']);
+
+    if ($isVector) {
+        // 保持向量：只吃「剛好一張、而且是 SVG」的原稿——多張要合成、非 SVG 要點陣化，
+        // 兩種都超出「直接把來源當圖層本體」這條路能做的事，UI 本來就只在單張 SVG 時才會送這個旗標，
+        // 這裡再驗一次是因為端點不信任前端剛剛送了什麼。
+        if ($sdir === null || !is_dir($sdir) || count($editList) !== 1) {
+            json_out(['error' => $tr('tilecut_vector_bad_source_msg')], 400);
+        }
+        $pc = $editList[0];
+        $file = is_array($pc) ? (string)($pc['file'] ?? '') : '';
+        if (!preg_match('/^p\d{1,2}\.svg$/', $file) || !is_file($sdir . '/' . $file)) {
+            json_out(['error' => $tr('tilecut_vector_bad_source_msg')], 400);
+        }
+        // 複製而非搬移：原稿留在 layersrc，「重新編輯」才吃得到它。
+        if (!@copy($sdir . '/' . $file, $dir . '/vector.svg')) {
+            json_out(['error' => $tr('tilecut_mkdir_failed_msg')], 500);
+        }
+        $pieceOpacity = max(0.0, min(1.0, is_numeric($pc['opacity'] ?? null) ? (float)$pc['opacity'] : 1.0));
+        $manifest = [
+            'label' => mb_substr($label !== '' ? $label : $id, 0, 60),
+            'desc'  => $tr('tilecut_vector_manifest_desc', ['at' => gmdate('Y-m-d H:i') . ' UTC']),
+            'type'  => 'image',
+            'pane'  => $pane,
+            'url'   => 'vector.svg',
+            'bounds' => [[$s, $w], [$n, $e]],
+            'opacity' => max(0.0, min(1.0, $opacity * $pieceOpacity)),
+        ];
+        if ($attr !== '') {
+            $manifest['attribution'] = mb_substr($attr, 0, 500);
+        }
+        $manifest['generated'] = ['tool' => 'tilecut', 'at' => gmdate('c'), 'mode' => 'vector'];
+    } else {
+        $z0 = max(0, min(24, (int)$num('minZoom')));
+        $z1 = max(0, min(24, (int)$num('maxZoom')));
+        if ($z0 > $z1) {
+            json_out(['error' => $tr('tilecut_bad_bounds_msg')], 400);
+        }
+        $ext = in_array($_POST['ext'] ?? '', ['png', 'webp'], true) ? $_POST['ext'] : 'png';
+        $count = max(0, (int)$num('count'));
+        $manifest = [
+            'label' => mb_substr($label !== '' ? $label : $id, 0, 60),
+            'desc'  => $tr('tilecut_manifest_desc', ['at' => gmdate('Y-m-d H:i') . ' UTC', 'tiles' => $count]),
+            'type'  => 'raster',
+            'pane'  => $pane,
+            'url'   => 'tiles/{z}/{x}/{y}.' . $ext,
+            'bounds' => [[$s, $w], [$n, $e]],
+            'minZoom' => $z0,
+            // 切到哪一級就 maxNativeZoom 到哪一級，maxZoom 再放寬：再放大時 Leaflet 會把最後一級
+            // 拉伸上去，總比整層消失好（手繪稿放大本來就是糊的，使用者預期得到）。
+            'maxNativeZoom' => $z1,
+            'maxZoom' => min(24, $z1 + 4),
+            'opacity' => $opacity,
+        ];
+        if ($attr !== '') {
+            $manifest['attribution'] = mb_substr($attr, 0, 500);
+        }
+        // 這一段純粹是留給人看的來歷：哪支工具、什麼時候、幾張磚。程式不讀它。
+        $manifest['generated'] = ['tool' => 'tilecut', 'at' => gmdate('c'), 'tiles' => $count, 'pieces' => max(1, (int)$num('pieces', 1))];
     }
-    // 這一段純粹是留給人看的來歷：哪支工具、什麼時候、幾張磚。程式不讀它。
-    $manifest['generated'] = ['tool' => 'tilecut', 'at' => gmdate('c'), 'tiles' => $count, 'pieces' => max(1, (int)$num('pieces', 1))];
+
     $json = json_encode($manifest, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
     if (@file_put_contents($dir . '/layer.json', $json, LOCK_EX) === false) {
         json_out(['error' => $tr('tilecut_mkdir_failed_msg')], 500);
     }
     // ── 保留原稿：把整疊的位置與設定寫成 edit.json ──
-    // 圖磚是壓平後的結果，壓平是不可逆的：少了這一份，下次想把某一張往東挪三公尺就只能整套重來。
+    // 圖磚（或向量輸出）是壓平後的結果，壓平是不可逆的：少了這一份，下次想把某一張往東挪三公尺就只能整套重來。
     // 只有原稿真的落地了才寫——沒有圖片的 edit.json 只會讓後台長出一顆按了沒東西的「重新編輯」。
-    $sdir = souliong_layersrc_dir($cfg, $project, $id);
-    $edit = json_decode((string)($_POST['edit'] ?? ''), true);
-    if ($sdir !== null && is_dir($sdir) && is_array($edit) && is_array($edit['pieces'] ?? null)) {
+    if ($sdir !== null && is_dir($sdir) && $editList) {
         $names = [];
         foreach (scandir($sdir) ?: [] as $e2) {
             if (preg_match('/^\.p\d{1,2}$/', $e2)) {
@@ -329,7 +374,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'finis
         // 逐欄重建，不直接把對方送來的 JSON 寫進去：這份檔案下次會被讀回來當成工具的狀態，
         // 原封不動存起來等於把「使用者送什麼就吃什麼」延後到下一次開啟才發作。
         $ps = [];
-        foreach ($edit['pieces'] as $pc) {
+        foreach ($editList as $pc) {
             $f = is_array($pc) ? (string)($pc['file'] ?? '') : '';
             if (!isset($names[$f])) {
                 continue;   // 檔案沒落地就不記，免得載回來是一排破圖
@@ -350,19 +395,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'finis
             ];
         }
         if ($ps) {
+            $layerEdit = [
+                'label'       => $manifest['label'],
+                'pane'        => $pane,
+                'opacity'     => $opacity,
+                'attribution' => $manifest['attribution'] ?? '',
+            ];
+            if (!$isVector) {
+                $layerEdit['ext']     = $ext;
+                $layerEdit['minZoom'] = $z0;
+                $layerEdit['maxZoom'] = $z1;
+            }
             $doc = [
                 'v'      => 1,
                 'tool'   => 'tilecut',
                 'at'     => gmdate('c'),
-                'layer'  => [
-                    'label'       => $manifest['label'],
-                    'pane'        => $pane,
-                    'opacity'     => $manifest['opacity'],
-                    'attribution' => $manifest['attribution'] ?? '',
-                    'ext'         => $ext,
-                    'minZoom'     => $z0,
-                    'maxZoom'     => $z1,
-                ],
+                'layer'  => $layerEdit,
                 'pieces' => $ps,
             ];
             @file_put_contents(
@@ -372,7 +420,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'finis
             );
         }
     }
-    audit_log($cfg, $auditWho($project), 'layer_tilecut', $project, $id . ' x' . $count);
+    audit_log($cfg, $auditWho($project), 'layer_tilecut', $project, $id . ($isVector ? ' vector' : ' x' . $count));
     json_out(['ok' => true, 'id' => $id]);
 }
 
@@ -1039,12 +1087,18 @@ if ($loadId !== '' && $reqProject !== '') {
 
     <div class="card">
       <h2><i class="fa-solid fa-3"></i> <?= $t('tilecut_step_output') ?></h2>
-      <div class="row" style="margin-bottom:var(--sp-3)">
+      <div class="row" id="vecrow" style="display:none;margin-bottom:var(--sp-3)">
+        <label class="chk"><input type="checkbox" id="vecmode"> <?= $t('tilecut_vector_label') ?></label>
+      </div>
+      <div class="hint" id="vechint" style="display:none;margin-bottom:var(--sp-3)"><?= $t('tilecut_vector_hint') ?></div>
+      <div class="row" id="zoomtoolsrow" style="margin-bottom:var(--sp-3)">
         <button type="button" class="ghost" id="usenativez"><i class="fa-solid fa-wand-magic-sparkles"></i> <?= $t('tilecut_zoom_use_native_btn') ?></button>
       </div>
-      <div class="grid">
+      <div class="grid" id="zoomgrid">
         <div><label for="zmin"><?= $t('tilecut_zoom_min') ?></label><input type="number" id="zmin" min="0" max="22" step="1" value="12"></div>
         <div><label for="zmax"><?= $t('tilecut_zoom_max') ?></label><input type="number" id="zmax" min="0" max="22" step="1" value="17"></div>
+      </div>
+      <div class="grid">
         <div>
           <label for="pane"><?= $t('tilecut_pane_label') ?></label>
           <select id="pane">
@@ -1060,15 +1114,15 @@ if ($loadId !== '' && $reqProject !== '') {
         <label for="attr"><?= $t('tilecut_attr_label') ?></label>
         <input type="text" id="attr" maxlength="500">
       </div>
-      <div class="hint" style="margin-top:var(--sp-2)"><?= $t('tilecut_zoom_hint') ?></div>
+      <div class="hint" id="zoomhint" style="margin-top:var(--sp-2)"><?= $t('tilecut_zoom_hint') ?></div>
       <div class="hint" id="estimate" style="margin-top:var(--sp-3)"></div>
       <div class="row" style="margin-top:var(--sp-3)">
         <label class="chk"><input type="checkbox" id="overwrite" <?= $EDIT !== null ? 'checked' : '' ?>> <?= $t('tilecut_overwrite_label') ?></label>
       </div>
-      <div class="row" style="margin-top:var(--sp-2)">
+      <div class="row" id="keepsrcrow" style="margin-top:var(--sp-2)">
         <label class="chk"><input type="checkbox" id="keepsrc" checked> <?= $t('tilecut_keepsrc_label') ?></label>
       </div>
-      <div class="hint" style="margin-top:var(--sp-2)"><?= $t('tilecut_keepsrc_hint') ?></div>
+      <div class="hint" id="keepsrchint" style="margin-top:var(--sp-2)"><?= $t('tilecut_keepsrc_hint') ?></div>
       <div class="row" style="margin-top:var(--sp-3)">
         <button id="go"><i class="fa-solid fa-scissors"></i> <?= $t('tilecut_start_btn') ?></button>
         <button id="stop" class="ghost" disabled><i class="fa-solid fa-stop"></i> <?= $t('tilecut_stop_btn') ?></button>
@@ -1112,6 +1166,10 @@ if ($loadId !== '' && $reqProject !== '') {
       'src_size'     => i18n_t($DICT, 'tilecut_src_size_msg'),
       'src_upload'   => i18n_t($DICT, 'tilecut_src_uploading_msg'),
       'load_failed'  => i18n_t($DICT, 'tilecut_load_failed_msg'),
+      'start_cut'    => i18n_t($DICT, 'tilecut_start_btn'),
+      'start_vector' => i18n_t($DICT, 'tilecut_vector_start_btn'),
+      'vector_complete'   => i18n_t($DICT, 'tilecut_vector_complete_msg'),
+      'vector_bad_source' => i18n_t($DICT, 'tilecut_vector_bad_source_msg'),
     ], JSON_UNESCAPED_UNICODE) ?>;
     const fmt = (str, vars) => str.replace(/\{(\w+)\}/g, (_, k) => (vars[k] != null ? vars[k] : ''));
     const csrf = <?= json_encode($csrf) ?>;
@@ -1388,7 +1446,44 @@ if ($loadId !== '' && $reqProject !== '') {
       estimate();
     }
 
+    // ── 保持向量 ──
+    // 只有「剛好一張、而且是 SVG」時才讓這條路可選：多張要合成、非 SVG 要點陣化，
+    // 兩種都超出「直接把來源當圖層本體」這條路能做的事。
+    function isSvgPiece(p) {
+      if (p.file) return /\.svg$/i.test(p.file);
+      if (p.blob && p.blob.type) return p.blob.type === 'image/svg+xml';
+      return /\.svg$/i.test(p.name || '');
+    }
+    function vectorEligible() {
+      return pieces.length === 1 && isSvgPiece(pieces[0]);
+    }
+    function vectorActive() {
+      return vectorEligible() && $('vecmode').checked;
+    }
+    /** 依「單張 SVG」的條件與勾選狀態，整組顯示／隱藏切磚才需要的欄位。 */
+    function applyVectorUI() {
+      const eligible = vectorEligible();
+      if (!eligible) $('vecmode').checked = false;
+      $('vecrow').style.display = eligible ? '' : 'none';
+      const vec = vectorActive();
+      $('vechint').style.display = vec ? '' : 'none';
+      $('zoomtoolsrow').style.display = vec ? 'none' : '';
+      $('zoomgrid').style.display = vec ? 'none' : '';
+      $('zoomhint').style.display = vec ? 'none' : '';
+      $('keepsrcrow').style.display = vec ? 'none' : '';
+      $('keepsrchint').style.display = vec ? 'none' : '';
+      $('go').innerHTML = vec
+        ? '<i class="fa-solid fa-vector-square"></i> ' + I18N.start_vector
+        : '<i class="fa-solid fa-scissors"></i> ' + I18N.start_cut;
+    }
+
     function estimate() {
+      if (vectorActive()) {
+        estEl.className = 'hint';
+        estEl.textContent = '';
+        $('go').disabled = running;
+        return;
+      }
       const u = unionBounds();
       const z0 = parseInt($('zmin').value, 10), z1 = parseInt($('zmax').value, 10);
       if (!u || !isFinite(z0) || !isFinite(z1) || z0 > z1) { estEl.textContent = ''; $('go').disabled = running; return; }
@@ -1490,6 +1585,7 @@ if ($loadId !== '' && $reqProject !== '') {
       $('placemsg').style.display = p ? 'none' : '';
       if (p && validBounds(p.bounds)) showHandles(p.latLngBounds());
       else hideHandles();
+      applyVectorUI();
       estimate();
     }
 
@@ -1544,6 +1640,7 @@ if ($loadId !== '' && $reqProject !== '') {
     ['zmin', 'zmax'].forEach(k => $(k).addEventListener('input', estimate));
     $('usenativez').addEventListener('click', applyNativeZoom);
     $('keepsrc').addEventListener('change', estimate);
+    $('vecmode').addEventListener('change', () => { applyVectorUI(); estimate(); });
     $('popacity').addEventListener('input', () => {
       const p = pieces[sel];
       if (!p) return;
@@ -1691,8 +1788,8 @@ if ($loadId !== '' && $reqProject !== '') {
      * 每一塊都自報 offset，伺服器對不上會回 409 並附上它手上的長度，照那個續傳——限流
      * 重試時「送出去了但回應掉了」一定會發生，不處理就會把同一段接兩次。
      */
-    async function uploadSources(project, id) {
-      if (!$('keepsrc').checked) return null;
+    async function uploadSources(project, id, force) {
+      if (!force && !$('keepsrc').checked) return null;
       for (let i = 0; i < pieces.length; i++) {
         const p = pieces[i];
         p.file = '';          // 這一輪重新落地；上一輪的檔名可能連副檔名都不一樣
@@ -1759,6 +1856,8 @@ if ($loadId !== '' && $reqProject !== '') {
       }
       if (failed.length) statusEl.textContent = failed.map(n => fmt(I18N.load_failed, { name: n })).join(' ');
       if (!pieces.length) return;
+      // edit.json 裡沒有 ext／minZoom／maxZoom，代表上一版是保持向量輸出的——回填時把開關對回去
+      if (!('ext' in L) && pieces.length === 1 && isSvgPiece(pieces[0])) $('vecmode').checked = true;
       select(0);
       const u = unionBounds();
       if (validBounds(u)) map.fitBounds([[u.s, u.w], [u.n, u.e]]);
@@ -1769,21 +1868,27 @@ if ($loadId !== '' && $reqProject !== '') {
     $('go').addEventListener('click', async () => {
       const project = $('project').value;
       const id = $('lid').value.trim().toLowerCase();
-      const z0 = parseInt($('zmin').value, 10), z1 = parseInt($('zmax').value, 10);
       doneEl.textContent = '';
       if (!pieces.length) { statusEl.textContent = I18N.need_image; return; }
-      const order = cutOrder();
-      if (!order.length) { statusEl.textContent = I18N.no_visible; return; }
+      const vec = vectorActive();
+      const order = vec ? null : cutOrder();
+      if (vec) {
+        if (!pieces[0].on || pieces[0].opacity <= 0) { statusEl.textContent = I18N.no_visible; return; }
+      } else if (!order.length) { statusEl.textContent = I18N.no_visible; return; }
       if (!/^[a-z0-9][a-z0-9_-]{0,31}$/.test(id)) { statusEl.textContent = I18N.need_id; return; }
       const b = unionBounds();
-      if (!validBounds(b) || !(z0 <= z1)) { statusEl.textContent = I18N.bad_bounds; return; }
-      const total = totalTiles(b, z0, z1);
-      if (total > MAX_TILES) { statusEl.textContent = fmt(I18N.too_many, { tiles: total, max: MAX_TILES }); return; }
+      if (!validBounds(b)) { statusEl.textContent = I18N.bad_bounds; return; }
+
+      let z0, z1, total;
+      if (!vec) {
+        z0 = parseInt($('zmin').value, 10); z1 = parseInt($('zmax').value, 10);
+        if (!(z0 <= z1)) { statusEl.textContent = I18N.bad_bounds; return; }
+        total = totalTiles(b, z0, z1);
+        if (total > MAX_TILES) { statusEl.textContent = fmt(I18N.too_many, { tiles: total, max: MAX_TILES }); return; }
+      }
 
       running = true; aborted = false;
       $('go').disabled = true; $('stop').disabled = false;
-      const fmtInfo = await pickFormat();
-      let cut = 0, sent = 0, skipped = 0, rejected = 0;
       try {
         const fd0 = new FormData();
         fd0.append('action', 'begin'); fd0.append('csrf', csrf);
@@ -1791,64 +1896,90 @@ if ($loadId !== '' && $reqProject !== '') {
         if ($('overwrite').checked) fd0.append('overwrite', '1');
         await post(fd0);
 
-        // 原稿先送。切了十分鐘才發現空間不夠，那十分鐘就白費了
-        const editPieces = await uploadSources(project, id);
+        if (vec) {
+          // 保持向量:不切磚,原稿(單張 SVG)一律強制送(force=true),因為它就是圖層本體,
+          // 不是「使用者想不想留」的選項——keepsrc checkbox 在這個模式下本來就藏起來。
+          const editPieces = await uploadSources(project, id, true);
+          if (!aborted) {
+            barEl.style.width = '100%';
+            const fdF = new FormData();
+            fdF.append('action', 'finish'); fdF.append('csrf', csrf);
+            fdF.append('project', project); fdF.append('id', id);
+            fdF.append('vector', '1');
+            fdF.append('label', $('llabel').value.trim());
+            fdF.append('pane', $('pane').value);
+            fdF.append('opacity', $('opacity').value);
+            fdF.append('attribution', $('attr').value.trim());
+            fdF.append('south', b.s); fdF.append('west', b.w); fdF.append('north', b.n); fdF.append('east', b.e);
+            if (editPieces && editPieces.length) fdF.append('edit', JSON.stringify({ pieces: editPieces }));
+            await post(fdF);
+            statusEl.textContent = I18N.vector_complete;
+            doneEl.className = 'hint ok';
+            doneEl.textContent = fmt(I18N.next_step, { id, project });
+          }
+        } else {
+          const fmtInfo = await pickFormat();
+          let cut = 0, sent = 0, skipped = 0, rejected = 0;
 
-        let batch = new FormData(), inBatch = 0;
-        const flush = async () => {
-          if (!inBatch) return;
-          batch.append('action', 'tile'); batch.append('csrf', csrf);
-          batch.append('project', project); batch.append('id', id);
-          statusEl.textContent = fmt(I18N.uploading, { sent, total });
-          const j = await post(batch);
-          sent += j.saved || 0; rejected += j.rejected || 0;
-          batch = new FormData(); inBatch = 0;
-        };
+          // 原稿先送。切了十分鐘才發現空間不夠，那十分鐘就白費了
+          const editPieces = await uploadSources(project, id);
 
-        outer:
-        for (let z = z0; z <= z1; z++) {
-          const r = tileRange(b, z);
-          for (let x = r.x0; x <= r.x1; x++) {
-            for (let y = r.y0; y <= r.y1; y++) {
-              if (aborted) break outer;
-              cut++;
-              const blob = await cutTile(z, x, y, order, fmtInfo);
-              if (!blob) { skipped++; }
-              else {
-                batch.append('tiles[' + z + '_' + x + '_' + y + ']', blob, z + '_' + x + '_' + y + '.' + fmtInfo.ext);
-                inBatch++;
-                if (inBatch >= BATCH) await flush();
-              }
-              if (cut % 25 === 0) {
-                statusEl.textContent = fmt(I18N.cutting, { z, i: cut, total, sent, skipped });
-                barEl.style.width = (cut / total * 100).toFixed(1) + '%';
-                await new Promise(r => setTimeout(r, 0));   // 讓出主執行緒，畫面才不會凍住
+          let batch = new FormData(), inBatch = 0;
+          const flush = async () => {
+            if (!inBatch) return;
+            batch.append('action', 'tile'); batch.append('csrf', csrf);
+            batch.append('project', project); batch.append('id', id);
+            statusEl.textContent = fmt(I18N.uploading, { sent, total });
+            const j = await post(batch);
+            sent += j.saved || 0; rejected += j.rejected || 0;
+            batch = new FormData(); inBatch = 0;
+          };
+
+          outer:
+          for (let z = z0; z <= z1; z++) {
+            const r = tileRange(b, z);
+            for (let x = r.x0; x <= r.x1; x++) {
+              for (let y = r.y0; y <= r.y1; y++) {
+                if (aborted) break outer;
+                cut++;
+                const blob = await cutTile(z, x, y, order, fmtInfo);
+                if (!blob) { skipped++; }
+                else {
+                  batch.append('tiles[' + z + '_' + x + '_' + y + ']', blob, z + '_' + x + '_' + y + '.' + fmtInfo.ext);
+                  inBatch++;
+                  if (inBatch >= BATCH) await flush();
+                }
+                if (cut % 25 === 0) {
+                  statusEl.textContent = fmt(I18N.cutting, { z, i: cut, total, sent, skipped });
+                  barEl.style.width = (cut / total * 100).toFixed(1) + '%';
+                  await new Promise(r => setTimeout(r, 0));   // 讓出主執行緒，畫面才不會凍住
+                }
               }
             }
           }
-        }
-        await flush();
-        barEl.style.width = '100%';
+          await flush();
+          barEl.style.width = '100%';
 
-        if (aborted) { statusEl.textContent = fmt(I18N.stopped, { sent }); }
-        else {
-          const fdF = new FormData();
-          fdF.append('action', 'finish'); fdF.append('csrf', csrf);
-          fdF.append('project', project); fdF.append('id', id);
-          fdF.append('label', $('llabel').value.trim());
-          fdF.append('pane', $('pane').value);
-          fdF.append('opacity', $('opacity').value);
-          fdF.append('attribution', $('attr').value.trim());
-          fdF.append('ext', fmtInfo.ext);
-          fdF.append('south', b.s); fdF.append('west', b.w); fdF.append('north', b.n); fdF.append('east', b.e);
-          fdF.append('minZoom', z0); fdF.append('maxZoom', z1);
-          fdF.append('count', sent); fdF.append('pieces', order.length);
-          if (editPieces && editPieces.length) fdF.append('edit', JSON.stringify({ pieces: editPieces }));
-          await post(fdF);
-          statusEl.textContent = fmt(I18N.complete, { sent, skipped, ext: fmtInfo.ext });
-          doneEl.className = 'hint ok';
-          doneEl.textContent = fmt(I18N.next_step, { id, project });
-          if (rejected) doneEl.textContent += ' ' + fmt(I18N.rejected, { rejected });
+          if (aborted) { statusEl.textContent = fmt(I18N.stopped, { sent }); }
+          else {
+            const fdF = new FormData();
+            fdF.append('action', 'finish'); fdF.append('csrf', csrf);
+            fdF.append('project', project); fdF.append('id', id);
+            fdF.append('label', $('llabel').value.trim());
+            fdF.append('pane', $('pane').value);
+            fdF.append('opacity', $('opacity').value);
+            fdF.append('attribution', $('attr').value.trim());
+            fdF.append('ext', fmtInfo.ext);
+            fdF.append('south', b.s); fdF.append('west', b.w); fdF.append('north', b.n); fdF.append('east', b.e);
+            fdF.append('minZoom', z0); fdF.append('maxZoom', z1);
+            fdF.append('count', sent); fdF.append('pieces', order.length);
+            if (editPieces && editPieces.length) fdF.append('edit', JSON.stringify({ pieces: editPieces }));
+            await post(fdF);
+            statusEl.textContent = fmt(I18N.complete, { sent, skipped, ext: fmtInfo.ext });
+            doneEl.className = 'hint ok';
+            doneEl.textContent = fmt(I18N.next_step, { id, project });
+            if (rejected) doneEl.textContent += ' ' + fmt(I18N.rejected, { rejected });
+          }
         }
       } catch (e) {
         statusEl.textContent = I18N.error_prefix + (e && e.message ? e.message : I18N.conn_failed);
