@@ -140,6 +140,29 @@ function souliong_layersrc_bytes(?string $dir): int
 }
 
 /**
+ * 「含原稿」匯出時併進 souliong_layer_files() 結果的原稿清單，格式同款
+ * （[ "<id>/相對路徑" => 磁碟絕對路徑 ]），可以直接 array 相加。
+ *
+ * 放在 `<id>/_src/` 底下：圖磚路徑一律是數字組成的 `<z>/<x>/<y>.ext`，`_src` 不會跟任何一級
+ * zoom 資料夾撞名。匯入時要靠這個固定前綴把原稿路由回 layersrc/，不能跟圖層本體檔案混在一起
+ * 落地（那邊沒有存取管制，見 souliong_layersrc_dir() 的說明）。
+ */
+function souliong_layersrc_files(?string $dir, string $id): array
+{
+    if ($dir === null || !is_dir($dir)) {
+        return [];
+    }
+    $out = [];
+    foreach (scandir($dir) ?: [] as $e) {
+        $p = $dir . '/' . $e;
+        if ($e !== '.' && $e !== '..' && !is_link($p) && is_file($p)) {
+            $out[$id . '/_src/' . $e] = $p;
+        }
+    }
+    return $out;
+}
+
+/**
  * 原稿的體積上限：單檔與單層各一個。
  *
  * 會設上限是因為這條路徑跟圖磚不同——圖磚是工具切出來的、大小可預期，原稿是使用者手上的檔案，

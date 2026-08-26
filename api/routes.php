@@ -126,12 +126,17 @@ final class Route
         return $u . '/' . self::PACKS . '/' . rawurlencode($packId) . '.zip';
     }
 
-    /** 圖層匯出。$project 留空＝全站層，非空＝該地圖的專案層（兩層作用域見 api/layers.php） */
-    public static function backupLayer(string $layerId, string $project = ''): string
+    /**
+     * 圖層匯出。$project 留空＝全站層，非空＝該地圖的專案層（兩層作用域見 api/layers.php）。
+     * $withSrc＝true 時多帶 `?src=1`，後端會把 layersrc/ 的原稿一併打包（只有專案層才有原稿，
+     * 全站層即使傳 true 也不影響輸出——沒東西可帶）。
+     */
+    public static function backupLayer(string $layerId, string $project = '', bool $withSrc = false): string
     {
         $u = self::base() . self::MANAGER;
         if ($project !== '') $u .= '/' . rawurlencode($project);
-        return $u . '/' . self::LAYERS . '/' . rawurlencode($layerId) . '.zip';
+        $u .= '/' . self::LAYERS . '/' . rawurlencode($layerId) . '.zip';
+        return $withSrc ? $u . '?src=1' : $u;
     }
 
     /**

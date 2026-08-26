@@ -898,7 +898,14 @@ if (!$authed) {
             if ($err !== '') {
               error_page(413, $t('error_413_title'), $t($err), Route::manager('', 'tools'), $t('back_to_admin'));
             }
-            $name = 'souliong-layer-' . $lid . '-' . date('Ymd-His') . '.zip';
+            // 「含原稿」：只有專案層可能有原稿（全站層沒有 layersrc/，見 api/layers.php），
+            // 併進同一個 $files 陣列直接一起打包——兩邊的 key 都是 "<id>/相對路徑"，_src/ 前綴
+            // 保證不會跟圖磚路徑撞名，不需要另外處理衝突。
+            $withSrc = $isProj && !empty($_GET['src']);
+            if ($withSrc) {
+              $files += souliong_layersrc_files(souliong_layersrc_dir($cfg, $lp, $lid), $lid);
+            }
+            $name = 'souliong-layer-' . $lid . ($withSrc ? '-src' : '') . '-' . date('Ymd-His') . '.zip';
             $tmp = tempnam(sys_get_temp_dir(), 'sklyr');
             if (!zip_pack($tmp, $files)) {
               http_response_code(500);
@@ -1096,15 +1103,50 @@ if (!$authed) {
             // <z>/<x>/<y>.png 三層；副檔名白名單與 souliong_layer_files() 共用同一份名單。
             // 匯進來的 SVG 可能內嵌 <script>，那在圖檔端點是靠回應的 CSP sandbox 擋掉的，不是靠
             // 這裡的過濾——這裡只保證「副檔名是圖檔」，執行與否由 layerfile.php 決定。
+            //
+            // <id>/_src/(edit.json | p<idx>.圖檔) 是「含原稿」匯出（souliong_layersrc_files()）
+            // 帶出來的原稿，要單獨用一條規則認出來、路由回 layersrc/ 而不是跟圖層本體混在一起
+            // 落地——那邊沒有存取管制（見 souliong_layersrc_dir() 的說明），原稿一旦落進
+            // layers/<id>/ 底下，任何猜到網址的人都拿得到。全站層沒有原稿，$lp==='' 時一律不收。
             $exts = implode('|', array_keys(souliong_layer_mimes()));
-            $re = '#^([a-z0-9_-]+)/((?:[A-Za-z0-9_.-]+/)*(?:layer\.json|[A-Za-z0-9_.-]+\.(?:' . $exts . ')))$#';
+            // 子目錄那段要排掉 "_src/" 開頭——不然 _src/p0.png 這種原稿檔名同時也符合圖磚檔名的
+            // 形狀，會被這條規則收走，跟下面 $reSrc 兩邊都收，寫檔迴圈裡 $reMain 先判到就直接
+            // 落地到圖層本體資料夾，原稿因此漏進沒有存取管制的那一邊。
+            $reMain = '#^([a-z0-9_-]+)/((?:(?!_src/)[A-Za-z0-9_.-]+/)*(?:layer\.json|[A-Za-z0-9_.-]+\.(?:' . $exts . ')))$#';
+            $reSrc  = '#^([a-z0-9_-]+)/_src/(edit\.json|p[0-9]{1,2}\.(?:' . $exts . '))$#';
             $norm = fn($nm) => str_replace('\\', '/', (string)$nm);
-            $accept = fn($nm) => strpos($norm($nm), '..') === false && preg_match($re, $norm($nm));
+            $accept = fn($nm) => strpos($norm($nm), '..') === false
+              && (preg_match($reMain, $norm($nm)) || ($lp !== '' && preg_match($reSrc, $norm($nm))));
             $entries = zip_unpack($_FILES['layer']['tmp_name'], $accept);
+
+            // 匯入是覆蓋不是取代（同主題包），但「覆蓋」要使用者確認過才做——不然同名圖層一匯
+            // 就默默蓋掉，之前的位置、原稿全部沒了也不會有任何提示。id 要打開 ZIP 才知道，沒辦法
+            // 像 tilecut.php 那樣在使用者送出前就先問，只能先掃一輪找出會撞名的 id，撞了又沒勾
+            // 「覆蓋」就整包擋下，不寫任何檔案。
+            $incoming = [];
+            foreach (array_keys($entries) as $nm) {
+              $nm2 = $norm($nm);
+              if (preg_match($reMain, $nm2, $mm) || preg_match($reSrc, $nm2, $mm)) {
+                $incoming[$mm[1]] = true;
+              }
+            }
+            $clash = array_values(array_filter(array_keys($incoming), fn($iid) => is_dir($destRoot . '/' . $iid)));
+            if ($clash && empty($_POST['overwrite'])) {
+              error_page(409, $t('error_400_title'), i18n_t($DICT, 'layer_import_exists_msg', ['ids' => implode(', ', $clash)]), $backTo, $t('back_to_admin'));
+            }
+
             $ids = [];
             foreach ($entries as $nm => $content) {
-              if (!preg_match($re, $norm($nm), $mm)) continue;
-              $dest = $destRoot . '/' . $mm[1] . '/' . $mm[2];
+              $nm2 = $norm($nm);
+              if (preg_match($reMain, $nm2, $mm)) {
+                $dest = $destRoot . '/' . $mm[1] . '/' . $mm[2];
+              } elseif ($lp !== '' && preg_match($reSrc, $nm2, $mm)) {
+                $sdir = souliong_layersrc_dir($cfg, $lp, $mm[1]);
+                if ($sdir === null) continue;
+                $dest = $sdir . '/' . $mm[2];
+              } else {
+                continue;
+              }
               $dd = dirname($dest);
               if (!is_dir($dd)) @mkdir($dd, 0775, true);
               @file_put_contents($dest, $content, LOCK_EX);
@@ -2902,6 +2944,12 @@ if (!$authed) {
         $reedit = $lp !== '' && souliong_layersrc_editable($cfg, $lp, $lid)
           ? Route::tool('tilecut', $lp, ['load' => $lid])
           : '';
+        // 原稿佔多少空間，順便決定要不要多顯示一顆「含原稿」匯出——沒有原稿的話那顆按鈕
+        // 匯出的內容會跟旁邊那顆完全一樣，不如不顯示。
+        $srcBytes = $lp !== '' ? souliong_layersrc_bytes(souliong_layersrc_dir($cfg, $lp, $lid)) : 0;
+        $fmtBytes = fn(int $b): string => $b >= 1048576
+          ? number_format($b / 1048576, 1) . ' MB'
+          : max(1, (int)round($b / 1024)) . ' KB';
         $bnd = (array)($linfo['bounds'] ?? []);
         $bv = fn(int $i, int $j) => isset($bnd[$i][$j]) && is_numeric($bnd[$i][$j]) ? (string)$bnd[$i][$j] : '';
         $zv = fn(string $k) => isset($linfo[$k]) && is_numeric($linfo[$k]) ? (string)(int)$linfo[$k] : '';
@@ -2915,6 +2963,10 @@ if (!$authed) {
         <?php endif; ?>
         <button type="button" class="btn" onclick="document.getElementById('<?= $esc($dlgId) ?>').showModal()"><i class="fa-solid fa-sliders"></i> <?= $t('layer_edit_btn') ?></button>
         <a class="btn" href="<?= $esc(Route::backupLayer($lid, $lp)) ?>" title="<?= $t('pack_export_btn') ?>" aria-label="<?= $t('pack_export_btn') ?>"><i class="fa-solid fa-download"></i></a>
+        <?php if ($srcBytes > 0): ?>
+        <a class="btn" href="<?= $esc(Route::backupLayer($lid, $lp, true)) ?>" title="<?= $t('layer_export_src_title') ?>" aria-label="<?= $t('layer_export_src_title') ?>"><i class="fa-solid fa-file-zipper"></i></a>
+        <span class="hint mono" title="<?= $t('layer_src_size_title') ?>"><i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i> <?= $esc($fmtBytes($srcBytes)) ?></span>
+        <?php endif; ?>
       </span>
       <dialog id="<?= $esc($dlgId) ?>" class="metadlg" onclick="if(event.target===this)this.close()">
         <form method="post" class="metaform">
@@ -3162,6 +3214,7 @@ if (!$authed) {
                 <span class="badge"><i class="fa-solid fa-upload"></i> <?= $t('layer_import_badge') ?></span>
                 <label class="btn" style="cursor:pointer"><i class="fa-solid fa-folder-open"></i> <span data-file><?= $t('choose_zip_btn') ?></span>
                   <input type="file" name="layer" accept=".zip" required hidden onchange="this.parentNode.querySelector('[data-file]').textContent=this.files[0]?this.files[0].name:<?= json_encode(i18n_t($DICT, 'choose_zip_btn'), JSON_UNESCAPED_UNICODE) ?>"></label>
+                <label style="display:inline-flex;align-items:center;gap:6px;font-size:0.8125rem"><input type="checkbox" name="overwrite" value="1"> <?= $t('layer_import_overwrite_label') ?></label>
                 <button class="btn"><i class="fa-solid fa-upload"></i> <?= $t('restore_btn') ?></button>
               </form>
               <div class="dlgactions">
@@ -3725,6 +3778,7 @@ if (!$authed) {
           <span class="badge"><i class="fa-solid fa-upload"></i> <?= $t('layer_import_badge') ?></span>
           <label class="btn" style="cursor:pointer"><i class="fa-solid fa-folder-open"></i> <span data-file><?= $t('choose_zip_btn') ?></span>
             <input type="file" name="layer" accept=".zip" required hidden onchange="this.parentNode.querySelector('[data-file]').textContent=this.files[0]?this.files[0].name:<?= json_encode(i18n_t($DICT, 'choose_zip_btn'), JSON_UNESCAPED_UNICODE) ?>"></label>
+          <label style="display:inline-flex;align-items:center;gap:6px;font-size:0.8125rem"><input type="checkbox" name="overwrite" value="1"> <?= $t('layer_import_overwrite_label') ?></label>
           <button class="btn"><i class="fa-solid fa-upload"></i> <?= $t('restore_btn') ?></button>
         </form>
       </div>
