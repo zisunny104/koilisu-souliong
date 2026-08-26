@@ -588,6 +588,32 @@ if ($loadId !== '' && $reqProject !== '') {
         ];
     }
 }
+
+// 沒留原稿：退而求其次，看看圖磚本身還在不在——在的話可以拼回一張圖當新來源重切，
+// 但那是壓平後的結果，分層資訊回不去了。只有一般切磚模式（type:raster）有圖磚金字塔可拼，
+// 保持向量模式（type:image）本體就是那張 SVG，沒有磚可拼、也不需要。
+$RECON = null;
+if ($EDIT === null && $loadId !== '' && $reqProject !== '') {
+    $tdir = tilecut_dir($cfg, $reqProject, $loadId);
+    $ldoc = $tdir !== null && is_file($tdir . '/layer.json')
+        ? json_decode((string)@file_get_contents($tdir . '/layer.json'), true) : null;
+    if (
+        is_array($ldoc) && ($ldoc['type'] ?? '') === 'raster'
+        && is_array($ldoc['bounds'] ?? null) && count($ldoc['bounds']) === 2
+        && isset($ldoc['maxNativeZoom']) && preg_match('/\.([a-z0-9]+)$/i', (string)($ldoc['url'] ?? ''), $extM)
+    ) {
+        $RECON = [
+            'id'          => $loadId,
+            'ext'         => strtolower($extM[1]),
+            'z'           => (int)$ldoc['maxNativeZoom'],
+            'bounds'      => $ldoc['bounds'],
+            'label'       => (string)($ldoc['label'] ?? ''),
+            'pane'        => (string)($ldoc['pane'] ?? ''),
+            'opacity'     => isset($ldoc['opacity']) ? (float)$ldoc['opacity'] : 1.0,
+            'attribution' => (string)($ldoc['attribution'] ?? ''),
+        ];
+    }
+}
 ?>
 <!doctype html>
 <html lang="<?= $LANG === 'en' ? 'en' : 'zh-Hant' ?>">
@@ -1038,7 +1064,7 @@ if ($loadId !== '' && $reqProject !== '') {
         </div>
         <div>
           <label for="lid"><?= $t('tilecut_layer_id_label') ?></label>
-          <input type="text" id="lid" value="<?= $esc($EDIT !== null ? $EDIT['id'] : 'artwork') ?>" pattern="[a-z0-9][a-z0-9_-]*" maxlength="32" spellcheck="false">
+          <input type="text" id="lid" value="<?= $esc($EDIT !== null ? $EDIT['id'] : ($RECON !== null ? $RECON['id'] : 'artwork')) ?>" pattern="[a-z0-9][a-z0-9_-]*" maxlength="32" spellcheck="false">
         </div>
         <div>
           <label for="llabel"><?= $t('tilecut_label_label') ?></label>
@@ -1048,6 +1074,11 @@ if ($loadId !== '' && $reqProject !== '') {
       <div class="hint" style="margin-bottom:var(--sp-3)"><?= $t('tilecut_layer_id_hint') ?></div>
       <?php if ($EDIT !== null): ?>
       <div class="hint ok" style="margin-bottom:var(--sp-3)"><i class="fa-solid fa-rotate-left"></i> <?= $t('tilecut_loaded_msg', ['id' => $EDIT['id']]) ?></div>
+      <?php elseif ($RECON !== null): ?>
+      <div class="hint" style="margin-bottom:var(--sp-3)">
+        <i class="fa-solid fa-triangle-exclamation"></i> <?= $t('tilecut_recon_hint', ['id' => $RECON['id']]) ?>
+        <button type="button" class="ghost" id="reconbtn" style="margin-left:.5rem"><i class="fa-solid fa-shapes"></i> <?= $t('tilecut_recon_btn') ?></button>
+      </div>
       <?php endif; ?>
       <div class="row">
         <label class="filebtn"><span class="ghost" style="display:inline-flex;align-items:center;gap:.5rem;border:1px solid var(--line);border-radius:.625rem;padding:.5rem 1rem;background:var(--card)"><i class="fa-solid fa-images"></i> <?= $t('tilecut_choose_image_btn') ?></span>
@@ -1117,7 +1148,7 @@ if ($loadId !== '' && $reqProject !== '') {
       <div class="hint" id="zoomhint" style="margin-top:var(--sp-2)"><?= $t('tilecut_zoom_hint') ?></div>
       <div class="hint" id="estimate" style="margin-top:var(--sp-3)"></div>
       <div class="row" style="margin-top:var(--sp-3)">
-        <label class="chk"><input type="checkbox" id="overwrite" <?= $EDIT !== null ? 'checked' : '' ?>> <?= $t('tilecut_overwrite_label') ?></label>
+        <label class="chk"><input type="checkbox" id="overwrite" <?= ($EDIT !== null || $RECON !== null) ? 'checked' : '' ?>> <?= $t('tilecut_overwrite_label') ?></label>
       </div>
       <div class="row" id="keepsrcrow" style="margin-top:var(--sp-2)">
         <label class="chk"><input type="checkbox" id="keepsrc" checked> <?= $t('tilecut_keepsrc_label') ?></label>
@@ -1170,6 +1201,8 @@ if ($loadId !== '' && $reqProject !== '') {
       'start_vector' => i18n_t($DICT, 'tilecut_vector_start_btn'),
       'vector_complete'   => i18n_t($DICT, 'tilecut_vector_complete_msg'),
       'vector_bad_source' => i18n_t($DICT, 'tilecut_vector_bad_source_msg'),
+      'recon_progress'    => i18n_t($DICT, 'tilecut_recon_progress_msg'),
+      'recon_done'        => i18n_t($DICT, 'tilecut_recon_done_msg'),
     ], JSON_UNESCAPED_UNICODE) ?>;
     const fmt = (str, vars) => str.replace(/\{(\w+)\}/g, (_, k) => (vars[k] != null ? vars[k] : ''));
     const csrf = <?= json_encode($csrf) ?>;
@@ -1177,6 +1210,8 @@ if ($loadId !== '' && $reqProject !== '') {
     const BASE = <?= json_encode(Route::abs(Route::base()), JSON_UNESCAPED_SLASHES) ?>;
     // 「重新編輯」帶進來的上一次狀態；null＝這是全新的一層。圖片本身不在裡面，逐張去 srcfile 抓。
     const EDIT = <?= json_encode($EDIT, JSON_UNESCAPED_UNICODE) ?>;
+    // 沒留原稿、但圖磚還在時的降級重建資訊；null＝沒有可拼回去的圖磚。
+    const RECON = <?= json_encode($RECON, JSON_UNESCAPED_UNICODE) ?>;
     // 原稿分塊多大，由伺服器的 upload_max_filesize／post_max_size 算出來
     const SRCCHUNK = <?= (int)$srcChunk ?>;
 
@@ -1863,6 +1898,69 @@ if ($loadId !== '' && $reqProject !== '') {
       if (validBounds(u)) map.fitBounds([[u.s, u.w], [u.n, u.e]]);
     }
 
+    /**
+     * 「從圖磚重建」：沒留原稿時的降級路徑——把已經落地在伺服器上的圖磚，照原本切磚時的
+     * 那個 zoom 拼回一張圖，當成新的來源重新對位、重切。拼回來的是壓平後的結果，
+     * 原本幾張圖疊在一起的分層資訊已經回不去了。張數上限跟正常切磚共用同一個 MAX_TILES，
+     * 所以最壞情況耗時跟切一次磚差不多，不特別支援中途停止。
+     */
+    async function reconstructFromTiles() {
+      if (!RECON) return;
+      const set = (el, v) => { if (v !== undefined && v !== null && v !== '') $(el).value = v; };
+      set('llabel', RECON.label); set('opacity', RECON.opacity); set('attr', RECON.attribution);
+      $('opacityval').textContent = Math.round(parseFloat($('opacity').value) * 100) + '%';
+      if (RECON.pane) $('pane').value = RECON.pane;
+
+      const gb = { s: RECON.bounds[0][0], w: RECON.bounds[0][1], n: RECON.bounds[1][0], e: RECON.bounds[1][1] };
+      const r = tileRange(gb, RECON.z);
+      const cols = r.x1 - r.x0 + 1, rows = r.y1 - r.y0 + 1;
+      const total = cols * rows;
+      if (total > MAX_TILES) { statusEl.textContent = fmt(I18N.too_many, { tiles: total, max: MAX_TILES }); return; }
+
+      const btn = $('reconbtn');
+      btn.disabled = true;
+      doneEl.textContent = '';
+      barEl.style.width = '0%';
+      try {
+        const project = $('project').value;
+        const rc = document.createElement('canvas');
+        rc.width = cols * TILE; rc.height = rows * TILE;
+        const rctx = rc.getContext('2d');
+        const tiles = [];
+        for (let y = r.y0; y <= r.y1; y++) for (let x = r.x0; x <= r.x1; x++) tiles.push({ x, y });
+        let done = 0;
+        for (let i = 0; i < tiles.length; i += BATCH) {
+          await Promise.all(tiles.slice(i, i + BATCH).map(({ x, y }) => new Promise(res => {
+            const img = new Image();
+            // layerfile.php 對缺磚回的是透明佔位圖（成功、不是錯誤），draw 目的地一律固定 TILE 大小，
+            // 才不會因為佔位圖只有 1×1 而只畫出一個小點。抓失敗（真的壞掉）就當空白，不擋住整次重建。
+            img.onload = () => { rctx.drawImage(img, (x - r.x0) * TILE, (y - r.y0) * TILE, TILE, TILE); done++; res(); };
+            img.onerror = () => { done++; res(); };
+            img.src = BASE + 'layer/' + encodeURIComponent(project) + '/' + encodeURIComponent(RECON.id)
+              + '/tiles/' + RECON.z + '/' + x + '/' + y + '.' + RECON.ext;
+          })));
+          statusEl.textContent = fmt(I18N.recon_progress, { done, total });
+          barEl.style.width = (done / total * 100).toFixed(1) + '%';
+        }
+
+        const n = 1 << RECON.z;
+        const bounds = { w: lngOf(r.x0 / n), e: lngOf((r.x1 + 1) / n), n: latOf(r.y0 / n), s: latOf((r.y1 + 1) / n) };
+        const blob = await new Promise(res => rc.toBlob(res, 'image/png'));
+        const url = URL.createObjectURL(blob);
+        const p = new Piece(RECON.id + '-tiles.png', await loadImage(url), url, blob);
+        p.bounds = bounds;
+        pieces.unshift(p);
+        applyNativeZoom();
+        select(0);
+        map.fitBounds([[bounds.s, bounds.w], [bounds.n, bounds.e]]);
+        statusEl.textContent = I18N.recon_done;
+        barEl.style.width = '0%';
+      } catch (e) {
+        btn.disabled = false;
+        statusEl.textContent = I18N.error_prefix + (e && e.message ? e.message : I18N.conn_failed);
+      }
+    }
+
     $('stop').addEventListener('click', () => { aborted = true; });
 
     $('go').addEventListener('click', async () => {
@@ -1986,6 +2084,8 @@ if ($loadId !== '' && $reqProject !== '') {
       }
       running = false; $('stop').disabled = true; estimate();
     });
+
+    if (RECON) $('reconbtn').addEventListener('click', reconstructFromTiles);
 
     // 載回原稿是非同步的（要一張張抓），先畫一次空清單，畫面才不會在那之前是一片空白
     refresh();

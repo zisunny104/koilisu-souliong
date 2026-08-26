@@ -415,7 +415,6 @@ CSS 全部前綴 `.stat-card .col`，因為要蓋過同層的 `.stat-card .col o
 
 ### 8.8 尚未完成
 
-- 沒留原稿的圖層仍然**無法載回編輯**。可行的降級路徑是把已落地的圖磚拼回一張大圖再當單一來源重切，但拼回來的是壓平後的結果，分層已經回不去了。
 - 匯出 ZIP 還沒分「含原稿」與「僅圖磚」兩種，目前一律只帶圖磚。
 - 向量圖層還沒有對應的 `MapLayer` 子類。想要「道路粗細可調」就得走向量：protomaps-leaflet 是 `L.GridLayer`，不必離開 Leaflet，接成一個新子類即可。**注意這跟 8.10 的「保持向量」不是同一件事**——8.10 是單張 SVG 原封不動當 `type:"image"` 疊圖用，本質還是點陣模型裡的一張圖；這裡講的是真正的向量*圖磚*（`.pbf`/`.mvt` 那種，樣式在瀏覽器端即時渲染），兩者的資料模型完全不同。目前刻意排在其他圖磚來源支援之後，不急著做。
 
@@ -460,6 +459,19 @@ CSS 全部前綴 `.stat-card .col`，因為要蓋過同層的 `.stat-card .col o
 **在 `raster` 與 `vector` 之間切換**：同一個圖層 id 從向量模式改回一般切磚模式（或反過來）時，`begin` 動作在 `overwrite=1` 時會清掉舊有的 `layers/<id>/vector.svg`，避免它變成孤兒檔案——新版 `layer.json` 已經改指向 `tiles/`，但沒人會再去讀 `vector.svg`，它就只是佔空間又容易讓人誤會目前是哪個模式。
 
 **沒有動到的部分**：`layerfile.php`、`admin.php`、`pages/view.php`、viewer 端的 `MapLayer` 相關程式碼全部不用改——`type:"image"` 的讀取、後台圖層清單顯示、匯出 ZIP，這些機制在這次改動之前就已經對兩種 `type` 一視同仁。
+
+### 8.11 從圖磚重建（沒留原稿的降級路徑）
+
+`?load=<id>` 原本只看 `layersrc/<id>/edit.json` 在不在——不在就當全新圖層處理，`#lid` 退回預設值 `artwork`，使用者完全看不出來這個 id 其實已經有東西。現在多一層退而求其次的偵測：`edit.json` 不在時，改讀 `tilecut_dir($cfg, $project, $id)`（8.1 提過的專案作用域限定版路徑解析，不是 8.1 通用的 `souliong_layer_dir()`）底下的 `layer.json`——如果 `type` 是 `raster` 且欄位齊全（`bounds`／`maxNativeZoom`／`url` 副檔名都在），代表圖磚金字塔還落在磁碟上，只是沒有可回填編輯狀態的原稿，於是組出一個 `$RECON` 陣列（`id`／`ext`／`z`／`bounds`／`label`／`pane`／`opacity`／`attribution`）交給前端。`type:"image"`（8.10 的保持向量輸出）刻意不進這條路——本體是單一 SVG，沒有圖磚金字塔可拼，也不需要。
+
+**前端**：`$RECON !== null` 時，「已載入」banner 的位置換成一個帶按鈕的提示（`tilecut_recon_hint` + `#reconbtn`），是否要花時間重建交給使用者按下去才做，不像 `$EDIT !== null` 那樣自動載入——重建要逐張抓圖磚，比讀一份 JSON 重得多。按下去之後 `reconstructFromTiles()`：
+
+1. 用既有的 `tileRange()`（8.7 對位/切磚共用的同一個函式）算出 `RECON.z` 這一級覆蓋 `RECON.bounds` 的 tile x/y 範圍，張數超過 `MAX_TILES`（跟正常切磚共用同一個上限）就直接回絕，不開始抓。
+2. 逐批（沿用上傳時的 `BATCH` 併發數）用 `<img>` 直接打 `layerfile.php` 的公開端點（`<base>/layer/<project>/<id>/tiles/{z}/{x}/{y}.<ext>`，不需要另外認證，本來就是給地圖前台用的），畫進一張 `cols*TILE × rows*TILE` 的 canvas。**目的地尺寸固定給 `TILE`**（不是來源圖片的自然尺寸）——因為缺磚時 `layerfile.php` 回的是 68 bytes 的 1×1 透明佔位圖（成功回應，不是 404，見 8.5／`layerfile.php` 內註解），照自然尺寸畫只會在該格畫出一個小點。
+3. 拼好的 canvas 邊界**不是**沿用 `layer.json` 原本存的 `bounds`，是重新用 `lngOf`/`latOf` 算 tile 格子四個角落對應的經緯度——因為原始 bounds 不見得剛好落在 tile 邊界上（切磚時本來就是「涵蓋 bounds 的最小 tile 範圍」），拼回來的圖是照 tile 網格對齊的，用原 bounds 會讓拼出來的像素跟宣告的地理範圍對不上，重新對位時會歪掉。
+4. 拼好轉成 PNG blob，包成一個 `Piece` 塞進 `pieces[]`（跟使用者手動加圖片走的是同一套物件），`applyNativeZoom()` 抓一次合理 zoom 範圍，`select(0)` 選取並 `map.fitBounds()` 帶過去——後續使用者能重新對位、加減圖層、再按一次「開始切」，跟正常流程完全一樣接軌。`#keepsrc`（保留原稿）預設就是勾選的，這次重切之後這個 id 就會重新有原稿可留，往後不會再掉進同一個降級路徑。
+
+**跟正常上傳流程共用、沒有另開一套的部分**：`Piece` 類別、`tileRange()`、`applyNativeZoom()`、`select()`/`refresh()`、`MAX_TILES` 上限、切磚／上傳的 `finish` 端點。這條路徑刻意不支援中途停止（`#stop`）——張數上限已經跟正常切磚共用，最壞情況耗時跟切一次磚相當，加一套獨立的中止/續傳語意不划算。
 
 ## 九、網址表：`api/routes.php`
 
