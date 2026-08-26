@@ -517,3 +517,19 @@ CSS 全部前綴 `.stat-card .col`，因為要蓋過同層的 `.stat-card .col o
 - 平台：**Souliong｜循跡**（原創詞，靈感取自客語拼音音韻與 Soul＝地方精神；非客語單字）。
 - Slogan：Every place leaves traces. Every trace tells a story.（每個地方都留下痕跡，每一道痕跡都有故事。）
 - 署名：© 2026 prjToka。
+
+## 十一、全站容量統計：快取，不是即時計算
+
+主要管理者在「工具」分頁能看到全站容量總覽（投稿檔案／圖層／主題包），每個專案的總覽卡片也有一顆「空間佔用」磚——這些數字全部來自 `state/storage.json`，不是頁面載入當下算出來的。
+
+**為什麼不即時算**：`admin.php` 的後台頁面是一次把 `pane-overview`／`pane-access`／`pane-tools` 全部 render 出來，前端只用 JS 切換哪個 `.pane` 顯示（`display:none`），不是分頁各自發請求。圖層目錄是圖磚金字塔，一層可能就有幾百到幾千個檔案；如果容量計算寫在任何一個 pane 的渲染迴圈裡，等於**每次載入後台頁面都會遞迴掃過全部專案的圖磚**，不管當下看的是哪一分頁，而且是所有管理者（含專案管理者）共同承受的成本。
+
+**函式分工**（`api/store.php`）：
+
+- `souliong_dir_bytes(string $dir): int`：遞迴加總一個目錄底下所有檔案大小，跟 `admin.php` 的 `backup=all` 用的 `$addDir` closure 同一套 `RecursiveIteratorIterator`／`RecursiveDirectoryIterator` 寫法，只加總不收集檔案清單；目錄不存在回 0。
+- `souliong_storage_compute(array $cfg): array`：實際做全站遞迴掃描，只回傳陣列，**不寫檔**。分三塊：`layers`／`packs` 各自用 `'' => [...]` 存全站層、`'<proj>' => [...]` 存各專案自己的（用 `$info['scope'] === 'project'` 過濾，避免跟合併進來的全站層重複計）；`uploads` 存各專案 `photos/`／`media/` 的大小。圖層要先過 `souliong_layer_is_local()`（layers.php）濾掉外部圖磚服務（本來就是 0 bytes，目錄可能根本不存在）。
+- `souliong_storage_cache(array $cfg): ?array`：讀 `state/storage.json`，檔案不存在或格式壞掉回 `null`。**呼叫端要能分辨「還沒算過」（`null`）跟「算出來是 0」**——前端據此決定顯示「—」／「還沒計算過」還是真的顯示 0 KB，不能把兩者混為一談。
+
+**寫入時機**：只有主要管理者手動 POST `action=storagerecalc`（`admin.php`）才會呼叫 `souliong_storage_compute()` 並覆寫快取，寫入時連帶記一筆 `computed_at` 時間戳，頁面上據此顯示「計算於 X」，讓數字的新舊誠實揭露，不假裝即時。這個動作本身可能跑上幾秒，跟既有的「備份全站」（同樣是單一請求裡遞迴打包全部 `projects_dir`／`state_dir`）是同一等級的操作，不需要額外的背景工作機制。
+
+**這階段刻意沒做的事**：清理／壓縮功能。使用者原始需求裡有提到，但清理範圍（刪什麼、怎麼判斷能刪）與壓縮定義（是重新壓縮圖片、還是別的意思）都還沒決定，留到之後單獨規劃再做——目前只有「看得到用了多少」，沒有任何會刪檔案或改檔案內容的動作。

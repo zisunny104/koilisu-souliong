@@ -679,6 +679,19 @@ if (!$authed) {
           header('Location: ' . Route::manager($scopeProject, 'tools'));
           exit;
         }
+        // 全站儲存空間快取重新計算：master-only，手動觸發（見 souliong_storage_compute() 的說明——
+        // 頁面平常只讀 state/storage.json，不會每次載入都遞迴掃描）。
+        if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'storagerecalc') {
+          need_csrf($csrf);
+          if (!$master) {
+            error_page(403, $t('no_permission_title'), $t('master_only_settings_msg'), Route::manager($scopeProject, 'tools'), $t('back_to_admin'));
+          }
+          $data = souliong_storage_compute($cfg);
+          @file_put_contents(souliong_storage_cache_path($cfg), json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), LOCK_EX);
+          audit_log($cfg, $auditWho(), 'storage_recalc', null, '');
+          header('Location: ' . Route::manager($scopeProject, 'tools'));
+          exit;
+        }
         if ($_SERVER['REQUEST_METHOD'] === 'POST' && in_array(($_POST['action'] ?? ''), ['addpin', 'delpin', 'setperm'], true)) {
           need_csrf($csrf);
           if (!$master) {
@@ -2933,11 +2946,21 @@ if (!$authed) {
     <?php endif; ?>
 
     <?php
+      // 容量快取（state/storage.json）跟千位元組格式化函式：$layerAdminRow、$packAdminRow、
+      // pane-overview 的專案卡片三處共用，只在這裡讀一次、算一次，不要各自重複讀檔。
+      // $storageCache 是 null 代表從來沒按過「重新計算容量」，畫面上要顯示「還沒算過」而不是 0。
+      $storageCache = souliong_storage_cache($cfg);
+      // 真的是 0 bytes 就老實顯示 0 KB；max(1,...) 只用來避免「有檔案但不到 1KB」被四捨五入成看起來像沒東西的 0 KB。
+      $fmtBytes = fn(int $b): string => $b <= 0 ? '0 KB' : ($b >= 1048576
+        ? number_format($b / 1048576, 1) . ' MB'
+        : max(1, (int)round($b / 1024)) . ' KB');
+    ?>
+    <?php
       // 圖層列右側的「設定」「匯出」兩顆按鈕，以及設定對話框（刪除在對話框最底下）。專案的圖層對話框與工具分頁的
       // 全站圖層清單長得不一樣，但「能對一個圖層做什麼」該是同一組，所以只寫這一份。
       // $lp === '' 代表全站層，非空代表某張地圖自己的層——差別只在多帶一個 project 參數，
       // 權限與路徑解析都由後端的 $layerTarget 決定，不靠前端少畫一顆按鈕來把關。
-      $layerAdminRow = function (string $lid, array $linfo, string $lp) use ($t, $esc, $esc_csrf, $DICT, $cfg) {
+      $layerAdminRow = function (string $lid, array $linfo, string $lp) use ($t, $esc, $esc_csrf, $DICT, $cfg, $storageCache, $fmtBytes) {
         $dlgId = 'lyedit-' . ($lp !== '' ? $lp : 'site') . '-' . $lid;
         // 留著原稿的那幾層可以直接回切磚工具改，不必把來源檔再找出來一次。只有專案層有原稿
         // （全站層進版控，數十 MB 的手稿本來就不該塞進 repo）。
@@ -2947,9 +2970,8 @@ if (!$authed) {
         // 原稿佔多少空間，順便決定要不要多顯示一顆「含原稿」匯出——沒有原稿的話那顆按鈕
         // 匯出的內容會跟旁邊那顆完全一樣，不如不顯示。
         $srcBytes = $lp !== '' ? souliong_layersrc_bytes(souliong_layersrc_dir($cfg, $lp, $lid)) : 0;
-        $fmtBytes = fn(int $b): string => $b >= 1048576
-          ? number_format($b / 1048576, 1) . ' MB'
-          : max(1, (int)round($b / 1024)) . ' KB';
+        // 這一層總容量（圖磚＋原稿），跟上面 $srcBytes 是兩件事：這裡有快取才顯示，沒算過就不畫。
+        $totalBytes = $storageCache['layers'][$lp][$lid] ?? null;
         $bnd = (array)($linfo['bounds'] ?? []);
         $bv = fn(int $i, int $j) => isset($bnd[$i][$j]) && is_numeric($bnd[$i][$j]) ? (string)$bnd[$i][$j] : '';
         $zv = fn(string $k) => isset($linfo[$k]) && is_numeric($linfo[$k]) ? (string)(int)$linfo[$k] : '';
@@ -2966,6 +2988,9 @@ if (!$authed) {
         <?php if ($srcBytes > 0): ?>
         <a class="btn" href="<?= $esc(Route::backupLayer($lid, $lp, true)) ?>" title="<?= $t('layer_export_src_title') ?>" aria-label="<?= $t('layer_export_src_title') ?>"><i class="fa-solid fa-file-zipper"></i></a>
         <span class="hint mono" title="<?= $t('layer_src_size_title') ?>"><i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i> <?= $esc($fmtBytes($srcBytes)) ?></span>
+        <?php endif; ?>
+        <?php if ($totalBytes !== null): ?>
+        <span class="hint mono" title="<?= $t('layer_total_size_title') ?>"><i class="fa-solid fa-hard-drive" aria-hidden="true"></i> <?= $esc($fmtBytes($totalBytes)) ?></span>
         <?php endif; ?>
       </span>
       <dialog id="<?= $esc($dlgId) ?>" class="metadlg" onclick="if(event.target===this)this.close()">
@@ -3026,11 +3051,15 @@ if (!$authed) {
       // 的包——跟 $layerAdminRow 一樣，差別只在多帶一個 project 參數，權限與路徑解析都由
       // 後端的 action=packdelete 決定。沒有設定對話框（材質變數目前只靠 pack.css 本身調），
       // 所以不像圖層另開一層 dialog，直接把兩顆按鈕放進清單列。
-      $packAdminRow = function (string $pid, array $pinfo, string $pp) use ($t, $esc, $esc_csrf, $DICT) {
+      $packAdminRow = function (string $pid, array $pinfo, string $pp) use ($t, $esc, $esc_csrf, $DICT, $storageCache, $fmtBytes) {
         $delMsg = i18n_t($DICT, 'pack_delete_confirm', ['id' => $pid]);
+        $pBytes = $storageCache['packs'][$pp][$pid] ?? null;
     ?>
       <span class="lyacts">
         <a class="btn" href="<?= $esc(Route::backupPack($pid, $pp)) ?>" title="<?= $t('pack_export_btn') ?>" aria-label="<?= $t('pack_export_btn') ?>"><i class="fa-solid fa-download"></i></a>
+        <?php if ($pBytes !== null): ?>
+        <span class="hint mono" title="<?= $t('pack_size_title') ?>"><i class="fa-solid fa-hard-drive" aria-hidden="true"></i> <?= $esc($fmtBytes($pBytes)) ?></span>
+        <?php endif; ?>
         <form method="post" style="margin:0" onsubmit="return confirm(<?= $esc(json_encode($delMsg, JSON_UNESCAPED_UNICODE)) ?>)">
           <input type="hidden" name="csrf" value="<?= $esc_csrf ?>">
           <input type="hidden" name="action" value="packdelete">
@@ -3564,6 +3593,16 @@ if (!$authed) {
       foreach (array_slice($byDow, 0, 3, true) as $k => $v) $dTop[] = i18n_t($DICT, 'weekday_item', ['d' => $dowNames[(int)$k] ?? $k, 'n' => (int)$v]);
       $hourAria = i18n_t($DICT, 'top_hours_label') . ($hTop ? implode('、', $hTop) : i18n_t($DICT, 'no_data_msg'));
       $dowAria = i18n_t($DICT, 'top_weekdays_label') . ($dTop ? implode('、', $dTop) : i18n_t($DICT, 'no_data_msg'));
+      // 空間佔用：純算術讀 $storageCache（見上面的共用宣告），沒算過就是 null，畫面顯示「—」而不是 0
+      $upB = $lyB = $pkB = null;
+      $projBytes = null;
+      if ($storageCache !== null) {
+        $u = $storageCache['uploads'][$p] ?? ['photos' => 0, 'media' => 0];
+        $upB = (int)($u['photos'] ?? 0) + (int)($u['media'] ?? 0);
+        $lyB = array_sum($storageCache['layers'][$p] ?? []);
+        $pkB = array_sum($storageCache['packs'][$p] ?? []);
+        $projBytes = $upB + $lyB + $pkB;
+      }
     ?>
       <details class="stat-card">
         <summary>
@@ -3589,6 +3628,11 @@ if (!$authed) {
               <?php if ($mob + $desk > 0): ?><div class="statratio" aria-hidden="true"><span class="a" style="width:<?= $mobPct ?>%"></span><span class="b" style="width:<?= 100 - $mobPct ?>%"></span></div><?php endif; ?>
               <div class="l"><?= $t('stat_mobile_desktop_label') ?></div>
               <div class="d"><?= $t('stat_device_desc') ?></div>
+            </div>
+            <div class="tile">
+              <div class="n" <?= $projBytes !== null ? 'title="' . $esc(i18n_t($DICT, 'stat_storage_breakdown', ['up' => $fmtBytes($upB), 'ly' => $fmtBytes($lyB), 'pk' => $fmtBytes($pkB)])) . '"' : '' ?>><?= $projBytes !== null ? $esc($fmtBytes($projBytes)) : '—' ?></div>
+              <div class="l"><?= $t('stat_storage_label') ?></div>
+              <div class="d"><?= $t('stat_storage_desc') ?></div>
             </div>
           </div>
           <div class="break"><?= $t('top_points_label') ?><b><?= $esc($top($s['points'])) ?></b><br><?= $t('top_cameras_label') ?><b><?= $esc($top($s['cameras'])) ?></b></div>
@@ -3687,6 +3731,43 @@ if (!$authed) {
     <?php if ($master): ?>
     <div class="pane" id="pane-tools">
       <h2><?= $t('tools_heading') ?></h2>
+      <div class="card section-card">
+        <div class="badge"><i class="fa-solid fa-hard-drive"></i> <?= $t('storage_heading') ?></div>
+        <?php if ($storageCache !== null):
+          $lySite = array_sum($storageCache['layers'][''] ?? []);
+          $pkSite = array_sum($storageCache['packs'][''] ?? []);
+          $upAll = $lyProj = $pkProj = 0;
+          foreach (store_projects($cfg) as $sp2) {
+            $u2 = $storageCache['uploads'][$sp2] ?? ['photos' => 0, 'media' => 0];
+            $upAll += (int)($u2['photos'] ?? 0) + (int)($u2['media'] ?? 0);
+            $lyProj += array_sum($storageCache['layers'][$sp2] ?? []);
+            $pkProj += array_sum($storageCache['packs'][$sp2] ?? []);
+          }
+          $grandTotal = $lySite + $pkSite + $upAll + $lyProj + $pkProj;
+        ?>
+        <div class="hint" style="margin-top:6px"><?= i18n_t($DICT, 'storage_summary_hint', ['total' => $fmtBytes($grandTotal), 'when' => date('Y-m-d H:i', (int)($storageCache['computed_at'] ?? 0))]) ?></div>
+        <div class="stats-grid" style="margin-top:8px">
+          <div class="tile">
+            <div class="n"><?= $esc($fmtBytes($upAll)) ?></div>
+            <div class="l"><?= $t('storage_uploads_label') ?></div>
+          </div>
+          <div class="tile">
+            <div class="n"><?= $esc($fmtBytes($lyProj + $lySite)) ?></div>
+            <div class="l"><?= $t('storage_layers_label') ?></div>
+          </div>
+          <div class="tile">
+            <div class="n"><?= $esc($fmtBytes($pkProj + $pkSite)) ?></div>
+            <div class="l"><?= $t('storage_packs_label') ?></div>
+          </div>
+        </div>
+        <?php else: ?>
+        <div class="hint" style="margin-top:6px"><?= $t('storage_never_computed_msg') ?></div>
+        <?php endif; ?>
+        <form method="post" style="margin-top:8px">
+          <input type="hidden" name="csrf" value="<?= $esc_csrf ?>"><input type="hidden" name="action" value="storagerecalc">
+          <button class="btn"><i class="fa-solid fa-rotate"></i> <?= $t('storage_recalc_btn') ?></button>
+        </form>
+      </div>
       <div class="card section-card">
         <div class="badge"><i class="fa-solid fa-toggle-on"></i> <?= $t('global_features_badge') ?></div>
         <div class="hint" style="margin-top:6px"><?= $t('global_features_hint') ?></div>

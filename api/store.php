@@ -206,6 +206,76 @@ function store_projects(array $cfg): array {
     return $out;
 }
 
+/**
+ * 目錄底下所有檔案大小遞迴加總。跟 admin.php 的 backup=all 用的 $addDir closure
+ * 同一套 RecursiveIteratorIterator 寫法，但只加總不收集檔案清單。
+ */
+function souliong_dir_bytes(string $dir): int {
+    if ($dir === '' || !is_dir($dir)) {
+        return 0;
+    }
+    $sum = 0;
+    foreach (new RecursiveIteratorIterator(new RecursiveDirectoryIterator($dir, FilesystemIterator::SKIP_DOTS)) as $f) {
+        if ($f->isFile() && !$f->isLink()) {
+            $sum += $f->getSize();
+        }
+    }
+    return $sum;
+}
+
+function souliong_storage_cache_path(array $cfg): string {
+    return rtrim($cfg['state_dir'], '/\\') . '/storage.json';
+}
+
+/** 讀取容量快取；沒算過或格式壞掉回 null，呼叫端要能分辨「還沒算」跟「算出來是 0」。 */
+function souliong_storage_cache(array $cfg): ?array {
+    $f = souliong_storage_cache_path($cfg);
+    if (!is_file($f)) {
+        return null;
+    }
+    $data = json_decode((string)@file_get_contents($f), true);
+    return is_array($data) ? $data : null;
+}
+
+/**
+ * 全站容量遞迴掃描的實際運算，不含寫檔——寫進 state/storage.json 是呼叫端（admin.php 的
+ * action=storagerecalc）的事，這裡只負責算出數字。刻意不在頁面每次載入時呼叫這個函式：
+ * admin.php 後台頁一次把所有分頁 render 出來，前端只是切換顯示，即時算會讓每次載入都
+ * 遞迴掃過所有專案的圖磚金字塔，太重。
+ */
+function souliong_storage_compute(array $cfg): array {
+    $layers = ['' => []];
+    foreach (souliong_layer_list($cfg) as $id => $info) {
+        if (!souliong_layer_is_local($info)) continue;
+        $layers[''][$id] = souliong_dir_bytes(souliong_layer_dir($cfg, $id));
+    }
+    $packs = ['' => []];
+    foreach (souliong_pack_list($cfg) as $id => $info) {
+        $packs[''][$id] = souliong_dir_bytes(souliong_pack_dir($cfg, $id));
+    }
+    $uploads = [];
+    foreach (store_projects($cfg) as $p) {
+        $pdir = project_dir($cfg, $p);
+        $uploads[$p] = [
+            'photos' => souliong_dir_bytes($pdir . '/photos'),
+            'media'  => souliong_dir_bytes($pdir . '/media'),
+        ];
+        $layers[$p] = [];
+        foreach (souliong_layer_list($cfg, $p) as $id => $info) {
+            if (($info['scope'] ?? '') !== 'project' || !souliong_layer_is_local($info)) continue;
+            $bytes = souliong_dir_bytes(souliong_layer_dir($cfg, $id, $p));
+            $bytes += souliong_layersrc_bytes(souliong_layersrc_dir($cfg, $p, $id));
+            $layers[$p][$id] = $bytes;
+        }
+        $packs[$p] = [];
+        foreach (souliong_pack_list($cfg, $p) as $id => $info) {
+            if (($info['scope'] ?? '') !== 'project') continue;
+            $packs[$p][$id] = souliong_dir_bytes(souliong_pack_dir($cfg, $id, $p));
+        }
+    }
+    return ['computed_at' => time(), 'layers' => $layers, 'packs' => $packs, 'uploads' => $uploads];
+}
+
 function json_out($data, int $code = 200): void {
     http_response_code($code);
     header('Content-Type: application/json; charset=utf-8');
