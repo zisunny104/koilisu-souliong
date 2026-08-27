@@ -1,9 +1,12 @@
 {
-  "label": "Positron 風格（淡灰）",
-  "desc": "配色極淡，幾乎只剩路網輪廓與地名。自繪插畫疊上去時，底圖不會跟插畫的顏色打架——想讓插畫當主角就選這一張。深色模式自動換成深色版。原本用 CARTO 的圖磚，後來 CARTO 的免金鑰匿名圖磚被鎖成「API KEY REQUIRED」浮水印，中途換過 Esri 頂替，但 Esri 在非都會區常常沒切到那麼細的磚（會出現「Map data not yet available」的空白格）。現在改用 OpenFreeMap 的向量圖磚：免金鑰、無用量上限，資料即時跟著 OpenStreetMap 渲染，不受「有沒有切過這一格圖磚」限制，深度縮放到哪都畫得出來。",
-  "type": "vector",
+  "label": "CARTO Positron",
+  "desc": "跟 Voyager 同一家、同一份 OpenStreetMap 資料，但配色極淡，幾乎只剩路網輪廓與地名。自繪插畫疊上去時，底圖不會跟插畫的顏色打架——想讓插畫當主角就選這一張。深色模式自動換成 Dark Matter。",
+  "type": "raster",
   "pane": "base",
-  "styleUrl": "https://tiles.openfreemap.org/styles/positron",
-  "styleUrlDark": "https://tiles.openfreemap.org/styles/dark",
-  "attribution": "&copy; <a href=\"https://www.openstreetmap.org/copyright\" target=\"_blank\" rel=\"noopener\">OpenStreetMap</a> {osm_contributors} &middot; <a href=\"https://openfreemap.org\" target=\"_blank\" rel=\"noopener\">OpenFreeMap</a>"
+  "url": "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",
+  "urlDark": "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
+  "subdomains": "abcd",
+  "detectRetina": true,
+  "maxZoom": 20,
+  "attribution": "&copy; <a href=\"https://www.openstreetmap.org/copyright\" target=\"_blank\" rel=\"noopener\">OpenStreetMap</a> {osm_contributors} &middot; <a href=\"https://carto.com/attributions\" target=\"_blank\" rel=\"noopener\">CARTO</a>"
 }

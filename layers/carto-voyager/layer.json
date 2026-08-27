@@ -1,9 +1,12 @@
 {
-  "label": "Voyager 風格（通用）",
-  "desc": "彩色的通用底圖，道路、水域、地物都有顏色區分，適合當一般瀏覽用的預設底圖。深色模式換成深色版。原本用 CARTO 的 Voyager 圖磚，後來 CARTO 的免金鑰匿名圖磚被鎖成「API KEY REQUIRED」浮水印，中途換過 Esri 街道底圖頂替，但風格差很多、且偏遠地區一樣有涵蓋率問題。現在改用 OpenFreeMap 的 Liberty 風格向量圖磚：免金鑰、無用量上限，資料跟著 OpenStreetMap 即時渲染，不受單一供應商政策異動或圖磚涵蓋率影響。",
-  "type": "vector",
+  "label": "CARTO Voyager",
+  "desc": "OpenStreetMap 資料、CARTO 繪製的通用底圖。淺色用 Voyager（道路較寬、有淡彩），深色用 Dark Matter。這是圖層化之前寫死在檢視器裡的那張底圖，也是 default_layers 的預設值。",
+  "type": "raster",
   "pane": "base",
-  "styleUrl": "https://tiles.openfreemap.org/styles/liberty",
-  "styleUrlDark": "https://tiles.openfreemap.org/styles/dark",
-  "attribution": "&copy; <a href=\"https://www.openstreetmap.org/copyright\" target=\"_blank\" rel=\"noopener\">OpenStreetMap</a> {osm_contributors} &middot; <a href=\"https://openfreemap.org\" target=\"_blank\" rel=\"noopener\">OpenFreeMap</a>"
+  "url": "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png",
+  "urlDark": "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
+  "subdomains": "abcd",
+  "detectRetina": true,
+  "maxZoom": 20,
+  "attribution": "&copy; <a href=\"https://www.openstreetmap.org/copyright\" target=\"_blank\" rel=\"noopener\">OpenStreetMap</a> {osm_contributors} &middot; <a href=\"https://carto.com/attributions\" target=\"_blank\" rel=\"noopener\">CARTO</a>"
 }

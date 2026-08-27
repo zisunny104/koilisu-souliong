@@ -84,7 +84,7 @@ Nginx：`client_max_body_size 70m;`　PHP：`upload_max_filesize=64M`、`post_ma
 ```
 script-src  'unsafe-inline' https://unpkg.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com;
 style-src   'unsafe-inline' https://unpkg.com https://cdnjs.cloudflare.com;
-img-src     'self' data: blob: https://services.arcgisonline.com;
+img-src     'self' data: blob: https://*.basemaps.cartocdn.com;
 media-src   'self' blob:;
 connect-src 'self';
 font-src    https://cdnjs.cloudflare.com;

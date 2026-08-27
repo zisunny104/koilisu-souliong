@@ -90,12 +90,8 @@ $jsonFlags = JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JS
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <title><?= $t('app_title') ?></title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-<?php /* MapLibre GL 底圖（OpenFreeMap 向量圖磚）是站內底圖預設，不掛在 map3d 開關下——
-        地圖沒開 3D 模式也一樣需要它把底圖畫出來。3D 模式限定的東西（three.js import map）
-        才留在下面的 map3d 判斷式裡，大型第三方函式庫一律走真的 <link>/<script src>，
-        不用 readfile() 內嵌，才吃得到瀏覽器快取（理由同下方 leaflet.js） */ ?>
+<?php if ($mod('map3d')): /* 大型第三方函式庫走真的 <link>/<script src>,不用 readfile() 內嵌,才吃得到瀏覽器快取(理由同下方 leaflet.js) */ ?>
 <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@6.6.0/dist/maplibre-gl.css">
-<?php if ($mod('map3d')): ?>
 <script type="importmap">
 {"imports": {
   "three": "https://unpkg.com/three@0.184.0/build/three.module.js",
@@ -274,11 +270,9 @@ if ($pack) {
 
 <script>window.APP = <?= json_encode($APP, $jsonFlags) ?>; window.I18N = <?= json_encode($DICT, $jsonFlags) ?>; window.LANG = <?= json_encode($LANG, $jsonFlags) ?>;</script>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<?php /* 同上：MapLibre GL 是底圖預設，不掛 map3d 開關；leaflet-maplibre-gl 是把 MapLibre
-        style 橋接進 Leaflet 圖層系統的黏合層,viewer.leaflet.js 的 VectorLayer 會呼叫
-        L.maplibreGL(...),所以要排在它之前載入 */ ?>
+<?php if ($mod('map3d')): ?>
 <script src="https://unpkg.com/maplibre-gl@6.6.0/dist/maplibre-gl.js"></script>
-<script src="https://unpkg.com/@maplibre/maplibre-gl-leaflet@0.1.4/dist/leaflet-maplibre-gl.js"></script>
+<?php endif; ?>
 <?php if (in_array('photo', $contribFiles, true)): /* EXIF 讀取與 HEIC 轉檔只有照片投稿用得到（見 assets/js/contrib/kind-photo.js） */ ?>
 <script src="https://cdn.jsdelivr.net/npm/exifr/dist/full.umd.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js"></script>
