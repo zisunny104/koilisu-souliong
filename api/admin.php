@@ -387,6 +387,45 @@ if (!$authed) {
         }
       }
 
+      .pin-keypad {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: var(--sp-1);
+        margin-top: var(--sp-2)
+      }
+
+      .pin-key {
+        height: 2.75rem;
+        border: 1px solid var(--line);
+        border-radius: var(--sp-2);
+        background: var(--bg);
+        color: var(--fg);
+        font-size: 1.0625rem;
+        font-weight: 600;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center
+      }
+
+      .pin-key:hover {
+        background: var(--line)
+      }
+
+      .pin-key:active {
+        transform: translateY(1px)
+      }
+
+      .pin-key.del {
+        color: var(--muted)
+      }
+
+      .pin-key.ok {
+        background: var(--accent);
+        color: var(--accent-fg);
+        border-color: var(--accent)
+      }
+
       .textfield {
         text-align: left;
         letter-spacing: normal;
@@ -441,7 +480,7 @@ if (!$authed) {
       <div class="s"><?= $reqProject !== '' ? $t('project_scope_label', ['project' => $reqProject]) : $t('master_scope_label') ?><?= $t('enter_admin_pin') ?></div>
       <div class="err"><?= $esc($loginErr) ?></div>
       <div id="loginPinFields">
-        <input name="pin" type="password" autocomplete="off" autofocus placeholder="PIN" data-pin-toggle>
+        <input name="pin" type="password" autocomplete="off" autofocus placeholder="PIN" data-pin-toggle data-pin-slots="4" data-pin-keypad>
       </div>
       <div id="loginAcctFields" style="display:none">
         <input name="userid" type="text" class="textfield" autocomplete="username" placeholder="<?= $t('userid_placeholder') ?>">

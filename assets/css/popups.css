@@ -277,6 +277,48 @@
   color: var(--fg)
 }
 
+/* 畫面上可點的數字鍵盤：data-pin-keypad 欄位才會長出來（目前僅 PIN 登入），
+   跟上面的鍵盤切換鈕連動——切成一般鍵盤時用 JS 收起來（見 pin-input.js） */
+.pin-keypad {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-top: 10px
+}
+
+.pin-key {
+  height: 50px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--bg);
+  color: var(--fg);
+  font-size: 1.0625rem;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background var(--t)
+}
+
+.pin-key:hover {
+  background: var(--hover)
+}
+
+.pin-key:active {
+  transform: translateY(1px)
+}
+
+.pin-key.del {
+  color: var(--muted)
+}
+
+.pin-key.ok {
+  background: var(--accent);
+  color: var(--accent-fg);
+  border-color: var(--accent)
+}
+
 /* QR 掃描 */
 #scanBox {
   margin-top: 12px;

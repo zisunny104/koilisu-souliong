@@ -242,7 +242,7 @@ if ($pack) {
 <div id="pinDialog" class="dialog">
   <div class="dialog-box pin-box">
     <div class="dialog-head"><b><?= $t('admin_login') ?></b><button class="icon-btn" onclick="MapApp.closePin()" aria-label="<?= $t('close') ?>"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button></div>
-    <input id="pinInput" class="name-in" style="width:100%;text-align:center;font-size:1.125rem" type="password" placeholder="PIN" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-pin-toggle aria-label="<?= $t('pin_input_area') ?>">
+    <input id="pinInput" class="name-in" style="width:100%;text-align:center;font-size:1.125rem" type="password" placeholder="PIN" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-pin-toggle data-pin-slots="4" data-pin-keypad aria-label="<?= $t('pin_input_area') ?>">
     <div id="pinMsg" class="hint" role="status"></div>
     <div class="dialog-actions">
       <span class="spacer"></span>

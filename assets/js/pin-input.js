@@ -71,6 +71,52 @@
     render();
   }
 
+  const ICON_DEL = '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 4H8l-7 8 7 8h13a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2z"/><path d="M18 9l-6 6M12 9l6 6"/></svg>';
+  const ICON_OK = '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6L9 17l-5-5"/></svg>';
+  const KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', 'del', '0', 'ok'];
+
+  // 欄位是空白密碼框，實體鍵盤不一定在手邊（平板/桌機測試、或單純想用滑鼠點）——
+  // 掛 data-pin-keypad 的欄位才長這個，目前只用在 PIN 登入那兩個欄位。
+  function buildKeypad(input, wrap) {
+    if (input.dataset.pinKeypad == null) return null;
+    const pad = document.createElement('div');
+    pad.className = 'pin-keypad';
+    KEYS.forEach(function (k) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'pin-key' + (k === 'ok' ? ' ok' : '') + (k === 'del' ? ' del' : '');
+      b.setAttribute('aria-label', k === 'del' ? t('delete', '刪除') : k === 'ok' ? t('confirm_ok', '確認') : k);
+      b.innerHTML = k === 'del' ? ICON_DEL : k === 'ok' ? ICON_OK : k;
+      b.addEventListener('click', function () {
+        if (k === 'del') {
+          input.value = input.value.slice(0, -1);
+        } else if (k === 'ok') {
+          submitField(input);
+          return;
+        } else {
+          input.value += k;
+        }
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        input.focus();
+      });
+      pad.appendChild(b);
+    });
+    wrap.parentNode.insertBefore(pad, wrap.nextSibling);
+    return pad;
+  }
+
+  // 有原生 <form> 就走原生送出（admin.php 的後台登入）；沒有的欄位（view.php 是 fetch
+  // 呼叫 API，不是表單）改派發一個假的 Enter keydown——那邊本來就掛了實體 Enter 的監聽，
+  // 借用同一條路徑送出，不用讓這個共用元件認得個別頁面的送出函式。
+  function submitField(input) {
+    if (input.form) {
+      if (input.form.requestSubmit) input.form.requestSubmit();
+      else input.form.submit();
+      return;
+    }
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+  }
+
   function upgrade(input) {
     if (input.dataset.pinToggled) return;
     input.dataset.pinToggled = '1';
@@ -84,6 +130,7 @@
     input.setAttribute('pattern', '[0-9]*');
 
     buildMaskOverlay(input, wrap);
+    const pad = buildKeypad(input, wrap);
 
     const btn = document.createElement('button');
     btn.type = 'button';
@@ -98,6 +145,8 @@
       btn.title = label;
       btn.setAttribute('aria-label', label);
       btn.innerHTML = keyboardMode ? ICON_NUMERIC : ICON_KEYBOARD;
+      // 切成一般鍵盤代表要打英數字，畫面數字鍵盤沒意義，收起來；切回數字模式才重新顯示。
+      if (pad) pad.style.display = keyboardMode ? 'none' : '';
     }
     btn.addEventListener('click', function () {
       keyboardMode = !keyboardMode;
