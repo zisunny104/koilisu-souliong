@@ -8,6 +8,14 @@ return [
     'default_layers'  => ['carto-voyager'],                  // meta.json 沒寫 layers 時套用的圖層組，由下往上疊
     'layersrc_max_file'  => 64 * 1024 * 1024,                // 切磚工具「保留原稿」的單檔上限
     'layersrc_max_total' => 256 * 1024 * 1024,               // 同上，單一圖層所有原稿加起來的上限
+
+    // 3D 地圖模式：公用建物擠出圖磚服務（見 api/regions3d.php、assets/js/plugins/map3d.js）。
+    // OpenFreeMap 免金鑰即可用；換成 MapTiler／Stadia 之類需要 key 的服務時，改這三個值即可，
+    // 前端與 region3d.php 都不必動——provider 的形狀（OpenMapTiles schema）看 view.php 怎麼組 APP.map3d。
+    'map3d_provider'   => 'openfreemap',
+    'map3d_style_url'  => 'https://tiles.openfreemap.org/styles/3d',
+    'map3d_key'        => '',
+    'model3d_max_bytes' => 24 * 1024 * 1024,                 // 單一自訂模型（.glb）上限
     'max_bytes'       => 12 * 1024 * 1024,
     'allowed_mime'    => ['image/webp' => 'webp', 'image/jpeg' => 'jpg', 'image/png' => 'png'],
     'name_max'        => 60,

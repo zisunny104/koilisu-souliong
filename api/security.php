@@ -81,7 +81,7 @@ function admin_clear_cookie(): void {
 // ── PIN 清單（state/admin_pins.json） ──
 function pins_file(array $cfg): string { return rtrim($cfg['state_dir'], '/\\') . '/admin_pins.json'; }
 /** 新專案 PIN 的預設權限：一律從全關始（等同僅主 PIN 才能動別人的東西），需主 PIN 逐項開啟下放。 */
-function pin_default_perms(): array { return ['delete_others' => false, 'edit_others' => false, 'edit_points' => false, 'delegate_admin' => false]; }
+function pin_default_perms(): array { return ['delete_others' => false, 'edit_others' => false, 'edit_points' => false, 'delegate_admin' => false, 'edit_3d_regions' => false]; }
 function pins_load(array $cfg): array {
     $d = is_file(pins_file($cfg)) ? json_decode((string)@file_get_contents(pins_file($cfg)), true) : null;
     if (!is_array($d)) $d = [];

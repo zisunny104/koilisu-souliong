@@ -51,6 +51,10 @@ switch ($action) {
         $_GET['f'] = count($seg) > 1 ? implode('/', array_slice($seg, 1)) : ($_GET['f'] ?? '');
         require __DIR__ . '/api/layerfile.php';   // 圖層圖檔：<base>/layer/<project>/<id>/<路徑>
         return;
+    case 'model3d':
+        $_GET['f'] = count($seg) > 1 ? implode('/', array_slice($seg, 1)) : ($_GET['f'] ?? '');
+        require __DIR__ . '/api/model3dfile.php';   // 自訂 3D 模型檔：<base>/model3d/<project>/<id>/model.glb
+        return;
     case 'delete':
         require __DIR__ . '/api/delete.php';
         return;
@@ -74,6 +78,9 @@ switch ($action) {
         return;
     case 'tilecut':
         require __DIR__ . '/api/tilecut.php';  // 常駐工具：把一張自繪插畫切成圖磚金字塔，落地成專案層
+        return;
+    case 'region3d':
+        require __DIR__ . '/api/region3d.php';  // 常駐工具：3D 區域／自訂模型編輯器
         return;
     case 'stat':
         require __DIR__ . '/api/stat.php';

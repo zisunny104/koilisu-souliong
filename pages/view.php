@@ -21,6 +21,7 @@ require __DIR__ . '/../api/i18n.php';
 require __DIR__ . '/../api/features.php';
 require_once __DIR__ . '/../api/packs.php';
 require_once __DIR__ . '/../api/layers.php';
+require_once __DIR__ . '/../api/regions3d.php';
 $apiCfg    = require __DIR__ . '/../api/config.php';
 $isManager = admin_can($apiCfg, $proj);
 // 投稿開關＝有沒有還有效的投稿碼（真正的碼在伺服器端 codes.json，前端拿不到）。
@@ -54,6 +55,14 @@ $contribFiles = $mod('upload') ? $contribCfg['kinds'] : [];
 if ($contribFiles && ($contribCfg['newPoint'] === 'contributor' || ($contribCfg['newPoint'] === 'admin' && $isManager))) {
     $contribFiles[] = 'newpoint';
 }
+// 3D 模式關掉時整個 key 是 null，前端 map3d.js 本身也不會被載入(見下方 $mod('map3d') 輸出)，
+// 兩邊一起判斷、不是只看其中一邊，plugin 缺席時 APP.map3d 也沒有殘留資料可用。
+$map3d = $mod('map3d') ? [
+    'styleUrl'            => (string)($apiCfg['map3d_style_url'] ?? ''),
+    'key'                 => (string)($apiCfg['map3d_key'] ?? ''),
+    'regions'             => souliong_region3d_public_list($apiCfg, $proj, $base),
+    'excludedBuildingIds' => souliong_region3d_excluded_ids($apiCfg, $proj),
+] : null;
 
 $APP = [
     'base'        => $base,
@@ -71,6 +80,7 @@ $APP = [
     'contrib'     => $contribCfg,
     'pack'        => $pack,
     'layers'      => $layers,
+    'map3d'       => $map3d,
 ];
 $jsonFlags = JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_APOS;
 ?><!DOCTYPE html>
@@ -80,6 +90,18 @@ $jsonFlags = JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JS
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <title><?= $t('app_title') ?></title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<?php if ($mod('map3d')): /* 大型第三方函式庫走真的 <link>/<script src>,不用 readfile() 內嵌,才吃得到瀏覽器快取(理由同下方 leaflet.js) */ ?>
+<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@6.6.0/dist/maplibre-gl.css">
+<script type="importmap">
+{"imports": {
+  "three": "https://unpkg.com/three@0.184.0/build/three.module.js",
+  "three/addons/": "https://unpkg.com/three@0.184.0/examples/jsm/"
+}}
+</script>
+<?php // three.js 本體(~600KB)不在這裡載入——import map 只是解析規則,瀏覽器不會預先抓檔案;
+      // 真正的 import('three') 只在 assets/js/plugins/map3d.js 確認這張地圖至少有一筆已存
+      // 自訂模型時才會執行,沒有自訂模型的地圖不用付這個下載成本(見該檔 maybeLoadThree()) ?>
+<?php endif; ?>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
 <style><?php
 // 依原本 style.css 的層疊順序拆成多檔（見 assets/css/），新增樣式分類時只要在陣列裡加檔名即可
@@ -248,6 +270,9 @@ if ($pack) {
 
 <script>window.APP = <?= json_encode($APP, $jsonFlags) ?>; window.I18N = <?= json_encode($DICT, $jsonFlags) ?>; window.LANG = <?= json_encode($LANG, $jsonFlags) ?>;</script>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<?php if ($mod('map3d')): ?>
+<script src="https://unpkg.com/maplibre-gl@6.6.0/dist/maplibre-gl.js"></script>
+<?php endif; ?>
 <?php if (in_array('photo', $contribFiles, true)): /* EXIF 讀取與 HEIC 轉檔只有照片投稿用得到（見 assets/js/contrib/kind-photo.js） */ ?>
 <script src="https://cdn.jsdelivr.net/npm/exifr/dist/full.umd.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js"></script>
@@ -280,6 +305,9 @@ if ($pack) {
 <?php endif; ?>
 <?php if ($mod('personExplore')): ?>
 <script><?php readfile(__DIR__ . '/../assets/js/plugins/person-explore.js'); ?></script>
+<?php endif; ?>
+<?php if ($mod('map3d')): ?>
+<script><?php readfile(__DIR__ . '/../assets/js/plugins/map3d.js'); ?></script>
 <?php endif; ?>
 </body>
 </html>

@@ -7,6 +7,7 @@ require __DIR__ . '/stats.php';
 require __DIR__ . '/features.php';
 require_once __DIR__ . '/packs.php';
 require_once __DIR__ . '/layers.php';     // 地圖圖層註冊表（底圖／疊圖），形狀同 packs.php
+require_once __DIR__ . '/regions3d.php';  // 3D 自訂模型區域註冊表，形狀同上，見 api/region3d.php
 require_once __DIR__ . '/routes.php';    // 網址表：後台網址只有這一份定義，不在各處黏字串
 require_once __DIR__ . '/settings.php';   // packs.php 內部也會載它，兩邊都用 require_once 才不會重複宣告
 require __DIR__ . '/../pages/error.php';
@@ -3225,6 +3226,30 @@ if (!$authed) {
                 <a class="btn" href="<?= $esc(Route::tool('tilecut', $p)) ?>"><i class="fa-solid fa-scissors"></i> <?= $t('open_tilecut_btn') ?></a>
                 <span class="hint"><?= $t('tilecut_entry_hint') ?></span>
               </div>
+              <?php
+                // edit_3d_regions 預設關閉（跟 delegate_admin 等其他委派權限一樣），沒開的話這裡
+                // 整段不出現——存檔會被伺服器擋，與其讓人填完整個編輯流程才在最後一步撞牆，不如
+                // 一開始就不給入口。
+                $canEdit3d = $master || admin_perm($cfg, $p, 'edit_3d_regions');
+                $projRegions = $canEdit3d ? souliong_region3d_list($cfg, $p) : [];
+              ?>
+              <?php if ($canEdit3d): ?>
+              <div class="row" style="margin:2px 0 4px">
+                <a class="btn" href="<?= $esc(Route::tool('region3d', $p)) ?>"><i class="fa-solid fa-cube"></i> <?= $t('open_region3d_btn') ?></a>
+                <span class="hint"><?= $t('region3d_entry_hint') ?></span>
+              </div>
+              <?php if ($projRegions): ?>
+              <div class="lylist">
+                <?php foreach ($projRegions as $rid => $rinfo): ?>
+                <div class="lyrow">
+                  <span style="flex:1 1 auto;min-width:0;font-size:0.8125rem"><b><?= $esc($rinfo['label'] ?? $rid) ?></b>
+                    <span class="hint mono"><?= $esc($rid) ?></span></span>
+                  <a class="btn" href="<?= $esc(Route::tool('region3d', $p, ['load' => $rid])) ?>"><i class="fa-solid fa-pen"></i> <?= $t('region3d_edit_link_btn') ?></a>
+                </div>
+                <?php endforeach; ?>
+              </div>
+              <?php endif; ?>
+              <?php endif; ?>
               <?php if ($projLayers): ?>
               <div class="lylist">
                 <?php foreach ($projLayers as $lid => $linfo): ?>
@@ -3427,7 +3452,7 @@ if (!$authed) {
             <?php if ($realPins): ?>
               <div class="pinlist">
                 <?php if ($master):
-                  $permLabels = ['delete_others' => $t('perm_delete_others'), 'edit_others' => $t('perm_edit_others'), 'edit_points' => $t('perm_edit_points'), 'delegate_admin' => $t('perm_delegate_admin')];
+                  $permLabels = ['delete_others' => $t('perm_delete_others'), 'edit_others' => $t('perm_edit_others'), 'edit_points' => $t('perm_edit_points'), 'delegate_admin' => $t('perm_delegate_admin'), 'edit_3d_regions' => $t('perm_edit_3d_regions')];
                   foreach ($realPins as $e): $pid = (string)($e['id'] ?? ''); $perms = $e['perms'] ?? pin_default_perms(); ?>
                   <div class="pinchip pinchip-block">
                     <div class="idline"><span><?= $esc(($e['label'] ?? '') !== '' ? $e['label'] : $t('no_nickname_label')) ?> · <?= $secret($e['pin'] ?? '') ?>
