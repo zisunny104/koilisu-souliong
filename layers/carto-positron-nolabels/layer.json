@@ -1,12 +1,10 @@
 {
   "label": "Positron 風格（無地名）",
-  "desc": "手繪稿本身多半已經寫了地名，底圖再標一次會疊成一團——這一張是為了那種情況準備的。原本用 CARTO 真正去掉文字的無地名圖磚，但 CARTO 的免金鑰圖磚已停用（見「Positron 風格（淡灰）」的說明）；目前還沒找到同樣免金鑰、且真的不含文字的替代來源，暫時跟淡灰版共用同一份圖磚（仍會看到地名），等找到更好的來源再換掉，屆時不用改任何專案設定。",
-  "type": "raster",
+  "desc": "手繪稿本身多半已經寫了地名，底圖再標一次會疊成一團——這一張是為了那種情況準備的。跟「Positron 風格（淡灰）」用同一份 OpenFreeMap 向量圖磚，差別是載入後把文字標籤圖層全部關掉。這是向量圖磚才做得到的事：以前用點陣圖磚（CARTO／Esri）時，文字是燒進圖片像素裡，沒辦法只挑掉文字，只能整份圖磚一起換掉；現在地圖資料是分圖層送來的，把標籤圖層關掉就好，路網、水域、地物的顏色照樣完整顯示。深色模式同樣去標籤。",
+  "type": "vector",
   "pane": "base",
-  "url": "https://services.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}",
-  "urlDark": "https://services.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}",
-  "detectRetina": false,
-  "maxZoom": 20,
-  "maxNativeZoom": 16,
-  "attribution": "&copy; <a href=\"https://www.openstreetmap.org/copyright\" target=\"_blank\" rel=\"noopener\">OpenStreetMap</a> {osm_contributors} &middot; <a href=\"https://www.esri.com\" target=\"_blank\" rel=\"noopener\">Esri</a>, HERE, Garmin"
+  "styleUrl": "https://tiles.openfreemap.org/styles/positron",
+  "styleUrlDark": "https://tiles.openfreemap.org/styles/dark",
+  "hideLabels": true,
+  "attribution": "&copy; <a href=\"https://www.openstreetmap.org/copyright\" target=\"_blank\" rel=\"noopener\">OpenStreetMap</a> {osm_contributors} &middot; <a href=\"https://openfreemap.org\" target=\"_blank\" rel=\"noopener\">OpenFreeMap</a>"
 }

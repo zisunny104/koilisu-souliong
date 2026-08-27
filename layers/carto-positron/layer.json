@@ -1,12 +1,9 @@
 {
   "label": "Positron 風格（淡灰）",
-  "desc": "配色極淡，幾乎只剩路網輪廓與地名。自繪插畫疊上去時，底圖不會跟插畫的顏色打架——想讓插畫當主角就選這一張。深色模式自動換成深灰版。原本用 CARTO 的圖磚，2026 年起 CARTO 的免金鑰匿名圖磚會被浮水印蓋成「API KEY REQUIRED」，改用 Esri 同樣走向的免金鑰淡灰底圖；細節解析度在台灣這邊到 16 級為止，再放大是等比例放大同一張圖磚（不是破圖，是這個來源在非歐美地區本來就沒切更細的磚）。",
-  "type": "raster",
+  "desc": "配色極淡，幾乎只剩路網輪廓與地名。自繪插畫疊上去時，底圖不會跟插畫的顏色打架——想讓插畫當主角就選這一張。深色模式自動換成深色版。原本用 CARTO 的圖磚，後來 CARTO 的免金鑰匿名圖磚被鎖成「API KEY REQUIRED」浮水印，中途換過 Esri 頂替，但 Esri 在非都會區常常沒切到那麼細的磚（會出現「Map data not yet available」的空白格）。現在改用 OpenFreeMap 的向量圖磚：免金鑰、無用量上限，資料即時跟著 OpenStreetMap 渲染，不受「有沒有切過這一格圖磚」限制，深度縮放到哪都畫得出來。",
+  "type": "vector",
   "pane": "base",
-  "url": "https://services.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}",
-  "urlDark": "https://services.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}",
-  "detectRetina": false,
-  "maxZoom": 20,
-  "maxNativeZoom": 16,
-  "attribution": "&copy; <a href=\"https://www.openstreetmap.org/copyright\" target=\"_blank\" rel=\"noopener\">OpenStreetMap</a> {osm_contributors} &middot; <a href=\"https://www.esri.com\" target=\"_blank\" rel=\"noopener\">Esri</a>, HERE, Garmin"
+  "styleUrl": "https://tiles.openfreemap.org/styles/positron",
+  "styleUrlDark": "https://tiles.openfreemap.org/styles/dark",
+  "attribution": "&copy; <a href=\"https://www.openstreetmap.org/copyright\" target=\"_blank\" rel=\"noopener\">OpenStreetMap</a> {osm_contributors} &middot; <a href=\"https://openfreemap.org\" target=\"_blank\" rel=\"noopener\">OpenFreeMap</a>"
 }

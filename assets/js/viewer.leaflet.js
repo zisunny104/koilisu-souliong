@@ -76,11 +76,10 @@ window.MapApp = (() => {
   // 內容與 layers/carto-voyager/layer.json 一致——這是全專案唯一一處重複，寧可重複也不要
   // 因為少一個設定就整張地圖開天窗。
   const FALLBACK_LAYER = {
-    id: 'carto-voyager', type: 'raster', pane: 'base',
-    url: 'https://services.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}',
-    urlDark: 'https://services.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}',
-    detectRetina: false, maxZoom: 20,
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> {osm_contributors} &middot; <a href="https://www.esri.com" target="_blank" rel="noopener">Esri</a>, HERE, Garmin',
+    id: 'carto-voyager', type: 'vector', pane: 'base',
+    styleUrl: 'https://tiles.openfreemap.org/styles/liberty',
+    styleUrlDark: 'https://tiles.openfreemap.org/styles/dark',
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> {osm_contributors} &middot; <a href="https://openfreemap.org" target="_blank" rel="noopener">OpenFreeMap</a>',
   };
   const layerManifests = () => (APP.layers && APP.layers.length) ? APP.layers : [FALLBACK_LAYER];
   // Leaflet 預設只有 tilePane(200)／overlayPane(400)／markerPane(600)，圖層彼此之間沒有可以
@@ -91,7 +90,11 @@ window.MapApp = (() => {
 
   /** 一張圖層。子類負責「怎麼變成一個 L.Layer」，其餘（pane、換主題、掛上／移除）都在這裡。 */
   class MapLayer {
-    static from(m) { return (m && m.type === 'image') ? new ImageLayer(m) : new RasterLayer(m); }
+    static from(m) {
+      if (m && m.type === 'image') return new ImageLayer(m);
+      if (m && m.type === 'vector') return new VectorLayer(m);
+      return new RasterLayer(m);
+    }
     constructor(m) { this.m = m || {}; this.leaflet = null; }
     /** 深淺色切換時要不要整層重建——只有真的備了深色版的圖層需要，其餘原地不動 */
     get themeSensitive() { return !!this.m.urlDark; }
@@ -124,6 +127,34 @@ window.MapApp = (() => {
       if (m.className) o.className = m.className;
       if (opts.attribution) o.attribution = opts.attribution;
       return L.tileLayer(url, o);
+    }
+  }
+
+  /** 向量圖磚底圖（OpenFreeMap 等 MapLibre style）：交給 L.maplibreGL 橋接層渲染，
+      Leaflet 只負責同步視角，互動全交還 Leaflet（interactive:false）避免雙引擎搶事件。
+      hideLabels：載入後把整份 style 裡 type 為 symbol 的圖層（文字/圖示）關掉——這是向量
+      圖磚才做得到的「無地名」，點陣圖磚時代文字燒進像素裡，做不到只挑掉文字這件事。 */
+  class VectorLayer extends MapLayer {
+    get themeSensitive() { return !!this.m.styleUrlDark; }
+    build(dark, opts) {
+      const m = this.m;
+      const style = (dark && m.styleUrlDark) ? m.styleUrlDark : m.styleUrl;
+      if (!style) return null;
+      const o = { style, pane: opts.pane, interactive: false };
+      if (opts.attribution) o.attribution = opts.attribution;
+      const gl = L.maplibreGL(o);
+      if (m.hideLabels) {
+        gl.on('add', function () {
+          const mm = gl.getMaplibreMap();
+          const hide = function () {
+            mm.getStyle().layers.forEach(function (ly) {
+              if (ly.type === 'symbol') mm.setLayoutProperty(ly.id, 'visibility', 'none');
+            });
+          };
+          if (mm.isStyleLoaded()) hide(); else mm.once('style.load', hide);
+        });
+      }
+      return gl;
     }
   }
 
