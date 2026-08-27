@@ -115,7 +115,7 @@ footer a{color:inherit}
   <div class="cr-line">
     <span class="cr-ext">
       &copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> <?= $t('osm_contributors') ?>
-      ・ <a href="https://carto.com/attributions" target="_blank" rel="noopener">CARTO</a>
+      ・ <a href="https://www.esri.com" target="_blank" rel="noopener">Esri</a>
       ・ <a href="https://leafletjs.com" target="_blank" rel="noopener">Leaflet</a>
     </span>
     <span class="cr-sep" aria-hidden="true"></span>
@@ -134,10 +134,11 @@ var BASE = <?= json_encode($base) ?>, IDS = <?= json_encode(array_map(fn($m) => 
 var BG = <?= json_encode($bg) ?>;
 (function(){
   var dark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
-  var url = 'https://{s}.basemaps.cartocdn.com/' + (dark ? 'dark_all' : 'rastertiles/voyager') + '/{z}/{x}/{y}{r}.png';
+  var svc = dark ? 'Canvas/World_Dark_Gray_Base' : 'World_Street_Map';
+  var url = 'https://services.arcgisonline.com/ArcGIS/rest/services/' + svc + '/MapServer/tile/{z}/{y}/{x}';
   var map = L.map('bgmap', { zoomControl:false, attributionControl:false, dragging:false, scrollWheelZoom:false, doubleClickZoom:false, boxZoom:false, keyboard:false, touchZoom:false, tap:false, inertia:false, fadeAnimation:true })
     .setView(BG.center || [23.9,120.7], BG.zoom || 14);
-  L.tileLayer(url, { maxZoom:20, subdomains:'abcd', detectRetina:true }).addTo(map);
+  L.tileLayer(url, { maxZoom:20 }).addTo(map);
   var rb = document.getElementById('randomBtn');
   if (rb) rb.onclick = function(){ location.href = BASE + IDS[Math.floor(Math.random()*IDS.length)]; };
 })();

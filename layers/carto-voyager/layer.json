@@ -1,12 +1,11 @@
 {
-  "label": "CARTO Voyager",
-  "desc": "OpenStreetMap 資料、CARTO 繪製的通用底圖。淺色用 Voyager（道路較寬、有淡彩），深色用 Dark Matter。這是圖層化之前寫死在檢視器裡的那張底圖，也是 default_layers 的預設值。",
+  "label": "Voyager 風格（通用）",
+  "desc": "彩色的通用底圖，道路、水域、地物都有顏色區分，適合當一般瀏覽用的預設底圖。深色模式換成深灰版。原本用 CARTO 的 Voyager 圖磚，2026 年起 CARTO 的免金鑰匿名圖磚會被浮水印蓋成「API KEY REQUIRED」，改用 Esri 免金鑰的街道底圖；風格跟 Voyager 不完全一樣（比較接近傳統路網地圖，不是柔和大地色），但一樣免金鑰、無使用量限制。",
   "type": "raster",
   "pane": "base",
-  "url": "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png",
-  "urlDark": "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
-  "subdomains": "abcd",
-  "detectRetina": true,
+  "url": "https://services.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}",
+  "urlDark": "https://services.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}",
+  "detectRetina": false,
   "maxZoom": 20,
-  "attribution": "&copy; <a href=\"https://www.openstreetmap.org/copyright\" target=\"_blank\" rel=\"noopener\">OpenStreetMap</a> {osm_contributors} &middot; <a href=\"https://carto.com/attributions\" target=\"_blank\" rel=\"noopener\">CARTO</a>"
+  "attribution": "&copy; <a href=\"https://www.openstreetmap.org/copyright\" target=\"_blank\" rel=\"noopener\">OpenStreetMap</a> {osm_contributors} &middot; <a href=\"https://www.esri.com\" target=\"_blank\" rel=\"noopener\">Esri</a>, HERE, Garmin"
 }

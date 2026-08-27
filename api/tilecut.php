@@ -1234,8 +1234,8 @@ if ($EDIT === null && $loadId !== '' && $reqProject !== '') {
 
     // ── 地圖 ──
     const map = L.map('map', { center: [23.95, 120.69], zoom: 14 });
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
-      { subdomains: 'abcd', detectRetina: true, maxZoom: 20, attribution: '&copy; OpenStreetMap, CARTO' }).addTo(map);
+    L.tileLayer('https://services.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}',
+      { maxZoom: 20, attribution: '&copy; OpenStreetMap, Esri' }).addTo(map);
 
     /** 四個邊界值合不合理。與後端的 souliong_layer_bounds_valid() 同一套判準。 */
     function validBounds(b) {

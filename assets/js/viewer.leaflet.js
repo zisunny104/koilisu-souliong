@@ -77,10 +77,10 @@ window.MapApp = (() => {
   // 因為少一個設定就整張地圖開天窗。
   const FALLBACK_LAYER = {
     id: 'carto-voyager', type: 'raster', pane: 'base',
-    url: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
-    urlDark: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
-    subdomains: 'abcd', detectRetina: true, maxZoom: 20,
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> {osm_contributors} &middot; <a href="https://carto.com/attributions" target="_blank" rel="noopener">CARTO</a>',
+    url: 'https://services.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}',
+    urlDark: 'https://services.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}',
+    detectRetina: false, maxZoom: 20,
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> {osm_contributors} &middot; <a href="https://www.esri.com" target="_blank" rel="noopener">Esri</a>, HERE, Garmin',
   };
   const layerManifests = () => (APP.layers && APP.layers.length) ? APP.layers : [FALLBACK_LAYER];
   // Leaflet 預設只有 tilePane(200)／overlayPane(400)／markerPane(600)，圖層彼此之間沒有可以
