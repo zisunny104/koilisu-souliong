@@ -1242,10 +1242,10 @@ window.MapApp = (() => {
       // 投稿裡可能含 kind:'newpoint'（訪客建立的地點），分類與圖例得重算一次才看得到那些點
       rebuildCats(); buildLegend();
       recount(); renderChairs(); renderContribLayer(); rebuildPersonFilter(); emitHook('stateChange');
-      if (filterPerson) {   // 重新整理後恢復先前記住的投稿者篩選，順便把地圖對焦回他的觀察地圖
-        const pts = personPoints(filterPerson).map(e => [e.lat, e.lon]);
-        if (pts.length) map.fitBounds(L.latLngBounds(pts).pad(0.25));
-      }
+      // 注意：這裡不因為 filterPerson 記得先前篩選就把地圖對焦過去——那樣專案層級的進站縮放
+      // 會被投稿者自己散落各地的投稿點拉開，核心點位範圍反而被壓縮成一小塊。進站永遠維持
+      // boot() 那份只看 POINTS 的縮放；使用者自己從下拉選單「重新選取」投稿者時（見下方
+      // #personFilter 的 onchange）才會對焦到那個人的範圍，這是刻意保留的互動行為。
       document.getElementById('cloudWarn').style.display = 'none';
     } catch (e) {
       document.getElementById('cloudWarn').style.display = 'block';
