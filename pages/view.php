@@ -270,8 +270,18 @@ if ($pack) {
 
 <script>window.APP = <?= json_encode($APP, $jsonFlags) ?>; window.I18N = <?= json_encode($DICT, $jsonFlags) ?>; window.LANG = <?= json_encode($LANG, $jsonFlags) ?>;</script>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<?php if ($mod('map3d')): ?>
-<script src="https://unpkg.com/maplibre-gl@6.6.0/dist/maplibre-gl.js"></script>
+<?php if ($mod('map3d')): /* MapLibre v6 只出 ESM 版(dist/maplibre-gl.mjs),沒有 <script src> 吃得下去的全域
+     版本了——用內嵌 type="module" 匯入後手動掛回 window.maplibregl,讓 map3d.js 仍以傳統全域變數方式
+     使用它。map3d.js 也要標成 type="module",確保它排進「文件解析完才依序執行」這一批,晚於這段 shim
+     ——3D 模式一律要使用者先按下切換鈕才會用到 maplibregl,不會跟這段非同步載入搶時間。
+     向量圖磚底圖（viewer.leaflet.js 的 VectorLayer）不吃這段：疊圖層發生在頁面一開始同步的
+     boot() 裡，等不了 ESM 才會就緒的全域變數,所以它自己用 import() 動態載入同一份 MapLibre，
+     做法比照 map3d.js 對 three.js 的 lazy-load（見該檔 maybeLoadThree()），兩邊載入同一個網址時
+     瀏覽器的 module 快取本來就會共用，不會重複下載。 */ ?>
+<script type="module">
+import * as maplibregl from 'https://unpkg.com/maplibre-gl@6.6.0/dist/maplibre-gl.mjs';
+window.maplibregl = maplibregl;
+</script>
 <?php endif; ?>
 <?php if (in_array('photo', $contribFiles, true)): /* EXIF 讀取與 HEIC 轉檔只有照片投稿用得到（見 assets/js/contrib/kind-photo.js） */ ?>
 <script src="https://cdn.jsdelivr.net/npm/exifr/dist/full.umd.js"></script>
@@ -307,7 +317,7 @@ if ($pack) {
 <script><?php readfile(__DIR__ . '/../assets/js/plugins/person-explore.js'); ?></script>
 <?php endif; ?>
 <?php if ($mod('map3d')): ?>
-<script><?php readfile(__DIR__ . '/../assets/js/plugins/map3d.js'); ?></script>
+<script type="module"><?php readfile(__DIR__ . '/../assets/js/plugins/map3d.js'); ?></script>
 <?php endif; ?>
 </body>
 </html>

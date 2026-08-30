@@ -689,8 +689,14 @@ $map3dKey = (string)($cfg['map3d_key'] ?? '');
     <p class="backlink"><a href="<?= $adminUrl ?>"><i class="fa-solid fa-arrow-left"></i> <?= $t("back_to_admin") ?></a></p>
   </div>
 
-  <script src="https://unpkg.com/maplibre-gl@6.6.0/dist/maplibre-gl.js"></script>
-  <script>
+  <?php /* MapLibre v6 只出 ESM 版,沒有 <script src> 吃得下去的全域版本——內嵌 type="module" 匯入後
+       手動掛回 window.maplibregl,下面這段用到 maplibregl 的主程式也要標成 type="module",才會排進
+       同一批「文件解析完才依序執行」,晚於這段 shim（詳見 pages/view.php 對應位置的註解）。 */ ?>
+  <script type="module">
+import * as maplibregl from 'https://unpkg.com/maplibre-gl@6.6.0/dist/maplibre-gl.mjs';
+window.maplibregl = maplibregl;
+  </script>
+  <script type="module">
     const I18N = <?= json_encode([
       'need_id'        => i18n_t($DICT, 'region3d_need_id_msg'),
       'need_polygon'   => i18n_t($DICT, 'region3d_need_polygon_msg'),

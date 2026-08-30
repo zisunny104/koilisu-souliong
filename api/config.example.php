@@ -13,7 +13,7 @@ return [
     // OpenFreeMap 免金鑰即可用；換成 MapTiler／Stadia 之類需要 key 的服務時，改這三個值即可，
     // 前端與 region3d.php 都不必動——provider 的形狀（OpenMapTiles schema）看 view.php 怎麼組 APP.map3d。
     'map3d_provider'   => 'openfreemap',
-    'map3d_style_url'  => 'https://tiles.openfreemap.org/styles/3d',
+    'map3d_style_url'  => 'https://tiles.openfreemap.org/styles/liberty', // liberty 內建 building-3d fill-extrusion 圖層
     'map3d_key'        => '',
     'model3d_max_bytes' => 24 * 1024 * 1024,                 // 單一自訂模型（.glb）上限
     'max_bytes'       => 12 * 1024 * 1024,

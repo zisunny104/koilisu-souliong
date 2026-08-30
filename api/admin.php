@@ -3926,6 +3926,10 @@ if (!$authed) {
           <label style="display:inline-flex;align-items:center;gap:6px;font-size:0.8125rem"><input type="checkbox" name="overwrite" value="1"> <?= $t('layer_import_overwrite_label') ?></label>
           <button class="btn"><i class="fa-solid fa-upload"></i> <?= $t('restore_btn') ?></button>
         </form>
+        <div class="row" style="margin:10px 0 2px">
+          <a class="btn" href="<?= $esc(Route::tool('layermigrate', $scopeProject)) ?>"><i class="fa-solid fa-snowflake"></i> <?= $t('open_layermigrate_btn') ?></a>
+          <span class="hint"><?= $t('layermigrate_entry_hint') ?></span>
+        </div>
       </div>
     </div><!-- /pane-tools -->
     <?php endif; ?>

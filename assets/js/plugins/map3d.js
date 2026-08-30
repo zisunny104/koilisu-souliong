@@ -92,8 +92,9 @@
       // 沒有設定（模組沒開，或 provider 沒填 styleUrl）就整個不掛，2D 完全不受影響
       if (!cfg || !cfg.styleUrl) return;
       // WebGL 容錯：壞掉的 webview（Instagram/Line 內建瀏覽器常見）直接不出現切換鈕，
-      // 不留一顆按下去只會看到黑畫面的按鈕
-      if (typeof maplibregl === 'undefined' || !maplibregl.supported()) return;
+      // 不留一顆按下去只會看到黑畫面的按鈕。maplibregl.supported() 在 v6 被拿掉了（WebGL1
+      // 支援整個移除、改成一律要求 WebGL2），改成不依賴 MapLibre API 表面的手動探測。
+      if (typeof maplibregl === 'undefined' || !document.createElement('canvas').getContext('webgl2')) return;
       this.cfg = cfg;
       this.injectStyle();
       this.injectContainer();
@@ -142,7 +143,7 @@
     enter() {
       this.mapApp.trackFeature('map3d');
       this.mapApp.getMap().getContainer().style.display = 'none';
-      this.container.style.display = '';
+      this.container.style.display = 'block';
       this.active = true;
       this.btn.classList.add('on');
       if (!this.map) {

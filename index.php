@@ -82,6 +82,9 @@ switch ($action) {
     case 'region3d':
         require __DIR__ . '/api/region3d.php';  // 常駐工具：3D 區域／自訂模型編輯器
         return;
+    case 'layermigrate':
+        require __DIR__ . '/api/layermigrate.php';  // 常駐工具：把跟隨全站預設的舊專案圖層設定凍結明確
+        return;
     case 'stat':
         require __DIR__ . '/api/stat.php';
         return;

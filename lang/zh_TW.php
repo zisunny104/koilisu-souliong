@@ -546,6 +546,8 @@ return [
     'open_region3d_btn'                => '新增 3D 區域',
     'region3d_entry_hint'              => '放置自訂模型並畫出排除公用 3D 建物的範圍',
     'region3d_edit_link_btn'           => '編輯',
+    'open_layermigrate_btn'            => '圖層設定遷移',
+    'layermigrate_entry_hint'          => '把還沒明確設定圖層的舊專案，凍結成目前的預設圖層，之後改預設值才不會波及它們',
     'qr_click_hint'                    => '點一下全螢幕顯示，方便給人掃描',
     'eye_toggle_title'                 => '顯示／隱藏',
 
@@ -600,6 +602,21 @@ return [
     'exiffix_copied_from_orig_reason' => '已從原始投稿複製相機資訊',
     'exiffix_patched_reason'       => '已修補相機資訊',
     'exiffix_patch_failed_reason'  => '修補失敗（寫入錯誤）',
+
+    'layermigrate_title'               => '圖層設定遷移 · Souliong',
+    'layermigrate_h1'                  => '圖層設定遷移',
+    'layermigrate_warn'                => '只處理「meta.json 還沒有 layers 欄位、跟隨全站預設圖層」的專案：把目前的預設圖層明確寫進該專案設定。已經自己設定過圖層的專案一律略過，不會被覆寫。',
+    'layermigrate_status_explicit'     => '已明確設定：{ids}',
+    'layermigrate_status_default'      => '跟隨全站預設：{ids}',
+    'layermigrate_freeze_btn'          => '凍結目前圖層',
+    'layermigrate_freeze_all_btn'      => '批次凍結全部',
+    'layermigrate_freeze_all_hint'     => '只會處理下面標示「跟隨全站預設」的專案，已明確設定過的不受影響。',
+    'layermigrate_freeze_all_confirm'  => '確定要把 {n} 個專案的圖層設定凍結成目前的全站預設嗎？',
+    'layermigrate_all_frozen_msg'      => '目前所有專案都已經明確設定過圖層，沒有需要凍結的項目。',
+    'layermigrate_no_projects_msg'     => '目前還沒有任何專案',
+    'layermigrate_done_freeze_ok'      => '已將「{p}」的圖層設定凍結',
+    'layermigrate_done_freeze_skip'    => '「{p}」已經明確設定過圖層，未變動',
+    'layermigrate_done_freeze_all_ok'  => '批次凍結完成，共處理 {n} 個專案',
 
     // 以下為切圖磚工具（tilecut.php）用的翻譯 key
     'tilecut_title'            => '切圖磚 · Souliong',

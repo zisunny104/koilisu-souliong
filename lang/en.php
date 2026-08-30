@@ -546,6 +546,8 @@ return [
     'open_region3d_btn'                => 'New 3D region',
     'region3d_entry_hint'              => 'Place a custom model and draw the area where public 3D buildings should be excluded',
     'region3d_edit_link_btn'           => 'Edit',
+    'open_layermigrate_btn'            => 'Layer settings migration',
+    'layermigrate_entry_hint'          => 'Freeze old projects that still follow the site default layers, so a future default change won\'t affect them',
     'qr_click_hint'                    => 'Click to show fullscreen, easier to scan',
     'eye_toggle_title'                 => 'Show/hide',
 
@@ -600,6 +602,21 @@ return [
     'exiffix_copied_from_orig_reason' => 'Camera info copied from original submission',
     'exiffix_patched_reason'       => 'Camera info fixed',
     'exiffix_patch_failed_reason'  => 'Fix failed (write error)',
+
+    'layermigrate_title'               => 'Layer settings migration · Souliong',
+    'layermigrate_h1'                  => 'Layer settings migration',
+    'layermigrate_warn'                => 'Only touches projects whose meta.json has no layers field yet (following the site default). Freezes the current default into that project\'s own setting. Projects that already have their own layers are always skipped, never overwritten.',
+    'layermigrate_status_explicit'     => 'Explicitly set: {ids}',
+    'layermigrate_status_default'      => 'Following site default: {ids}',
+    'layermigrate_freeze_btn'          => 'Freeze current layers',
+    'layermigrate_freeze_all_btn'      => 'Freeze all',
+    'layermigrate_freeze_all_hint'     => 'Only affects projects marked "following site default" below; projects with their own setting are untouched.',
+    'layermigrate_freeze_all_confirm'  => 'Freeze the layer settings of {n} projects into the current site default?',
+    'layermigrate_all_frozen_msg'      => 'Every project already has its own explicit layer setting — nothing to freeze.',
+    'layermigrate_no_projects_msg'     => 'No projects yet',
+    'layermigrate_done_freeze_ok'      => 'Froze the layer setting for "{p}"',
+    'layermigrate_done_freeze_skip'    => '"{p}" already has its own layer setting, left unchanged',
+    'layermigrate_done_freeze_all_ok'  => 'Batch freeze complete — {n} projects processed',
 
     // Keys below back the tile-slicing tool (tilecut.php)
     'tilecut_title'            => 'Slice Tiles · Souliong',
