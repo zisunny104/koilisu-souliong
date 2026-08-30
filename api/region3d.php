@@ -625,7 +625,7 @@ $map3dKey = (string)($cfg['map3d_key'] ?? '');
         </div>
         <div>
           <label for="rid"><?= $t('region3d_id_label') ?></label>
-          <input type="text" id="rid" value="<?= $esc($EDIT !== null ? $EDIT['id'] : 'landmark') ?>" pattern="[a-z0-9][a-z0-9_-]*" maxlength="32" spellcheck="false">
+          <input type="text" id="rid" value="<?= $esc($EDIT !== null ? $EDIT['id'] : 'landmark') ?>" pattern="[a-z0-9][a-z0-9_\-]*" maxlength="32" spellcheck="false">
         </div>
         <div>
           <label for="rlabel"><?= $t('region3d_label_label') ?></label>

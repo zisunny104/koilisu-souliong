@@ -1064,7 +1064,7 @@ if ($EDIT === null && $loadId !== '' && $reqProject !== '') {
         </div>
         <div>
           <label for="lid"><?= $t('tilecut_layer_id_label') ?></label>
-          <input type="text" id="lid" value="<?= $esc($EDIT !== null ? $EDIT['id'] : ($RECON !== null ? $RECON['id'] : 'artwork')) ?>" pattern="[a-z0-9][a-z0-9_-]*" maxlength="32" spellcheck="false">
+          <input type="text" id="lid" value="<?= $esc($EDIT !== null ? $EDIT['id'] : ($RECON !== null ? $RECON['id'] : 'artwork')) ?>" pattern="[a-z0-9][a-z0-9_\-]*" maxlength="32" spellcheck="false">
         </div>
         <div>
           <label for="llabel"><?= $t('tilecut_label_label') ?></label>
