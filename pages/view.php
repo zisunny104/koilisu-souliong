@@ -289,7 +289,9 @@ window.maplibregl = maplibregl;
 <?php endif; ?>
 <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
 <script><?php readfile(__DIR__ . '/../assets/js/pin-input.js'); ?></script>
-<script><?php readfile(__DIR__ . '/../assets/js/viewer.leaflet.js'); ?></script>
+<script><?php readfile(__DIR__ . '/../assets/js/engine/map-engine.js'); ?></script>
+<script><?php readfile(__DIR__ . '/../assets/js/engine/leaflet-engine.js'); ?></script>
+<script><?php readfile(__DIR__ . '/../assets/js/viewer.core.js'); ?></script>
 <?php if ($mod('identity')): ?>
 <script><?php readfile(__DIR__ . '/../assets/js/plugins/contributor-identity.js'); ?></script>
 <?php endif; ?>

@@ -2,7 +2,7 @@
 // 編輯定位點（椅子）本身的座標：預設僅限主要管理者；主 PIN 可個別開啟特定專案 PIN 的 edit_points 權限。
 // 椅子資料來自靜態 chairs.json（匯入的官方/共享資料，無個別投稿者），因此不比照 editentry.php 驗證 owner/ctoken，
 // 而是單純以 admin_perm() 把關。比照「故事」的版本化精神：不覆寫 chairs.json，而是新增一筆版本紀錄，
-// 前端讀取時取同一 item_num 底下最新一筆 kind:'point' 紀錄覆蓋原始座標（見 viewer.leaflet.js 的 effectivePoints()）。
+// 前端讀取時取同一 item_num 底下最新一筆 kind:'point' 紀錄覆蓋原始座標（見 viewer.core.js 的 effectivePoints()）。
 // POST project, item_num（必填，對應 chairs.json 的 num）, lat, lon, name(可留空)。
 require __DIR__ . '/store.php';
 require __DIR__ . '/security.php';

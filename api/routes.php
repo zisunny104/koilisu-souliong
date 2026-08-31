@@ -8,7 +8,7 @@
  * 「怎麼組回網址」收在同一個檔案：
  *   - index.php 用 Route::parseManager() 把網址拆開
  *   - 其餘檔案一律用 Route::manager()／Route::backup*()／Route::tool()／Route::map() 組回來
- *   - 前端要用到的後台網址由 view.php 放進 $APP['manager']，viewer.leaflet.js 只讀不拼
+ *   - 前端要用到的後台網址由 view.php 放進 $APP['manager']，viewer.core.js 只讀不拼
  * 拆與組共用同一組常數，所以不會出現「拆得開卻組不回去」的歪斜。
  *
  * 後台網址形狀（後台自成一區：總覽是根，單張地圖掛在它底下）：

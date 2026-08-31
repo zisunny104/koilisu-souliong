@@ -3,7 +3,7 @@
 //
 // 比照 editpoint.php 的版本化精神：不改寫靜態的 points.json／chairs.json（那是匯入的來源資料），
 // 而是往 data.jsonl 附加一筆 kind:'newpoint'，前端讀取時把它併進點位清單
-// （見 viewer.leaflet.js 的 effectivePoints()）。建立出來的點之後一樣能被管理者用 editpoint.php
+// （見 viewer.core.js 的 effectivePoints()）。建立出來的點之後一樣能被管理者用 editpoint.php
 // 搬位置——因為那條路徑是照 num 去覆蓋座標的，不管這個 num 來自哪裡。
 //
 // 權限跟 editpoint.php 不同，是每張地圖自己決定的（meta.json 的 contrib.newPoint）：

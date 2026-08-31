@@ -1,6 +1,6 @@
 /* 投稿型別：文字紀錄
    沒有檔案，也沒有自己的座標——一則文字是「掛在某個地點上的一筆紀錄」，不是地圖上的一個座標點，
-   所以 needsLocation() 回 false，viewer.leaflet.js 的 KINDS 表也把它標成 layer:false（不進圖層）。
+   所以 needsLocation() 回 false，viewer.core.js 的 KINDS 表也把它標成 layer:false（不進圖層）。
 
    要跟 kind:'desc' 分清楚：desc 是「改寫這個地點的故事」（取最新一筆覆蓋顯示在故事區），
    由 story-editor.js 送出，不出現在這個對話框；text 是「我留下的一則紀錄」，

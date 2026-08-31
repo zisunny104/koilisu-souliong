@@ -182,7 +182,7 @@ function souliong_layersrc_limits(array $cfg): array
 /**
  * 沒有自己指定圖層的地圖套用哪一組。
  *
- * 預設值不是空陣列而是 ['carto-voyager']：這是「圖層化之前寫死在 viewer.leaflet.js 裡的
+ * 預設值不是空陣列而是 ['carto-voyager']：這是「圖層化之前寫死在 viewer.core.js 裡的
  * 那張底圖」，沒更新設定檔的舊部署因此得到與從前完全相同的畫面（api/config.php 不進版控，
  * 所以「設定檔沒有這個欄位」是常態而不是意外）。後台要顯示「跟隨全站預設（…）」時也叫這裡，
  * 免得說明文字跟實際生效的圖層各講各的。

@@ -249,8 +249,7 @@
 
     resetQueue() {
       Object.values(this.cards).forEach(st => {
-        try { if (st.ro) st.ro.disconnect(); } catch (e) {}
-        try { if (st.mini) st.mini.remove(); } catch (e) {}
+        try { if (st.picker) st.picker.destroy(); } catch (e) {}
         try { st.kind.cleanup(st); } catch (e) {}
       });
       Object.keys(this.cards).forEach(k => delete this.cards[k]);
@@ -259,8 +258,7 @@
     cancelCard(id) {
       const st = this.cards[id];
       if (!st || st.done) return;   // 已送出的不可取消（不可更改），只能取消尚未送出的
-      try { if (st.ro) st.ro.disconnect(); } catch (e) {}
-      try { if (st.mini) st.mini.remove(); } catch (e) {}
+      try { if (st.picker) st.picker.destroy(); } catch (e) {}
       try { st.kind.cleanup(st); } catch (e) {}
       delete this.cards[id];
       const card = document.getElementById(id);
@@ -289,8 +287,8 @@
         if (dev) return { lat: dev.lat, lon: dev.lon, source: 'device' };
       }
       if (kind.needsPoint() && this.modalContext) return { lat: this.modalContext.lat, lon: this.modalContext.lon, source: 'chair' };
-      const c = this.mapApp.getMap().getCenter();
-      return { lat: c.lat, lon: c.lng, source: 'default' };
+      const c = this.mapApp.getEngine().getCenter();
+      return { lat: c.lat, lon: c.lon, source: 'default' };
     }
 
     cardHtml(kind) {
@@ -325,7 +323,7 @@
       document.getElementById('queue').appendChild(card);
       card.querySelector('.c-name').value = document.getElementById('modalName').value || '';
 
-      const state = { id, kind, file, blob: null, thumb: null, duration: null, urls: [], loc: null, origLoc: null, source: null, done: false, mini: null, marker: null };
+      const state = { id, kind, file, blob: null, thumb: null, duration: null, urls: [], loc: null, origLoc: null, source: null, done: false, picker: null };
       this.cards[id] = state;
       card.querySelector('.c-cancel').onclick = () => this.cancelCard(id);
       kind.wireExtra(state, card);
@@ -368,31 +366,22 @@
     // 迷你地圖（可拖曳；只調整這一筆投稿自己的座標，不會改動地點座標）
     setupMiniMap(state, card) {
       const miniDiv = card.querySelector('.mini');
-      const mini = L.map(miniDiv, { attributionControl: false, zoomControl: false, dragging: true })
-        .setView([state.loc.lat, state.loc.lon], 16);
-      this.mapApp.addTileLayer(mini);
-      const mk = L.marker([state.loc.lat, state.loc.lon], { draggable: true }).addTo(mini);
-      state.mini = mini; state.marker = mk;
-      const updLoc = (ll) => {
-        state.loc = { lat: ll.lat, lon: ll.lng };
+      const picker = this.mapApp.getEngine().createMiniPicker(miniDiv, { lat: state.loc.lat, lon: state.loc.lon, zoom: 16 });
+      state.picker = picker;
+      const updLoc = (pos) => {
+        state.loc = { lat: pos.lat, lon: pos.lon };
         // 用外框顏色標示定位來源（不覆蓋 Leaflet 自身 class）
         miniDiv.classList.remove('src-ok', 'src-warn', 'src-info', 'src-muted');
         miniDiv.classList.add('src-' + this.mapApp.srcTone(state.source));
         card.querySelector('.loc').innerHTML = this.mapApp.locNote(state.source) + ' <span class="loc-hint">' + esc(t('drag_to_fix_hint')) + '</span>';
       };
-      mk.on('dragend', e => { state.source = 'manual'; updLoc(e.target.getLatLng()); });
-      mini.on('click', e => { mk.setLatLng(e.latlng); state.source = 'manual'; updLoc(e.latlng); });
-      updLoc({ lat: state.loc.lat, lng: state.loc.lon });
+      picker.onChange(pos => { state.source = 'manual'; updLoc(pos); });
+      updLoc({ lat: state.loc.lat, lon: state.loc.lon });
       card.querySelector('.c-reset-loc').onclick = () => {
         const o = state.origLoc; if (!o) return;
-        mk.setLatLng([o.lat, o.lon]); mini.panTo([o.lat, o.lon]);
-        state.source = o.source; updLoc({ lat: o.lat, lng: o.lon });
+        picker.setPosition({ lat: o.lat, lon: o.lon }, { pan: true });
+        state.source = o.source; updLoc({ lat: o.lat, lon: o.lon });
       };
-      // 校正尺寸（手機容器尺寸較晚定案）：rAF + ResizeObserver + 逾時保險
-      const fix = () => { try { mini.invalidateSize(false); } catch (e) {} };
-      requestAnimationFrame(fix);
-      if (window.ResizeObserver) { const ro = new ResizeObserver(fix); ro.observe(miniDiv); state.ro = ro; }
-      [150, 500, 1200].forEach(ms => setTimeout(fix, ms));
     }
 
     async addFiles(files) {
@@ -453,7 +442,7 @@
         if (opts.bulk && kind.key !== 'newpoint') { this.mapApp.refreshCounts(); } else { this.mapApp.refreshAll(); }
         card.classList.add('done');
         card.querySelectorAll('input,textarea,button,select').forEach(el => el.disabled = true);
-        if (state.marker) state.marker.dragging.disable();
+        if (state.picker) state.picker.setDraggable(false);
         statusEl.innerHTML = '<i class="fa-solid fa-check"></i> ' + esc(t('submitted_locked')); statusEl.className = 'status ok';
         return true;
       } catch (err) {

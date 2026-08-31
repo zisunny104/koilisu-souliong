@@ -1,6 +1,6 @@
 /* 選用插件：依序探索（見 souliong/docs/EXTENDING.md 第七節）
    只在 projects/<project>/meta.json 設 "personExplore": true 時，view.php 才會載入這個檔案。
-   完全透過 window.MapApp 公開的掛勾點 API 運作，不碰核心 viewer.leaflet.js 的內部變數。
+   完全透過 window.MapApp 公開的掛勾點 API 運作，不碰核心 viewer.core.js 的內部變數。
    選了投稿者之後：把他所有照片依「有沒有綁地標」合併／排序成一條時間軸，
    卡片新增一個子區塊，兩個箭頭可逐站切換，切到某站就展開對應的單張照片或地點面板。 */
 (() => {
@@ -164,17 +164,17 @@
   }
 
   function jumpToStop(s) {
-    const map = App.getMap();
+    const engine = App.getEngine();
     // 兩種站型切換時，先關掉另一種疊層，避免舊的地點卡片／燈箱蓋住新內容（看起來像卡住或閃到舊資訊）
     if (s.type === 'point' && s.point) {
       App.closeLightbox();
       focusName = App.getFilterPerson();
-      map.panTo([s.point.lat, s.point.lon], { animate: true });
+      engine.panTo(s.point.lat, s.point.lon, { animate: true });
       App.openPanel(s.point);
     } else if (s.type === 'loose') {
       const e = s.entry;
       App.closePanel();
-      if (typeof e.lat === 'number' && typeof e.lon === 'number') map.panTo([e.lat, e.lon], { animate: true });
+      if (typeof e.lat === 'number' && typeof e.lon === 'number') engine.panTo(e.lat, e.lon, { animate: true });
       App.openLightbox(e, App.photoFullUrl(e));
     }
   }

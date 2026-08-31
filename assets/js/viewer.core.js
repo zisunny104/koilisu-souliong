@@ -1,5 +1,7 @@
 /* 通用地圖檢視器 —— 由 ?p=<project> 載入 projects/<project>/meta.json 與點位資料。
-   後端：api/list.php、api/upload.php（純 PHP，append-only）。 */
+   後端：api/list.php、api/upload.php（純 PHP，append-only）。
+   地圖繪製透過 assets/js/engine/ 底下的 MapEngine 抽象層（見 map-engine.js）：這個檔案跟所有
+   plugin 一律只呼叫 engine.* / MapApp.getEngine().*，不直接認得 Leaflet 或 MapLibre 的 API。 */
 window.MapApp = (() => {
   const APP = window.APP || { base: './', project: 'chairs' };
   const I18N = window.I18N || {};
@@ -40,30 +42,6 @@ window.MapApp = (() => {
   const kindOf = (e) => (e && KINDS[e.kind] ? e.kind : 'photo');
   const kindDef = (e) => KINDS[kindOf(e)];
 
-  // 版權標註（依 OSM 慣例含連結）——資料/圖磚的來源標註跟著圖層走（各層 layer.json 自己的
-  // attribution，由 buildCredit() 去重串接），框架與自家連結則是固定的，依重要性排最後：
-  // Leaflet → GitHub → Souliong → prjToka。換底圖時來源那半段會跟著變，自家這半段不動。
-  const REPO_URL = 'https://github.com/zisunny104/koilisu-souliong';
-  const SITE_URL = (APP.base || '/');          // Souliong 平台首頁
-  const ORG_URL = 'https://toka.dev';          // prjToka
-  const CREDIT_OWN =
-    '<span class="cr-sep" aria-hidden="true"></span>' +
-    '<span class="cr-own">' +
-      '<a href="' + REPO_URL + '" target="_blank" rel="noopener" aria-label="' + t('github_source_aria') + '"><i class="fa-brands fa-github"></i></a> &middot; ' +
-      '<a href="' + SITE_URL + '">Souliong</a> &middot; <a href="' + ORG_URL + '" target="_blank" rel="noopener">prjToka</a>' +
-    '</span>';
-  // layer.json 的 attribution 裡可以寫 {key} 引用翻譯字串（例：{osm_contributors}），
-  // 這樣來源標註留在 manifest，又不必為每種語言各寫一份 manifest。
-  const i18nSub = (s) => String(s == null ? '' : s).replace(/\{([a-z0-9_]+)\}/gi, (_, k) => t(k));
-  function buildCredit(manifests) {
-    const src = [];
-    manifests.forEach(m => {
-      const a = i18nSub(m && m.attribution);
-      if (a && src.indexOf(a) < 0) src.push(a);   // 同一個來源疊兩層（例如底圖＋同來源道路層）只列一次
-    });
-    src.push('<a href="https://leafletjs.com" target="_blank" rel="noopener">Leaflet</a>');
-    return '<span class="cr-ext">' + src.join(' &middot; ') + '</span>' + CREDIT_OWN;
-  }
   // 主題：system / light / dark（手動可覆蓋系統偏好）
   const systemDark = () => !!(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
   const isDark = () => { const t = document.documentElement.dataset.theme; return t === 'dark' ? true : t === 'light' ? false : systemDark(); };
@@ -71,118 +49,17 @@ window.MapApp = (() => {
   /* ---------- 地圖圖層（伺服器端見 api/layers.php）----------
      由 view.php 依 meta.json 的 layers（沒寫就用 config 的 default_layers）解析好塞進 APP.layers，
      由下往上排序。相對路徑在 PHP 端就被改寫成絕對網址，所以這裡完全不必分辨圖磚是外部服務
-     還是本站 layer 端點輸出的，也不必分辨圖層是全站的還是這張地圖專屬的。 */
-  // APP.layers 缺席時的保命底圖（獨立部署，或 view.php 還沒更新到有 layers 的版本）。
-  // 內容與 layers/carto-voyager/layer.json 一致——這是全專案唯一一處重複，寧可重複也不要
-  // 因為少一個設定就整張地圖開天窗。
-  const FALLBACK_LAYER = {
-    id: 'carto-voyager', type: 'raster', pane: 'base',
-    url: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
-    urlDark: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
-    subdomains: 'abcd', detectRetina: true, maxZoom: 20,
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> {osm_contributors} &middot; <a href="https://carto.com/attributions" target="_blank" rel="noopener">CARTO</a>',
-  };
-  const layerManifests = () => (APP.layers && APP.layers.length) ? APP.layers : [FALLBACK_LAYER];
-  // Leaflet 預設只有 tilePane(200)／overlayPane(400)／markerPane(600)，圖層彼此之間沒有可以
-  // 指定的層級。這裡替四種角色各開一個 pane，全部落在 400 以下，所以路徑線與點位標記照舊
-  // 蓋在所有圖層上面。認不得的 pane 值一律當插畫層（疊最上面）。
-  const LAYER_PANES = { base: 200, paper: 220, road: 240, art: 260 };
-  const paneKey = (m) => (m && LAYER_PANES[m.pane] != null) ? m.pane : 'art';
+     還是本站 layer 端點輸出的，也不必分辨圖層是全站的還是這張地圖專屬的。
+     實際的圖層系統（MapLayer/RasterLayer/ImageLayer/LayerStack）現在活在 assets/js/engine/
+     底下每個引擎自己的檔案裡；這裡只負責「該用哪份 manifest」，跟哪個引擎去畫完全無關。 */
+  // APP.layers 缺席時的保命底圖定義在 MapEngine.FALLBACK_LAYER（assets/js/engine/map-engine.js）：
+  // 每個引擎自己的圖層系統做第二層防禦時也要用同一份，所以放在兩邊都讀得到的地方，不是各自重複一份。
+  const layerManifests = () => (APP.layers && APP.layers.length) ? APP.layers : [MapEngine.FALLBACK_LAYER];
+  // 過渡期相容用途（assets/js/plugins/contribution.js 與核心自己兩處小地圖選點器
+  // togglePointEditor()/buildPhotoEditorPanel() 還在用）：在既有的 Leaflet 地圖實例上掛一份底圖。
+  // 這三個呼叫端改用 engine.createMiniPicker() 之後，這個函式會整個刪除（不會有 MapLibre 版本）。
+  function addTileLayer(map) { return engine.mountBaseLayer(map, isDark()); }
 
-  /** 一張圖層。子類負責「怎麼變成一個 L.Layer」，其餘（pane、換主題、掛上／移除）都在這裡。 */
-  class MapLayer {
-    static from(m) { return (m && m.type === 'image') ? new ImageLayer(m) : new RasterLayer(m); }
-    constructor(m) { this.m = m || {}; this.leaflet = null; }
-    /** 深淺色切換時要不要整層重建——只有真的備了深色版的圖層需要，其餘原地不動 */
-    get themeSensitive() { return !!this.m.urlDark; }
-    srcUrl(dark) { return (dark && this.m.urlDark) ? this.m.urlDark : this.m.url; }
-    build(dark, opts) { throw new Error('MapLayer.build() is abstract'); }
-    addTo(map, dark, opts) {
-      const built = this.build(dark, opts || {});
-      if (!built) return this;
-      this.leaflet = built.addTo(map);
-      return this;
-    }
-    remove(map) { if (this.leaflet) { map.removeLayer(this.leaflet); this.leaflet = null; } }
-  }
-
-  /** 圖磚層（外部圖磚服務或本站切好的金字塔）。manifest 的欄位是「跟著來源走的屬性」，
-      subdomains／detectRetina／maxNativeZoom 這些少一個就會破圖，所以整組跟著 manifest。 */
-  class RasterLayer extends MapLayer {
-    build(dark, opts) {
-      const m = this.m;
-      const url = this.srcUrl(dark);
-      if (!url) return null;
-      const o = { pane: opts.pane, maxZoom: m.maxZoom != null ? m.maxZoom : 20 };
-      if (m.subdomains) o.subdomains = m.subdomains;
-      if (m.detectRetina) o.detectRetina = true;
-      if (m.maxNativeZoom != null) o.maxNativeZoom = m.maxNativeZoom;
-      if (m.minZoom != null) o.minZoom = m.minZoom;
-      if (m.opacity != null) o.opacity = m.opacity;
-      if (m.tms) o.tms = true;
-      if (m.bounds) o.bounds = L.latLngBounds(m.bounds);   // 稀疏疊圖：範圍外根本不發請求
-      if (m.className) o.className = m.className;
-      if (opts.attribution) o.attribution = opts.attribution;
-      return L.tileLayer(url, o);
-    }
-  }
-
-  /** 單張疊圖（透明 PNG／SVG）。不切圖磚，靠 bounds 定位；沒有 bounds 就無從擺放，直接不掛。 */
-  class ImageLayer extends MapLayer {
-    build(dark, opts) {
-      const m = this.m;
-      const url = this.srcUrl(dark);
-      if (!url || !m.bounds) return null;
-      const o = { pane: opts.pane, interactive: false };
-      if (m.opacity != null) o.opacity = m.opacity;
-      if (m.className) o.className = m.className;
-      if (opts.attribution) o.attribution = opts.attribution;
-      return L.imageOverlay(url, L.latLngBounds(m.bounds), o);
-    }
-  }
-
-  /** 一整疊圖層（由下往上）加上它們共同的版權標註。地圖只跟這個物件打交道。 */
-  class LayerStack {
-    constructor(manifests) {
-      this.manifests = (manifests && manifests.length) ? manifests : [FALLBACK_LAYER];
-      this.layers = this.manifests.map(m => MapLayer.from(m));
-      this.credit = buildCredit(this.manifests);
-      this.map = null;
-    }
-    ensurePanes(map) {
-      Object.keys(LAYER_PANES).forEach(k => {
-        const name = 'sl-' + k;
-        if (!map.getPane(name)) { map.createPane(name); map.getPane(name).style.zIndex = LAYER_PANES[k]; }
-      });
-    }
-    /** 版權整組掛在最底層那一個 L.Layer 上：上層換主題重建時版權列才不會閃一下。 */
-    _opts(i, layer) {
-      return { pane: 'sl-' + paneKey(layer.m), attribution: i === 0 ? this.credit : undefined };
-    }
-    addTo(map, dark) {
-      this.map = map;
-      this.ensurePanes(map);
-      this.layers.forEach((l, i) => l.addTo(map, dark, this._opts(i, l)));
-      return this;
-    }
-    applyTheme(dark) {
-      if (!this.map) return;
-      this.layers.forEach((l, i) => {
-        if (!l.themeSensitive) return;
-        l.remove(this.map);
-        l.addTo(this.map, dark, this._opts(i, l));
-      });
-    }
-  }
-
-  /** 只有底圖那一層的一疊：分享卡片與定位用的小地圖不需要插畫疊圖，也不該被它擋住地標。 */
-  function baseManifests() {
-    const all = layerManifests();
-    const base = all.filter(m => paneKey(m) === 'base');
-    return (base.length ? base : all).slice(0, 1);
-  }
-  /** 插件公開 API（見 docs/EXTENDING.md）：在一張小地圖上掛好底圖。 */
-  function addTileLayer(map) { return new LayerStack(baseManifests()).addTo(map, isDark()); }
   let themeMode = localStorage.getItem('theme') || 'system';
   if (themeMode !== 'system') document.documentElement.dataset.theme = themeMode;
 
@@ -462,7 +339,7 @@ window.MapApp = (() => {
   }
 
   let META = null, POINTS = [], CATS = [], active = {}, CONTRIB = [], counts = {};
-  let map, photoLayer, baseStack = null, photoLayerOn = false;
+  let engine = null, photoLayerOn = false;
   let filterPerson = '';
 
   function updateThemeIcon() {
@@ -476,9 +353,8 @@ window.MapApp = (() => {
     else document.documentElement.dataset.theme = mode;
     localStorage.setItem('theme', mode);
     updateThemeIcon();
-    if (baseStack) baseStack.applyTheme(isDark());
+    if (engine) engine.applyTheme(isDark());
   }
-  const chairMarkers = {};
 
   /* ---------- 選用插件掛勾點（見 souliong/docs/EXTENDING.md）----------
      核心只負責「發生了什麼事」（onHook/emitHook）與「讓插件參與渲染結果」（registerPhotoFilter/registerEntriesHint），
@@ -535,7 +411,7 @@ window.MapApp = (() => {
     return none + effectivePoints().sort((a, b) => a.num - b.num).map(p =>
       '<option value="' + p.num + '"' + (p.num === selNum ? ' selected' : '') +
       (p.color ? ' style="color:' + esc(p.color) + '"' : '') + '>' +
-      '● ' + pad2(p.num) + '｜' + esc(pointName(p)) + (p.area ? '（' + esc(p.area) + '）' : '') + '</option>').join('');
+      '● ' + pad2(p.num) + '｜' + esc(pointName(p)) + (p.area ? '（' + esc(p.area) + '）' : '') + '</option>').join('');
   }
   function haversine(aLat, aLon, bLat, bLon) {
     const R = 6371000, r = Math.PI / 180;
@@ -633,13 +509,15 @@ window.MapApp = (() => {
 
   /* ---------- map ---------- */
   // badgeColor 有給值時（篩選單一投稿者時）覆蓋角標底色，跟該投稿者的路徑同色
+  // 回傳的是引擎無關的 marker spec（見 assets/js/engine/map-engine.js 的 setMarkerLayer()），
+  // 不是某個引擎的原生 icon 物件——LeafletEngine／MapLibreEngine 各自決定怎麼把它畫出來。
   function chairIcon(c, count, badgeColor) {
     const badge = count ? '<div class="badge"' + (badgeColor ? ' style="background:' + badgeColor + '"' : '') + '>' + count + '</div>' : '';
     const cls = 'dot-pin' + (count ? ' has-contrib' : '');
-    return L.divIcon({
-      className: '', iconSize: [24, 24], iconAnchor: [12, 12], popupAnchor: [0, -12],
-      html: '<div class="' + cls + '" style="background:' + c.color + '"><span>' + c.num + '</span>' + badge + '</div>'
-    });
+    return {
+      size: [24, 24], anchor: [12, 12],
+      html: '<div class="' + cls + '" style="background:' + (c.color || '#888') + '"><span>' + c.num + '</span>' + badge + '</div>'
+    };
   }
   function renderChairs() {
     // 篩選單一投稿者時：角標改顯示「這個人在這個點的張數」，並跟路徑同色（同一個 personColor 快取）
@@ -649,14 +527,17 @@ window.MapApp = (() => {
       personPoints(filterPerson).forEach(e => { personCounts[e.item_num] = (personCounts[e.item_num] || 0) + 1; });
       badgeColor = personColor(filterPerson);
     }
+    const specs = [];
     effectivePoints().forEach(c => {
-      if (chairMarkers[c.num]) map.removeLayer(chairMarkers[c.num]);
       if (active[c.cat] === false) return;
       const count = personCounts ? (personCounts[c.num] || 0) : (counts[c.num] || 0);
-      const m = L.marker([c.lat, c.lon], { icon: chairIcon(c, count, badgeColor) }).addTo(map);
-      m.on('click', () => { emitHook('panelReset'); openPanel(c); });
-      chairMarkers[c.num] = m;
+      const icon = chairIcon(c, count, badgeColor);
+      specs.push({
+        id: c.num, lat: c.lat, lon: c.lon, html: icon.html, size: icon.size, anchor: icon.anchor,
+        onClick: () => { emitHook('panelReset'); openPanel(c); },
+      });
     });
+    engine.setMarkerLayer('chairs', specs);
   }
   const THUMB_ZOOM = 15;   // ≥ 此縮放顯示縮圖，較遠只顯示小方塊
   // 一則投稿在地圖上的標記。照片與影片有縮圖就鋪成方塊（影片右下角補一個播放角標）；
@@ -670,24 +551,24 @@ window.MapApp = (() => {
       ? '<div class="' + cls + '" style="background-image:url(' + esc(url) + ')">' +
         (def.box === 'video' && thumb ? '<span class="sl-mk-play"><i class="fa-solid fa-play"></i></span>' : '') + '</div>'
       : '<div class="' + cls + ' sl-mk-ico"><i class="fa-solid ' + def.icon + '"></i></div>';
-    return L.divIcon({ className: '', iconSize: [sz, sz], iconAnchor: [half, half], popupAnchor: [0, -(half + 1)], html: html });
+    return { size: [sz, sz], anchor: [half, half], html: html };
   }
-  let photoLayerThumbState = null;   // 上次 render 時是否在縮圖模式，zoomend 只在跨越門檻時才需要重建
   function renderContribLayer() {
-    photoLayer.clearLayers();
-    if (!photoLayerOn) return;
-    const thumb = map.getZoom() >= THUMB_ZOOM;
-    photoLayerThumbState = thumb;
+    if (!photoLayerOn) { engine.clearMarkerLayer('contrib'); return; }
+    const thumb = engine.getZoom() >= THUMB_ZOOM;
+    const specs = [];
     effectiveEntries().forEach(e => {
       if (!kindDef(e).layer) return;
       if (filterPerson && e.name !== filterPerson) return;
       const url = entryFullUrl(e);
       if (typeof e.lat !== 'number' || typeof e.lon !== 'number' || !url) return;
-      const m = L.marker([e.lat, e.lon], { icon: entryIcon(e, thumb) });
-      m.on('click', () => openLightbox(e, url));
-      photoLayer.addLayer(m);
+      const icon = entryIcon(e, thumb);
+      specs.push({
+        id: e.id, lat: e.lat, lon: e.lon, html: icon.html, size: icon.size, anchor: icon.anchor,
+        onClick: () => openLightbox(e, url),
+      });
     });
-    if (!map.hasLayer(photoLayer)) photoLayer.addTo(map);
+    engine.setMarkerLayer('contrib', specs);
   }
 
   // 某人的觀察路線（照片依時間串連）
@@ -806,8 +687,8 @@ window.MapApp = (() => {
   function resetPointEditor() {
     const el = document.getElementById('pointEditor');
     if (!el) return;
-    const m = el._mini; if (m) m.remove();
-    el._mini = null; el.style.display = 'none'; el.innerHTML = '';
+    const p = el._picker; if (p) p.destroy();
+    el._picker = null; el.style.display = 'none'; el.innerHTML = '';
   }
   // 定位點（椅子）位置微調面板：僅管理者可見，比照 buildPhotoEditorPanel 的迷你地圖模式，
   // 但不需要留言/關聯地點欄位，多了「還原初始位置」讓管理者在儲存前能隨時退回 chairs.json 的原始座標。
@@ -826,25 +707,19 @@ window.MapApp = (() => {
       '<button class="btn primary small pt-save" type="button">' + esc(t('save_location_btn')) + '</button>' +
       '<span class="status pt-status"></span></div>';
     const miniDiv = el.querySelector('.pt-mini');
-    const mini = L.map(miniDiv, { attributionControl: false, zoomControl: false, dragging: true }).setView([lat0, lon0], 17);
-    el._mini = mini;
-    addTileLayer(mini);
-    const mk = L.marker([lat0, lon0], { draggable: true }).addTo(mini);
+    const picker = engine.createMiniPicker(miniDiv, { lat: lat0, lon: lon0, zoom: 17 });
+    el._picker = picker;
     const state = { lat: lat0, lon: lon0 };
-    mk.on('dragend', ev => { const ll = ev.target.getLatLng(); state.lat = ll.lat; state.lon = ll.lng; });
-    mini.on('click', ev => { mk.setLatLng(ev.latlng); state.lat = ev.latlng.lat; state.lon = ev.latlng.lng; });
-    const fix = () => { try { mini.invalidateSize(false); } catch (err) {} };
-    requestAnimationFrame(fix);
-    [150, 500, 1200].forEach(ms => setTimeout(fix, ms));
+    picker.onChange(pos => { state.lat = pos.lat; state.lon = pos.lon; });
 
     el.querySelector('.pt-revert').onclick = () => {
-      const ll = { lat: c.origLat, lng: c.origLon };
-      mk.setLatLng(ll); mini.panTo(ll); state.lat = c.origLat; state.lon = c.origLon;
+      picker.setPosition({ lat: c.origLat, lon: c.origLon }, { pan: true });
+      state.lat = c.origLat; state.lon = c.origLon;
     };
     el.querySelector('.pt-cancel').onclick = () => resetPointEditor();
-    el.querySelector('.pt-save').onclick = () => submitPointEdit(c, state, el, mini);
+    el.querySelector('.pt-save').onclick = () => submitPointEdit(c, state, el, picker);
   }
-  async function submitPointEdit(orig, state, panel, mini) {
+  async function submitPointEdit(orig, state, panel, picker) {
     const btn = panel.querySelector('.pt-save'); const status = panel.querySelector('.pt-status');
     btn.disabled = true; status.textContent = t('saving');
     try {
@@ -975,41 +850,35 @@ window.MapApp = (() => {
     const miniDiv = panel.querySelector('.pe-mini');
     const lat0 = typeof e.lat === 'number' ? e.lat : META.center[0];
     const lon0 = typeof e.lon === 'number' ? e.lon : META.center[1];
-    const mini = L.map(miniDiv, { attributionControl: false, zoomControl: false, dragging: true }).setView([lat0, lon0], 16);
-    panel._mini = mini;
-    addTileLayer(mini);
-    const mk = L.marker([lat0, lon0], { draggable: true }).addTo(mini);
+    const picker = engine.createMiniPicker(miniDiv, { lat: lat0, lon: lon0, zoom: 16 });
+    panel._picker = picker;
     const state = { lat: lat0, lon: lon0, source: e.loc_source || 'manual' };
     const locEl = panel.querySelector('.pe-loc');
     locEl.innerHTML = locNote(state.source) + ' <span class="loc-hint">' + esc(t('drag_to_fix_hint')) + '</span>';
     const setBorder = () => { miniDiv.style.borderColor = chairColorOf(sel.value ? +sel.value : null); };
     setBorder();
     sel.onchange = setBorder;
-    const updLoc = (ll) => {
-      state.lat = ll.lat; state.lon = ll.lng; state.source = 'manual';
+    const updLoc = (pos) => {
+      state.lat = pos.lat; state.lon = pos.lon; state.source = 'manual';
       locEl.innerHTML = locNote('manual') + ' <span class="loc-hint">' + esc(t('drag_to_fix_hint')) + '</span>';
     };
-    mk.on('dragend', ev => updLoc(ev.target.getLatLng()));
-    mini.on('click', ev => { mk.setLatLng(ev.latlng); updLoc(ev.latlng); });
-    const fix = () => { try { mini.invalidateSize(false); } catch (err) {} };
-    requestAnimationFrame(fix);
-    [150, 500, 1200].forEach(ms => setTimeout(fix, ms));
+    picker.onChange(updLoc);
 
     panel.querySelector('.pe-cancel').onclick = () => {
-      mini.remove(); panel._mini = null; panel.style.display = 'none'; panel.innerHTML = '';
+      picker.destroy(); panel._picker = null; panel.style.display = 'none'; panel.innerHTML = '';
       if (opts.onCancel) opts.onCancel();
     };
     panel.querySelector('.pe-save').onclick = () => submitPhotoEdit(e, {
       comment: panel.querySelector('.pe-cmt').value,
       item_num: sel.value,
       lat: state.lat, lon: state.lon, loc_source: state.source,
-    }, panel, mini, opts.onSaved);
+    }, panel, picker, opts.onSaved);
   }
   // 每張卡片一個可收合面板，同時只開一個。
   function togglePhotoEditor(e, container) {
     const panel = container.querySelector('.photo-editor');
-    if (panel.style.display !== 'none') { const m = panel._mini; if (m) m.remove(); panel.style.display = 'none'; panel.innerHTML = ''; return; }
-    document.querySelectorAll('.photo-editor').forEach(p => { if (p !== panel) { const m = p._mini; if (m) m.remove(); p.style.display = 'none'; p.innerHTML = ''; } });
+    if (panel.style.display !== 'none') { const p2 = panel._picker; if (p2) p2.destroy(); panel.style.display = 'none'; panel.innerHTML = ''; return; }
+    document.querySelectorAll('.photo-editor').forEach(p => { if (p !== panel) { const p2 = p._picker; if (p2) p2.destroy(); p.style.display = 'none'; p.innerHTML = ''; } });
     const histPanel = container.querySelector('.photo-history'); if (histPanel) { histPanel.style.display = 'none'; histPanel.innerHTML = ''; }
     panel.style.display = 'block';
     buildPhotoEditorPanel(e, panel);
@@ -1020,8 +889,8 @@ window.MapApp = (() => {
   function toggleLightboxEditor(e) {
     const panel = document.getElementById('lbEditor');
     const cap = document.getElementById('lbCap');
-    if (panel.style.display !== 'none') { const m = panel._mini; if (m) m.remove(); panel.style.display = 'none'; panel.innerHTML = ''; if (cap) cap.style.display = ''; return; }
-    document.querySelectorAll('.photo-editor').forEach(p => { if (p !== panel) { const m = p._mini; if (m) m.remove(); p.style.display = 'none'; p.innerHTML = ''; } });
+    if (panel.style.display !== 'none') { const p2 = panel._picker; if (p2) p2.destroy(); panel.style.display = 'none'; panel.innerHTML = ''; if (cap) cap.style.display = ''; return; }
+    document.querySelectorAll('.photo-editor').forEach(p => { if (p !== panel) { const p2 = p._picker; if (p2) p2.destroy(); p.style.display = 'none'; p.innerHTML = ''; } });
     if (cap) cap.style.display = 'none';  // 編輯面板跟 caption 都貼底置中，同時顯示會疊在一起，編輯時先收起 caption
     panel.style.display = 'block';
     buildPhotoEditorPanel(e, panel, {
@@ -1032,7 +901,7 @@ window.MapApp = (() => {
       }
     });
   }
-  async function submitPhotoEdit(orig, vals, panel, mini, onSaved) {
+  async function submitPhotoEdit(orig, vals, panel, picker, onSaved) {
     const btn = panel.querySelector('.pe-save'); const status = panel.querySelector('.pe-status');
     btn.disabled = true; status.textContent = t('saving');
     try {
@@ -1052,7 +921,7 @@ window.MapApp = (() => {
       const j = await res.json();
       if (!res.ok || j.error) throw new Error(j.error || ('HTTP ' + res.status));
       CONTRIB.push(j.item);
-      mini.remove(); panel._mini = null;
+      picker.destroy(); panel._picker = null;
       panel.style.display = 'none'; panel.innerHTML = '';
       recount(); renderChairs(); renderContribLayer(); rebuildPersonFilter(); emitHook('stateChange');
       if (current) renderEntries();
@@ -1066,7 +935,7 @@ window.MapApp = (() => {
   function togglePhotoEditHistory(e, container) {
     const panel = container.querySelector('.photo-history');
     if (panel.style.display !== 'none') { panel.style.display = 'none'; panel.innerHTML = ''; return; }
-    const editor = container.querySelector('.photo-editor'); if (editor) { const m = editor._mini; if (m) m.remove(); editor.style.display = 'none'; editor.innerHTML = ''; }
+    const editor = container.querySelector('.photo-editor'); if (editor) { const p2 = editor._picker; if (p2) p2.destroy(); editor.style.display = 'none'; editor.innerHTML = ''; }
     panel.style.display = 'block';
     const list = (e.editHistory || []).slice().reverse();
     panel.innerHTML = '<div class="hist-title">' + esc(t('photo_history_title')) + '</div>' +
@@ -1173,7 +1042,7 @@ window.MapApp = (() => {
     if (db) db.onclick = (ev) => { ev.stopPropagation(); closeLightbox(); deleteEntry(e.id); };
     // 換一張照片時，上一張留在 lbEditor 裡未存檔的編輯面板（含迷你地圖）要先清掉，避免殘留
     const oldPanel = document.getElementById('lbEditor');
-    if (oldPanel) { const m = oldPanel._mini; if (m) m.remove(); oldPanel._mini = null; oldPanel.style.display = 'none'; oldPanel.innerHTML = ''; }
+    if (oldPanel) { const p2 = oldPanel._picker; if (p2) p2.destroy(); oldPanel._picker = null; oldPanel.style.display = 'none'; oldPanel.innerHTML = ''; }
     document.getElementById('lb').style.display = 'flex';
   }
   // 清掉燈箱裡的播放器。用 pause() + removeAttribute('src') + load() 三步而不只是清 innerHTML：
@@ -1189,7 +1058,7 @@ window.MapApp = (() => {
   }
   function closeLightbox() {
     const panel = document.getElementById('lbEditor');
-    if (panel) { const m = panel._mini; if (m) m.remove(); panel._mini = null; panel.style.display = 'none'; panel.innerHTML = ''; }
+    if (panel) { const p2 = panel._picker; if (p2) p2.destroy(); panel._picker = null; panel.style.display = 'none'; panel.innerHTML = ''; }
     clearLightboxMedia();
     document.getElementById('lb').style.display = 'none';
   }
@@ -1258,7 +1127,7 @@ window.MapApp = (() => {
     META = APP.meta || await fetch(APP.base + 'projects/' + PROJECT + '/meta.json').then(r => r.json());
     POINTS = APP.points || await fetch(APP.base + 'projects/' + PROJECT + '/' + (META.points || 'points.json')).then(r => r.json());
     document.title = (META.title || t('map_title_fallback')) + (META.subtitle ? '・' + META.subtitle : '');
-    document.getElementById('titleTxt').textContent = META.title + (META.subtitle ? '・' + META.subtitle : '');
+    document.getElementById('titleTxt').textContent = (META.title || t('map_title_fallback')) + (META.subtitle ? '・' + META.subtitle : '');
     // 資料來源連結（meta.sources = [{label,url}]，可展開看原始 StoryMaps）與原始單位署名（meta.credit）
     var srcLinks = '';
     if (Array.isArray(META.sources) && META.sources.length) {
@@ -1277,17 +1146,19 @@ window.MapApp = (() => {
 
     rebuildCats();   // 此時 CONTRIB 還是空的，結果就是 POINTS 的分類；投稿載入後會再算一次
 
-    map = L.map('map', { zoomControl: false }).setView(META.center || [23.9, 120.7], META.zoom || 14);
-    baseStack = new LayerStack(layerManifests()).addTo(map, isDark());
-    L.control.zoom({ position: 'bottomleft' }).addTo(map);
-    map.attributionControl.setPosition('bottomright');   // CSS 置中於下方
-    map.attributionControl.setPrefix(false);
-    photoLayer = L.layerGroup();
-    map.on('zoomend', () => { if (photoLayerOn && (map.getZoom() >= THUMB_ZOOM) !== photoLayerThumbState) renderContribLayer(); });
+    // 主引擎這輪先固定用 LeafletEngine（見 assets/js/engine/leaflet-engine.js）；
+    // 依 APP.engine 選擇 LeafletEngine／MapLibreEngine 是後續 Part C 的工作。
+    const EngineClass = window.LeafletEngine;
+    engine = new EngineClass({
+      container: 'map', center: META.center || [23.9, 120.7], zoom: META.zoom || 14,
+      dark: isDark(), manifests: layerManifests(),
+    });
+    engine.mountControls({ zoomPosition: 'bottomleft', attributionPosition: 'bottomright' });
+    engine.onZoomThresholdCross(THUMB_ZOOM, () => { if (photoLayerOn) renderContribLayer(); });
 
     buildLegend();
     renderChairs();
-    if (POINTS.length) map.fitBounds(L.latLngBounds(POINTS.map(c => [c.lat, c.lon])).pad(0.08));
+    if (POINTS.length) engine.fitBounds(POINTS.map(c => [c.lat, c.lon]), { pad: 0.08 });
 
     // 暱稱隱藏欄位（單一真實來源；與上傳視窗 #modalName 的同步交給 contribution-upload.js 自己處理）
     const myName = document.getElementById('myName');
@@ -1305,7 +1176,7 @@ window.MapApp = (() => {
       applyTheme(order[(order.indexOf(themeMode) + 1) % 3]);
       feature('theme');
     };
-    if (window.matchMedia) window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { if (themeMode === 'system' && baseStack) baseStack.applyTheme(isDark()); });
+    if (window.matchMedia) window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { if (themeMode === 'system' && engine) engine.applyTheme(isDark()); });
 
     // 語言切換（手動覆寫）：客製化下拉（原生 select 選單樣式無法跟主題搭配），選了哪個就切哪個，
     // 帶著目前網址參數整頁重新載入，讓伺服器端重新解析並寫入 lang cookie
@@ -1357,7 +1228,8 @@ window.MapApp = (() => {
       document.body.classList.toggle('focus-contrib', on);
       if (!on) filterPerson = '';   // 切回「全部」時，下拉選單改用途（跳到地點），投稿者篩選狀態一併清掉
       rebuildPersonFilter();
-      if (on) { renderContribLayer(); if (!(opts && opts.silent)) feature('photos'); } else { map.removeLayer(photoLayer); }
+      renderContribLayer();
+      if (on && !(opts && opts.silent)) feature('photos');
       renderChairs(); emitHook('stateChange');
     }
     apb.onclick = function () { if (photoLayerOn) setContribMode(false); };
@@ -1381,13 +1253,13 @@ window.MapApp = (() => {
         if (filterPerson) feature('filter');
         renderContribLayer(); renderChairs(); emitHook('stateChange');
         const pts = filterPerson ? personPoints(filterPerson).map(e => [e.lat, e.lon]) : [];
-        if (pts.length) map.fitBounds(L.latLngBounds(pts).pad(0.25));
+        if (pts.length) engine.fitBounds(pts, { pad: 0.25 });
       } else {
         const num = pf.value ? +pf.value : null;
         pf.value = '';
         if (num != null) {
           const pt = effectivePoints().find(p => p.num === num);
-          if (pt) { emitHook('panelReset'); openPanel(pt); map.panTo([pt.lat, pt.lon], { animate: true }); }
+          if (pt) { emitHook('panelReset'); openPanel(pt); engine.panTo(pt.lat, pt.lon, { animate: true }); }
         }
       }
     };
@@ -1440,7 +1312,7 @@ window.MapApp = (() => {
 
     // 關閉浮動卡片：×、地圖背景點擊、Esc
     const pc = document.querySelector('.p-close'); if (pc) pc.onclick = closePanel;
-    map.on('click', () => closePanel());
+    engine.onBackgroundClick(() => closePanel());
     setupTitleMarquee();
 
     // 鍵盤快速鍵（無障礙）：方向鍵/＋－由 Leaflet 平移縮放；此處補全域鍵
@@ -1488,9 +1360,9 @@ window.MapApp = (() => {
   }
   // 重置地圖回初始視角（左下地圖操作）
   function resetView() {
-    if (!map) return;
-    if (POINTS && POINTS.length) map.fitBounds(L.latLngBounds(effectivePoints().map(c => [c.lat, c.lon])).pad(0.08));
-    else map.setView(META.center || [23.9, 120.7], META.zoom || 14);
+    if (!engine) return;
+    if (POINTS && POINTS.length) engine.fitBounds(effectivePoints().map(c => [c.lat, c.lon]), { pad: 0.08 });
+    else engine.setView(META.center || [23.9, 120.7], META.zoom || 14);
     feature('reset');
   }
   // 標題單擊 → 若名稱溢出則跑馬燈一次（與形狀彩蛋並存，兩者都綁在同一次點擊）
@@ -1619,7 +1491,11 @@ window.MapApp = (() => {
     onHook, registerPhotoFilter, registerEntriesHint, registerScopeParam,
     personTimeline, pointTitle, photoFullUrl, openPanel, openUnlock, refreshEntries: renderEntries,
     refreshPersonFilter: rebuildPersonFilter,
-    getMap: () => map, getFilterPerson: () => filterPerson, isPhotoLayerOn: () => photoLayerOn,
+    // getEngine() 是正式的引擎存取介面；getMap() 只在目前的引擎是 LeafletEngine 時才回傳原始
+    // 地圖物件，是給還沒遷移完成的呼叫端用的相容用途（見 docs/EXTENDING.md），新的 plugin 不該再用它。
+    getEngine: () => engine,
+    getMap: () => (engine && engine.type === 'leaflet') ? engine.getRawMap() : null,
+    getFilterPerson: () => filterPerson, isPhotoLayerOn: () => photoLayerOn,
     getCurrentPoint: () => current,
     isUnlocked, isEmbedMode: () => EMBED,
     hasIdentity: () => !!contribToken(),

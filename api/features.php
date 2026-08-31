@@ -3,7 +3,7 @@
 //
 // 這兩樣東西原本分散寫死在好幾個檔案裡：upload.php 驗證 kind、stat.php 的 $FEATURES 白名單、
 // admin.php 的 $featLabels 中文說明——三邊各自維護，容易漏改（例如 share 這個 feature key
-// 就曾經只在 viewer.leaflet.js 呼叫、admin.php 準備了標籤，卻沒被 stat.php 的白名單放行）。
+// 就曾經只在 viewer.core.js 呼叫、admin.php 準備了標籤，卻沒被 stat.php 的白名單放行）。
 //
 // 這份註冊表原本只是「預留接口」——有 label 跟一個 has_photo 旗標，但 has_photo 全專案沒有
 // 任何一行讀它，kind 實際上只是「記錄下來的標籤」，不是「分流的依據」。加入影片／音訊／文字
@@ -58,7 +58,7 @@ function souliong_kinds(): array
             'file' => null, 'thumb' => false,
         ],
         // desc 跟 text 是不同的東西，不要合併：desc 是「改寫這個地點的故事」，會取最新一筆
-        // 覆蓋顯示在故事區（見 viewer.leaflet.js 的 renderEntries()）；text 是「我留下的一則
+        // 覆蓋顯示在故事區（見 viewer.core.js 的 renderEntries()）；text 是「我留下的一則
         // 紀錄」，跟照片一樣平行地排在投稿牆上。前者由 story-editor.js 送出，不進投稿對話框。
         'desc' => [
             'label' => '地點故事版本', 'tab' => null, 'postable' => true,
@@ -149,7 +149,7 @@ function souliong_features(): array
 }
 
 // 每張地圖可獨立開關的功能模組：key => 後台勾選 UI 用的中繼資料。
-// 這是「這張地圖要不要有這個功能」的開關（view.php 用它決定渲不渲染、viewer.leaflet.js
+// 這是「這張地圖要不要有這個功能」的開關（view.php 用它決定渲不渲染、viewer.core.js
 // 用它決定要不要啟用行為），跟上面 souliong_features() 那份「事後統計要顯示的名稱」是兩件事。
 // 未在 meta.json 出現的 key 一律視為 default 值，舊專案（meta.json 沒有 features 欄位）
 // 因此完全不受影響、行為與拆分之前一致。

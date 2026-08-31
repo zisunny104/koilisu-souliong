@@ -72,7 +72,7 @@ license, owner_hash, src_hash, contrib_id, contrib_hash, edit_of, created_at
 ### 3.3 擷取在插件、呈現在核心
 
 投稿的「**擷取**」（選檔、轉檔、錄音、送出）整套受 `upload` 模組旗標控制，關掉就完全不該存在 → 留在插件。
-投稿的「**呈現**」（地圖圖層、卡片牆、燈箱）唯讀地圖也要看得到 → 必須在核心 `viewer.leaflet.js`。
+投稿的「**呈現**」（地圖圖層、卡片牆、燈箱）唯讀地圖也要看得到 → 必須在核心 `viewer.core.js`。
 所以型別的知識刻意拆兩邊，沒有試圖用同一組 class 兩邊共用。
 
 擷取端：`assets/js/plugins/contribution.js` 是**與型別無關的殼**（批次佇列、進度、429 限流重試、
@@ -167,9 +167,9 @@ CSS 全部前綴 `.stat-card .col`，因為要蓋過同層的 `.stat-card .col o
 
 - **後台**（`admin.php`）：`souliong_modules()` 逐一畫勾選框，送出後寫回 `meta.json`。
 - **樣板**（`view.php`）：`$mod = fn($key) => souliong_module_on($meta, $key);`，模組關閉時直接不輸出對應的按鈕／彈窗 HTML（不是用 CSS 藏起來）。
-- **前端邏輯**（`viewer.leaflet.js`）：`MOD(key)` 讀 `window.APP.meta.features[key]`（同樣「沒設定＝開」），`canPost()` 把 `MOD('upload')` 併進解鎖判斷；凡是對應 DOM 可能不存在的地方都要 `if (el)` 再綁事件，全域鍵盤快速鍵／Esc 關閉等會不分模組狀態一律觸發的路徑也要能安全跳過（見各 `close*()` 函式的 null 檢查）。
+- **前端邏輯**（`viewer.core.js`）：`MOD(key)` 讀 `window.APP.meta.features[key]`（同樣「沒設定＝開」），`canPost()` 把 `MOD('upload')` 併進解鎖判斷；凡是對應 DOM 可能不存在的地方都要 `if (el)` 再綁事件，全域鍵盤快速鍵／Esc 關閉等會不分模組狀態一律觸發的路徑也要能安全跳過（見各 `close*()` 函式的 null 檢查）。
 
-`delegation`（管理者邀請登入）跟上面那些有專屬插件檔的模組不一樣（`homeLink` 也是，它只是核心模板裡的一顆連結），不是插件檔案，而是核心裡兩段既有 UI 的開關：地圖頁品牌區塊的彩蛋入口（連點六下開啟 `#pinDialog`，見 `setupBrandEgg()`）與邀請連結兌換彈窗 `#adminRedeemDialog`（見 `handleRedeemFragment()`）。關閉後這張地圖不會再讓人透過網址 fragment 兌換出新的專案 PIN，地圖頁上也不再有快速登入入口——但完全不影響 `config['admin_pin']`／`state/admin_pins.json` 的主 PIN：主 PIN 是全域權限，一律能從 `/manager` 直接登入任何專案，這條路由不經過 `view.php`，不受這個旗標影響（見 `api/security.php` 的「主 PIN／專案 PIN」兩層設計）。適合「僅檢視、只有超級管理者能更新內容，不需要專案 PIN 或邀請代理」的部署。**已知缺口**：目前只有 `view.php`／`viewer.leaflet.js`／`api/features.php` 接上這個旗標；`admin.php` 後台的邀請連結建立介面、與 `security.php` 的 `admin_can()`/`pins_redeem()` 對「這個專案要不要接受專案 PIN」的判斷，尚未跟著收斂，待補。
+`delegation`（管理者邀請登入）跟上面那些有專屬插件檔的模組不一樣（`homeLink` 也是，它只是核心模板裡的一顆連結），不是插件檔案，而是核心裡兩段既有 UI 的開關：地圖頁品牌區塊的彩蛋入口（連點六下開啟 `#pinDialog`，見 `setupBrandEgg()`）與邀請連結兌換彈窗 `#adminRedeemDialog`（見 `handleRedeemFragment()`）。關閉後這張地圖不會再讓人透過網址 fragment 兌換出新的專案 PIN，地圖頁上也不再有快速登入入口——但完全不影響 `config['admin_pin']`／`state/admin_pins.json` 的主 PIN：主 PIN 是全域權限，一律能從 `/manager` 直接登入任何專案，這條路由不經過 `view.php`，不受這個旗標影響（見 `api/security.php` 的「主 PIN／專案 PIN」兩層設計）。適合「僅檢視、只有超級管理者能更新內容，不需要專案 PIN 或邀請代理」的部署。**已知缺口**：目前只有 `view.php`／`viewer.core.js`／`api/features.php` 接上這個旗標；`admin.php` 後台的邀請連結建立介面、與 `security.php` 的 `admin_can()`/`pins_redeem()` 對「這個專案要不要接受專案 PIN」的判斷，尚未跟著收斂，待補。
 
 `personExplore`（依序探索）沿用原本的扁平旗標寫法（`meta.json` 直接存 `personExplore: true/false`），`souliong_module_on()` 對這個 key 特殊處理，行為與既有插件機制（見下一節）相容。
 
@@ -177,7 +177,7 @@ CSS 全部前綴 `.stat-card .col`，因為要蓋過同層的 `.stat-card .col o
 
 ## 七、插件標準（plugin standard）
 
-有些功能不是每個專案都需要，做成「插件」比寫死在核心程式裡更乾淨：核心不認識任何特定插件，只提供一組掛勾點與一個基底類別；插件是 `assets/js/plugins/` 底下**獨立的檔案**，自己管理自己的 state、DOM、CSS，只在對應模組旗標開啟時才由 `view.php` 用 `<?php if ($mod('xxx')): ?>` 條件載入（讀完核心 `viewer.leaflet.js` 之後）。關閉時整個檔案不會被讀進頁面，不留任何 HTML／`<script>` 痕跡——這是插件形式比原本散落在核心裡的 `if (MOD('xxx'))` 分支更乾淨的地方。
+有些功能不是每個專案都需要，做成「插件」比寫死在核心程式裡更乾淨：核心不認識任何特定插件，只提供一組掛勾點與一個基底類別；插件是 `assets/js/plugins/` 底下**獨立的檔案**，自己管理自己的 state、DOM、CSS，只在對應模組旗標開啟時才由 `view.php` 用 `<?php if ($mod('xxx')): ?>` 條件載入（讀完核心 `viewer.core.js` 之後）。關閉時整個檔案不會被讀進頁面，不留任何 HTML／`<script>` 痕跡——這是插件形式比原本散落在核心裡的 `if (MOD('xxx'))` 分支更乾淨的地方。
 
 一個合格的插件必須符合：
 
@@ -206,7 +206,7 @@ CSS 全部前綴 `.stat-card .col`，因為要蓋過同層的 `.stat-card .col o
 
 ### 模組相依
 
-當一個模組的存在前提是另一個模組開著，`souliong_modules()` 的模組定義可以加一個 `'dependsOn' => 'otherKey'`；`souliong_module_on()` 判斷時，父模組關閉就一併視為關閉，不管自己的旗標是什麼。因為 `view.php`（PHP 端 `$mod()`）與 `viewer.leaflet.js`（JS 端 `MOD()`）都要算出一致的結果，`$APP` 會多帶一份 `moduleState`（每個模組 key 對應解析後的布林值，PHP 端用 `$mod()` 算好），JS 的 `MOD(key)` 直接讀這份資料，不在前端重算一次預設值／相依邏輯——避免兩邊各自判斷、日後兜不起來。
+當一個模組的存在前提是另一個模組開著，`souliong_modules()` 的模組定義可以加一個 `'dependsOn' => 'otherKey'`；`souliong_module_on()` 判斷時，父模組關閉就一併視為關閉，不管自己的旗標是什麼。因為 `view.php`（PHP 端 `$mod()`）與 `viewer.core.js`（JS 端 `MOD()`）都要算出一致的結果，`$APP` 會多帶一份 `moduleState`（每個模組 key 對應解析後的布林值，PHP 端用 `$mod()` 算好），JS 的 `MOD(key)` 直接讀這份資料，不在前端重算一次預設值／相依邏輯——避免兩邊各自判斷、日後兜不起來。
 
 目前接上這個機制的有兩組：`personExplore`（依序探索）相依 `identity`（投稿者身分）——只有訪客能設定具名身分時，「選了某人、依序探索他的地標」才有意義；`identity` 相依 `upload`（上傳投稿）——身分小標籤點擊後的「快速上傳」捷徑、與解鎖對話框裡「建立身分」的 PIN／暱稱欄位（`#idToggleBtn`/`#idFields`）都只在 `#unlockDialog` 存在（即 `upload` 開啟）時才有意義，核心 `identityChipClick()` 本來就已經用 `MOD('upload')` 判斷過一次（見上一節），這裡只是把既有的耦合明文化。兩段相依會串連：`upload` 關閉 → `identity` 一併關閉 → `personExplore` 也跟著關閉，即使該地圖的 `personExplore`／`identity` 旗標本身仍是開著的（後台勾選框仍會顯示、但不生效）。
 
@@ -498,7 +498,7 @@ CSS 全部前綴 `.stat-card .col`，因為要蓋過同層的 `.stat-card .col o
 <base>/manager/<mapid>/layers/<id>.zip  專案圖層匯出
 ```
 
-要產生網址就呼叫 `Route::manager()`／`Route::logout()`／`Route::backupAll()`／`Route::backupProject()`／`Route::backupPack()`／`Route::backupLayer()`／`Route::tool()`／`Route::map()`／`Route::api()`，**不要自己黏字串**。前端也一樣：`view.php` 把 `Route::manager($proj)` 放進 `APP.manager`，`viewer.leaflet.js` 讀 `MANAGER_URL` 就好。
+要產生網址就呼叫 `Route::manager()`／`Route::logout()`／`Route::backupAll()`／`Route::backupProject()`／`Route::backupPack()`／`Route::backupLayer()`／`Route::tool()`／`Route::map()`／`Route::api()`，**不要自己黏字串**。前端也一樣：`view.php` 把 `Route::manager($proj)` 放進 `APP.manager`，`viewer.core.js` 讀 `MANAGER_URL` 就好。
 
 之所以要這一層，是因為原本沒有：`?api=admin` 光一支 `admin.php` 就出現 47 次，「還原掛載根目錄」那段計算被複製了七份（其中兩份的邊界情況還算得不一樣）。改一次網址形狀就得全域搜尋改一輪，漏改的地方不會報錯，只會在某些部署下靜靜連到錯的地方。
 

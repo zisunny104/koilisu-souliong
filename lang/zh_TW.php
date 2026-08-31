@@ -91,7 +91,7 @@ return [
     'admin_pin_incorrect'    => 'PIN 不正確',
     'lang_switch'             => '切換語言',
 
-    // 以下為 viewer.leaflet.js 動態產生內容用的翻譯 key
+    // 以下為 viewer.core.js 動態產生內容用的翻譯 key
     'anon_prefix'            => '匿名',
     'anon_nouns'             => '松鼠,月亮,石虎,藍鵲,貓頭鷹,山羌,螢火蟲,白鷺,穿山甲,樹蛙,蒲公英,晚風,溪流,苔蘚,雲豹,燕子,麻雀,銀杏',
     'toast_new_anon_name'    => '已換一個新的匿名稱呼：{name}',

@@ -93,7 +93,7 @@ return [
     'admin_pin_incorrect'  => 'Incorrect PIN',
     'lang_switch'          => 'Switch language',
 
-    // Keys below back viewer.leaflet.js dynamic content
+    // Keys below back viewer.core.js dynamic content
     'anon_prefix'            => 'Anonymous ',
     'anon_nouns'             => 'Squirrel,Moon,Leopard Cat,Blue Magpie,Owl,Muntjac,Firefly,Egret,Pangolin,Tree Frog,Dandelion,Evening Breeze,Stream,Moss,Clouded Leopard,Swallow,Sparrow,Ginkgo',
     'toast_new_anon_name'    => 'New anonymous nickname: {name}',

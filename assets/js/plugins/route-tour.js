@@ -55,8 +55,8 @@
 
     // 未選特定投稿者時：同時畫出每位投稿者各自的時間路徑（多色）
     drawRoute() {
-      const map = this.mapApp.getMap();
-      this.routeLines.forEach(l => map.removeLayer(l));
+      const engine = this.mapApp.getEngine();
+      this.routeLines.forEach(l => engine.removePolyline(l));
       this.routeLines = [];
       const filterPerson = this.mapApp.getFilterPerson();
       if (!this.routeOn || filterPerson) return;
@@ -67,18 +67,18 @@
       });
       Object.keys(byName).forEach(name => {
         const pts = byName[name].sort((a, b) => tv(a) - tv(b)).map(e => [e.lat, e.lon]);
-        if (pts.length >= 2) this.routeLines.push(L.polyline(pts, { color: this.mapApp.personColor(name), weight: 2, opacity: .65 }).addTo(map));
+        if (pts.length >= 2) this.routeLines.push(engine.drawPolyline(pts, { color: this.mapApp.personColor(name), weight: 2, opacity: .65 }));
       });
     }
 
     // 選了投稿者時：改畫他單人的路徑（較粗），要「選投稿者」且「路徑」開關也開著才畫
     drawPersonRoute() {
-      const map = this.mapApp.getMap();
-      if (this.personLine) { map.removeLayer(this.personLine); this.personLine = null; }
+      const engine = this.mapApp.getEngine();
+      if (this.personLine) { engine.removePolyline(this.personLine); this.personLine = null; }
       const filterPerson = this.mapApp.getFilterPerson();
       if (!filterPerson || !this.routeOn) return;
       const pts = this.personPoints(filterPerson).map(e => [e.lat, e.lon]);
-      if (pts.length >= 2) this.personLine = L.polyline(pts, { color: this.mapApp.personColor(filterPerson), weight: 3, opacity: .85 }).addTo(map);
+      if (pts.length >= 2) this.personLine = engine.drawPolyline(pts, { color: this.mapApp.personColor(filterPerson), weight: 3, opacity: .85 });
     }
 
     // 彩蛋：快速連點「路徑」鈕數下 → 依所有投稿的時間順序，重新走一次整條路徑
@@ -93,23 +93,23 @@
     }
 
     async playTimeline() {
-      const map = this.mapApp.getMap();
+      const engine = this.mapApp.getEngine();
       const pts = this.mapApp.effectivePhotos().filter(e => typeof e.lat === 'number' && typeof e.lon === 'number').sort((a, b) => tv(a) - tv(b));
       if (pts.length < 2) { this.mapApp.toast(esc(t('route_egg_not_enough'))); return; }
       const myRun = ++this.eggRun;   // 若又被連點觸發一次，讓前一場動畫提早結束，不互相干擾
       this.mapApp.toast(esc(t('route_egg_msg')));
-      const trail = L.polyline([], { color: '#ff6b35', weight: 3, opacity: .85, dashArray: '4 6' }).addTo(map);
-      const marker = L.circleMarker([pts[0].lat, pts[0].lon], { radius: 8, color: '#fff', weight: 2, fillColor: '#ff6b35', fillOpacity: 1 }).addTo(map);
+      const trail = engine.drawPolyline([], { color: '#ff6b35', weight: 3, opacity: .85, dashArray: '4 6' });
+      const marker = engine.drawPoint(pts[0].lat, pts[0].lon, { radius: 8, color: '#fff', weight: 2, fillColor: '#ff6b35', fillOpacity: 1 });
       const path = [];
       for (let i = 0; i < pts.length && myRun === this.eggRun; i++) {
         const p = pts[i];
         path.push([p.lat, p.lon]);
-        trail.setLatLngs(path);
-        marker.setLatLng([p.lat, p.lon]);
-        map.panTo([p.lat, p.lon], { animate: true, duration: .5 });
+        engine.updatePolylinePoints(trail, path);
+        engine.updatePointPosition(marker, p.lat, p.lon);
+        engine.panTo(p.lat, p.lon, { animate: true, duration: .5 });
         await new Promise(r => setTimeout(r, 550));
       }
-      if (myRun === this.eggRun) setTimeout(() => { map.removeLayer(trail); map.removeLayer(marker); }, 1200);
+      if (myRun === this.eggRun) setTimeout(() => { engine.removePolyline(trail); engine.removePoint(marker); }, 1200);
     }
   }
 
