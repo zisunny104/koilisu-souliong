@@ -55,10 +55,6 @@ window.MapApp = (() => {
   // APP.layers 缺席時的保命底圖定義在 MapEngine.FALLBACK_LAYER（assets/js/engine/map-engine.js）：
   // 每個引擎自己的圖層系統做第二層防禦時也要用同一份，所以放在兩邊都讀得到的地方，不是各自重複一份。
   const layerManifests = () => (APP.layers && APP.layers.length) ? APP.layers : [MapEngine.FALLBACK_LAYER];
-  // 過渡期相容用途（assets/js/plugins/contribution.js 與核心自己兩處小地圖選點器
-  // togglePointEditor()/buildPhotoEditorPanel() 還在用）：在既有的 Leaflet 地圖實例上掛一份底圖。
-  // 這三個呼叫端改用 engine.createMiniPicker() 之後，這個函式會整個刪除（不會有 MapLibre 版本）。
-  function addTileLayer(map) { return engine.mountBaseLayer(map, isDark()); }
 
   let themeMode = localStorage.getItem('theme') || 'system';
   if (themeMode !== 'system') document.documentElement.dataset.theme = themeMode;
@@ -1519,7 +1515,7 @@ window.MapApp = (() => {
     personColor, toast,
     displayName, anonName: () => SESSION_ANON, submitContribution, submitNewPoint,
     rerollAnon, identityChipClick,
-    chairOptionsHtml, nearestPoint, locNote, srcTone, addTileLayer, fmtTime,
+    chairOptionsHtml, nearestPoint, locNote, srcTone, fmtTime,
     getMeta: () => META, getCats: () => CATS.slice(),
     refreshCounts: recount, refreshAll,
     Plugin: SouliongPlugin,

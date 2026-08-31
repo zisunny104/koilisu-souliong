@@ -169,9 +169,7 @@ window.LeafletEngine = (() => {
       return (base && base.url) || '';
     }
 
-    // 過渡期相容用途，供 viewer.core.js 的 addTileLayer() 呼叫（assets/js/plugins/contribution.js
-    // 與核心自己兩處小地圖選點器還在用）：把這份底圖疊到「另一顆」既有的 Leaflet 地圖上。
-    // 所有呼叫端改用 createMiniPicker() 之後，這個方法會整個刪除。
+    // createMiniPicker() 內部用：把這份底圖疊到小地圖自己的 Leaflet 實體上，不對外公開。
     mountBaseLayer(map, dark) { return new LayerStack(baseManifests(this.manifests)).addTo(map, dark); }
 
     createMiniPicker(container, opts) {

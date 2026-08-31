@@ -193,7 +193,7 @@ CSS 全部前綴 `.stat-card .col`，因為要蓋過同層的 `.stat-card .col o
 - **事件**：`MapApp.onHook(name, fn)` 訂閱、核心內部用 `emitHook(name, ...)` 發送。目前有 `'stateChange'`（投稿新增／刪除／編輯、投稿者篩選、全部-投稿模式切換、資料重新整理等任何「顯示內容可能變了」的時機都會發送一次，插件不需要知道確切原因，收到就重新算自己要畫什麼）、`'panelReset'`（有其他管道直接開/關地點面板時發送，插件若有自己的「聚焦」狀態應在這裡清掉）、`'closeAll'`（全域 Esc 鍵或其他「全部關閉」時機發送；插件若有自己的浮層／對話框應在這裡關閉——核心不需要知道插件的對話框 id）、`'identityUploadShortcut'`（訪客點擊身分小標籤且已有投稿權限時發送；核心自己不認得「打開上傳批次視窗」這件事，改由上傳模組訂閱這個事件自己決定要做什麼——模組關閉時核心呼叫 `emitHook` 也只是發到空氣中，不會出錯）、`'identityChanged'`（顯示用的身分狀態可能變了——長按換匿名名、或解鎖狀態改變時發送；核心自己不畫身分小標籤，改由身分插件訂閱重繪）、`'identityReroll'`（專門給「換了一個新匿名名」這個更窄的時機，跟 `'identityChanged'` 分開是因為上傳模組批次視窗的暱稱欄位只需要在真的換名時重設 placeholder，不需要每次身分狀態變動就重設，否則會把使用者已經打的字清掉）。
 - **延伸點（有回傳值）**：`MapApp.registerPhotoFilter(fn)`（`fn(photoEntry, currentPoint) => bool`，篩掉不想顯示的照片，AND 疊加）、`MapApp.registerEntriesHint(fn)`（`fn(currentPoint) => HTMLElement|null`，插進地點卡片內容裡的提示區塊，插件自己建節點、自己綁事件）、`MapApp.registerScopeParam(fn)`（`fn() => {key: value}|null`，插件自己想在分享連結／嵌入碼網址上多帶的參數，會併進 `currentScopeParams()` 的輸出；讀回來則不用核心幫忙——插件自己在 `mount()` 裡 `new URLSearchParams(location.search)` 讀自己定義的 key 即可，核心不需要知道有這個參數存在）。
 - **資料／動作**：`MapApp.personTimeline(name)`、`MapApp.pointTitle(p)`、`MapApp.photoFullUrl(item)`、`MapApp.openPanel(point)`、`MapApp.openLightbox(entry, url)`、`MapApp.openUnlock()`（跳出投稿碼／解鎖視窗）、`MapApp.refreshEntries()`（＝目前地點卡片重繪一次，通常在插件自己改了篩選狀態之後呼叫）、`MapApp.trackFeature(name)`（記一筆功能使用統計，寫進該地圖的 `stats.json`）、`MapApp.currentScopeParams()`（目前的投稿者／分類篩選狀態，序列化成 querystring 片段，分享連結／嵌入碼都靠這個帶入範圍限制）、`MapApp.effectiveEntries()`（合併「原始投稿」與其編輯紀錄後的目前有效清單，**所有型別**都在裡面，是投稿資料的單一事實來源）、`MapApp.effectivePhotos()`（同一份清單只留有照片的那些；`route-tour`／`person-explore` 這種畫面只處理得了 `<img>` 的插件用這個，不要為了「支援新型別」把它們改成吃 `effectiveEntries()`）、`MapApp.entryFullUrl(entry)` / `MapApp.entryThumbUrl(entry)`（依型別給出主檔／縮圖網址，照片走 `?api=photo`、影音走 `?api=media`，插件不需要自己判斷 kind）、`MapApp.kindOf(entry)`（一筆投稿的 kind，舊記錄沒有這個欄位時退回 `photo`）、`MapApp.contribCfg()`（這張地圖的投稿設定，見第三節的 `souliong_contrib_cfg()`）、`MapApp.fmtDur(sec)`（影音長度的顯示格式化）、`MapApp.effectivePoints()`（併入 `newpoint` 並套上 `point` 座標覆蓋後的目前點位清單）、`MapApp.getCats()`（目前地圖的分類清單）、`MapApp.submitNewPoint(fields)`（送出一筆新地點，走 `api/newpoint.php` 而非投稿端點）、`MapApp.personColor(name)`（某投稿者的固定配色，跟篩選角標同一份快取，同一頁內顏色不會兜不起來）、`MapApp.toast(html)`（畫面上方跳出的短暫提示訊息）、`MapApp.displayName()`（目前裝置設定的暱稱，沒設定就退回本次隨機匿名名）、`MapApp.anonName()`（純粹讀本次隨機匿名名，不管暱稱欄位有沒有填——輸入框 placeholder 要用這個而非 `displayName()`）、`MapApp.submitContribution(fields)`（送出一筆新投稿的共用管道；`project`/`owner`/`code`/`ctoken` 這些每筆投稿都要帶的欄位由核心統一補上，插件只要給業務欄位，例如 `{kind:'desc', item_num, name, comment, photo_time}`）、`MapApp.refreshPersonFilter()`（投稿者篩選下拉重新計算一次，新增投稿可能帶入新名字時要呼叫）、`MapApp.refreshCounts()`（只重算統計數字，不重繪地圖圖層／卡片——批次上傳中途每張都呼叫這個即可，比全套 `refreshAll()` 省事）、`MapApp.refreshAll()`（資料異動後的完整重繪：統計、地圖圖層、投稿者篩選、`'stateChange'` 事件、目前地點卡片，一次呼叫涵蓋所有連動，插件不需要自己記得哪些要重繪）、`MapApp.addTileLayer(map)`（用地圖目前的底圖設定，在插件自己建立的 `L.map` 實體上加一層底圖——例如批次上傳卡片裡的小地圖預覽）、`MapApp.fmtTime(date)`（統一的時間顯示格式化）、`MapApp.getMeta()`（目前地圖的 `meta.json` 內容；用函式而非直接暴露屬性，是因為部分欄位可能是非同步取得，插件不該假設它在 `mount()` 當下就是最終值）、`MapApp.getCurrentPoint()`（目前面板開著的地點物件，沒開面板則為 `null`——例如上傳快速鍵要「以目前地點為預設脈絡」開啟批次視窗時要用這個，而不是自己記一份）、`MapApp.nearestPoint(lat, lon)`（找離某座標最近的地點，EXIF GPS 定位配對用）、`MapApp.chairOptionsHtml(selectedNum)`（地點下拉選單的 `<option>` HTML，批次卡片讓使用者手動指定/修正地點用）、`MapApp.srcTone(src)` / `MapApp.locNote(src)`（照片定位來源的顯示文字與樣式，核心的照片編輯面板與上傳模組的批次卡片共用同一份判斷邏輯，避免兩處各自維護一份、日後兜不起來）、`MapApp.rerollAnon()`（換一個新的本次匿名名；會依序發送 `'identityChanged'` 與 `'identityReroll'`，實際換算 `SESSION_ANON` 這個私有狀態的邏輯留在核心，插件只管觸發時機，例如長按身分小標籤）、`MapApp.identityChipClick()`（身分小標籤被點擊時該做什麼——已有投稿權限就發 `'identityUploadShortcut'`、被鎖住就開解鎖視窗、上傳模組整個關閉則什麼都不做；這個判斷要用到 `MOD('upload')`/`canPost()` 等核心私有狀態，所以決策邏輯留在核心，身分插件只負責把點擊事件轉呼叫過來）。
-- **唯讀狀態**：`MapApp.getMap()`、`MapApp.getFilterPerson()`、`MapApp.isPhotoLayerOn()`、`MapApp.isUnlocked()`（裝置是否已解鎖投稿權限——核心原生的權限判斷，見上面第 5 點）、`MapApp.hasIdentity()`（這台裝置有沒有建立跨裝置的投稿者身分；跟 `isUnlocked()` 是兩件事——能投稿不代表具名，CC BY 選項就是靠這個決定顯不顯示）、`MapApp.isEmbedMode()`（這個頁面是不是以 `?embed=1` 嵌入模式載入）、`MapApp.getProjectId()`（目前地圖的 project id，已做過安全字元過濾）。
+- **唯讀狀態**：`MapApp.getEngine()`（**新插件的正式地圖介面**，回傳 `MapEngine` 抽象基底的實例——`LeafletEngine` 或 `MapLibreEngine`，依這張地圖的主引擎而定，見第八節 8.4。插件需要碰地圖（畫 marker、畫路線、鏡頭移動、開一顆小地圖選點器…）一律呼叫這個拿到的物件上的方法，不分辨底下是哪個引擎——`route-tour.js`／`person-explore.js`／`contribution.js`／`map3d.js` 都已經是這個寫法，可以直接參考）、`MapApp.getMap()`（**過渡期相容用途，不要在新插件裡用**：只有 `getEngine().type === 'leaflet'` 時才回傳原始 `L.Map` 實體，主引擎是 MapLibre 的地圖會拿到 `null`——也就是說任何還在用 `getMap()` 的插件，一旦某張地圖 opt-in 了向量底圖就會整個壞掉。目前沒有任何 plugin 還在呼叫它，只是還沒被刪除；新增功能請一律用 `getEngine()`）、`MapApp.getFilterPerson()`、`MapApp.isPhotoLayerOn()`、`MapApp.isUnlocked()`（裝置是否已解鎖投稿權限——核心原生的權限判斷，見上面第 5 點）、`MapApp.hasIdentity()`（這台裝置有沒有建立跨裝置的投稿者身分；跟 `isUnlocked()` 是兩件事——能投稿不代表具名，CC BY 選項就是靠這個決定顯不顯示）、`MapApp.isEmbedMode()`（這個頁面是不是以 `?embed=1` 嵌入模式載入）、`MapApp.getProjectId()`（目前地圖的 project id，已做過安全字元過濾）。
 
 參考實作：
 - `assets/js/plugins/embed-code.js`（`embed` 旗標——產生 `<iframe>` 嵌入碼；`class EmbedCodePlugin extends MapApp.Plugin` 寫法，是目前符合完整標準的範例）。
@@ -279,13 +279,25 @@ CSS 全部前綴 `.stat-card .col`，因為要蓋過同層的 `.stat-card .col o
 
 全部落在 400 以下，所以路徑線與點位標記照舊蓋在所有圖層上面。
 
-### 8.4 前端：`MapLayer` 類別族
+### 8.4 前端：兩個引擎各自的圖層掛載
 
-在 `viewer.leaflet.js`。`MapLayer` 是抽象基底，子類只需要回答「怎麼變成一個 `L.Layer`」（`build(dark, opts)`），其餘（pane、換主題重建、掛上／移除）都在基底；`MapLayer.from(manifest)` 依 `type` 挑子類。`LayerStack` 持有一整疊圖層與它們共同的版權標註，地圖只跟它打交道（`addTo(map, dark)` / `applyTheme(dark)`）。版權整組掛在最底層那一個 `L.Layer` 上，上層換主題重建時版權列才不會閃一下。
+檢視器現在是「引擎抽象層＋兩個可替換的引擎實作」，圖層系統不再是核心共用的一份程式碼，而是每個引擎各自負責——`LeafletEngine` 跟 `MapLibreEngine` 之間**不共用類別繼承**，`MapLayer` 這個類別族只活在 `LeafletEngine` 裡，`MapLibreEngine` 完全是另一套掛法。哪個引擎接手，由 `pages/view.php` 依這張地圖生效的 layers 裡有沒有 `type:"vector"` 決定（見下方 8.4.2），跟主引擎無關的那些「真正通用」的邏輯（marker、路線、面板、篩選）則收斂在 `assets/js/engine/map-engine.js` 的 `MapEngine` 抽象基底裡，兩個引擎都要實作同一組方法（`setMarkerLayer()`／`drawPolyline()`／`createMiniPicker()`…），呼叫端（`viewer.core.js`、各 plugin）一律只認 `MapApp.getEngine()` 給的這組介面，不分辨底下是哪個引擎。
 
-新增一種圖層＝多一個 `MapLayer` 子類（例如向量圖磚：protomaps-leaflet 是 `L.GridLayer`，不必離開 Leaflet），核心其餘部分不用動。
+#### 8.4.1 `LeafletEngine`（`assets/js/engine/leaflet-engine.js`）
 
-分享卡片與定位用的小地圖走 `addTileLayer(map)`（插件公開 API），它只掛 `base` 那一層——那些畫面不需要插畫疊圖，也不該被它擋住地標。
+`MapLayer` 是抽象基底，子類只需要回答「怎麼變成一個 `L.Layer`」（`build(dark, opts)`），其餘（pane、換主題重建、掛上／移除）都在基底；`MapLayer.from(manifest)` 依 `type` 挑子類（`RasterLayer`／`ImageLayer`）。`LayerStack` 持有一整疊圖層與它們共同的版權標註，`LeafletEngine` 只跟它打交道（`addTo(map, dark)` / `applyTheme(dark)`）。版權整組掛在最底層那一個 `L.Layer` 上，上層換主題重建時版權列才不會閃一下。8.3 的 `pane` 分層（`base`／`paper`／`road`／`art`）就是這裡的機制，只在 `LeafletEngine` 內有意義。
+
+新增一種**光柵或單張疊圖**的圖層型別＝多一個 `MapLayer` 子類，`LeafletEngine` 其餘部分不用動。
+
+#### 8.4.2 `MapLibreEngine`（`assets/js/engine/maplibre-engine.js`）
+
+MapLibre 沒有 Leaflet 的「pane／可疊多張獨立底圖」概念，向量 style 本身就是一張完整、自成一體的地圖（道路、建物、標籤全包在裡面）。掛載演算法因此跟 `LeafletEngine` 完全不同形狀：在 `manifests` 陣列裡找 `pane==='base'` 且 `type==='vector'` 的最後一筆，它的 `url`/`urlDark` 直接當整顆地圖的 `style:`；陣列裡其餘每一筆（不論哪個 pane）在 style 載入完成後依序 `addSource()`+`addLayer()` 疊上去，一律疊在整個 style 最上層（沒有 `beforeId`）——這是刻意的取捨，跟 8.3 `art` pane（260）一律蓋在最上面的既有語意一致，只是延伸到向量 style 內部圖層；代價是向量底圖自己的路名標籤會被蓋在疊圖層下面。`applyTheme(dark)` 有 `urlDark` 時整個 `setStyle()` 重換一份 style 並在 `style.load` 重跑一次疊圖（`setStyle()` 會清空所有動態加的 source/layer，這是 MapLibre 本身的限制）；沒有 `urlDark` 就整個跳過。
+
+新增一種向量底圖來源＝新增一個 `layers/<id>/layer.json`（`type:"vector"`，見 8.2 的 `openfreemap-liberty`），不用動任何程式碼；新增一種**要疊在向量底圖上**的圖層型別，才需要在 `MapLibreEngine` 裡多一段轉換邏輯（現在只認 `raster`→`{type:'raster', tiles:[...]}` 與 `image`→`{type:'image', url, coordinates}` 兩種）。
+
+`MapLibreEngine` 也是 3D 地圖模式（`assets/js/plugins/map3d.js`）的地基：`enter3D()`/`exit3D()`、建物排除、自訂模型（three.js glTF）延遲載入都在這個檔案裡，不論是被當主引擎原地重用、還是 `map3d.js` 另開一顆專給 3D 用，都走同一套，呼叫端不用區分。
+
+分享卡片與定位用的小地圖一律走 `MapApp.getEngine().createMiniPicker(container, {lat,lon,zoom})`——兩個引擎各自實作，只掛 `base` 那一層，那些畫面不需要插畫疊圖，也不該被它擋住地標。
 
 ### 8.5 圖檔端點 `<base>/layer/<project>/<id>/<路徑>`
 
@@ -421,9 +433,11 @@ CSS 全部前綴 `.stat-card .col`，因為要蓋過同層的 `.stat-card .col o
 
 **重切時沒勾「保留原稿」，等於把上一次留的原稿刪掉**：`begin` 一律先清 `layersrc/<id>/`。理由跟清舊磚一樣——留著跟這一版對不起來的原稿，比沒有更危險。
 
-### 8.8 尚未完成
+### 8.8 尚未完成（原「向量圖層」規劃已被取代）
 
-- 向量圖層還沒有對應的 `MapLayer` 子類。想要「道路粗細可調」就得走向量：protomaps-leaflet 是 `L.GridLayer`，不必離開 Leaflet，接成一個新子類即可。**注意這跟 8.10 的「保持向量」不是同一件事**——8.10 是單張 SVG 原封不動當 `type:"image"` 疊圖用，本質還是點陣模型裡的一張圖；這裡講的是真正的向量*圖磚*（`.pbf`/`.mvt` 那種，樣式在瀏覽器端即時渲染），兩者的資料模型完全不同。目前刻意排在其他圖磚來源支援之後，不急著做。
+這一節原本規劃向量圖磚（`.pbf`/`.mvt` 那種、樣式在瀏覽器端即時渲染的真正向量圖磚——**注意這跟 8.10 的「保持向量」不是同一件事**，8.10 是單張 SVG 原封不動當 `type:"image"` 疊圖用，本質還是點陣模型裡的一張圖）走 `protomaps-leaflet`（`L.GridLayer`，留在 `LeafletEngine` 內接一個新子類）。這個規劃已經放棄——實際做法是引進整套 `MapLibreEngine`（見 8.4.2）當**替代主引擎**，而不是在 Leaflet 裡另開一種圖層。`type:"vector"` 的 `layer.json`＋`MapLibreEngine` 現在就是向量底圖的正式機制，逐專案透過「編輯專案描述」勾選即可 opt-in（見 `layers/openfreemap-liberty/layer.json` 這個現成範例）；`protomaps-leaflet`／`L.GridLayer` 那條路不會再做。
+
+道路／水域線寬這類「向量底圖細部樣式想再調」的需求目前刻意擱置，不在這次範圍內。
 
 ### 8.9 主題包的兩層作用域
 
