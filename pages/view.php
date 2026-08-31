@@ -113,8 +113,8 @@ $jsonFlags = JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JS
 }}
 </script>
 <?php // three.js 本體(~600KB)不在這裡載入——import map 只是解析規則,瀏覽器不會預先抓檔案;
-      // 真正的 import('three') 只在 assets/js/plugins/map3d.js 確認這張地圖至少有一筆已存
-      // 自訂模型時才會執行,沒有自訂模型的地圖不用付這個下載成本(見該檔 maybeLoadThree()) ?>
+      // 真正的 import('three') 只在 assets/js/engine/maplibre-engine.js 確認這張地圖至少有一筆
+      // 已存自訂模型時才會執行,沒有自訂模型的地圖不用付這個下載成本(見該檔 _maybeLoadThree()) ?>
 <?php endif; ?>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
 <style><?php
@@ -292,9 +292,9 @@ if ($pack) {
      ——3D 模式一律要使用者先按下切換鈕才會用到 maplibregl,不會跟這段非同步載入搶時間。
      主引擎是 MapLibre（$primaryEngine==='maplibre'）時不吃這段 shim：MapLibreEngine 掛載發生在
      頁面一開始同步的 boot() 裡，等不了這段要等文件解析完才執行的 ESM 全域變數，所以 viewer.core.js
-     的 boot() 自己用 import() 動態載入同一份 MapLibre 並掛回 window.maplibregl，做法比照 map3d.js
-     對 three.js 的 lazy-load（見該檔 maybeLoadThree()）；兩邊載入同一個網址時瀏覽器的 module 快取
-     本來就會共用，不會重複下載，這裡不用特別判斷「已經載過了」再跳過。 */ ?>
+     的 boot() 自己用 import() 動態載入同一份 MapLibre 並掛回 window.maplibregl，做法比照
+     maplibre-engine.js 對 three.js 的 lazy-load（見該檔 _maybeLoadThree()）；兩邊載入同一個網址時
+     瀏覽器的 module 快取本來就會共用，不會重複下載，這裡不用特別判斷「已經載過了」再跳過。 */ ?>
 <script type="module">
 import * as maplibregl from 'https://unpkg.com/maplibre-gl@6.6.0/dist/maplibre-gl.mjs';
 window.maplibregl = maplibregl;

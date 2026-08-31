@@ -50,6 +50,70 @@ window.MapLibreEngine = (() => {
   const POS_MAP = { bottomleft: 'bottom-left', bottomright: 'bottom-right', topleft: 'top-left', topright: 'top-right' };
   const mapPos = (p, fallback) => POS_MAP[p] || p || fallback;
 
+  // MapLibre CustomLayerInterface（renderingMode:'3d'）＋ three.js 畫單一自訂模型，原本是
+  // map3d.js 自己的類別，3D 能力整併進引擎時一起搬過來（見 docs 規劃 Part D）。座標換算沿用官方
+  // 文件那套 MercatorCoordinate 作法：模型原點換成麥卡托座標＋公尺→麥卡托單位的縮放係數，
+  // render() 收到的 modelViewProjectionMatrix 只描述「地圖現在怎麼看整個世界」，疊上這個平移＋
+  // 縮放矩陣才會變成「模型自己這個局部座標系怎麼被畫出來」。
+  class Map3DModelLayer {
+    constructor(id, region, THREE, GLTFLoaderCtor) {
+      this.id = id;
+      this.type = 'custom';
+      this.renderingMode = '3d';
+      this.region = region;
+      this.THREE = THREE;
+      this.GLTFLoaderCtor = GLTFLoaderCtor;
+    }
+
+    onAdd(map, gl) {
+      const THREE = this.THREE;
+      const m = this.region.model;
+      this.map = map;
+      this.camera = new THREE.Camera();
+      this.scene = new THREE.Scene();
+      this.scene.add(new THREE.AmbientLight(0xffffff, 1.2));
+      const sun = new THREE.DirectionalLight(0xffffff, 0.8);
+      sun.position.set(0, -70, 100);
+      this.scene.add(sun);
+
+      this.origin = maplibregl.MercatorCoordinate.fromLngLat(
+        { lng: m.anchor[1], lat: m.anchor[0] },
+        Number(m.altitudeOffset) || 0
+      );
+      this.mercatorScale = this.origin.meterInMercatorCoordinateUnits();
+
+      new this.GLTFLoaderCtor().load(
+        this.region.modelUrl,
+        (gltf) => {
+          const s = (Number(m.scale) || 1) * this.mercatorScale;
+          gltf.scene.scale.set(s, s, s);
+          // glTF 是 Y-up，麥卡托世界是「地面 XY、高度 Z」，先繞 X 轉正，水平朝向（管理員填的角度）
+          // 才能單純疊在轉正後的 Z 軸上，不會跟這個座標系轉正操作互相纏在一起
+          gltf.scene.rotation.x = Math.PI / 2;
+          gltf.scene.rotation.z = -(Number(m.rotationDeg) || 0) * Math.PI / 180;
+          this.scene.add(gltf.scene);
+          map.triggerRepaint();
+        },
+        undefined,
+        (err) => console.error('[maplibre-engine] glTF 載入失敗', this.region.id, err)
+      );
+
+      this.renderer = new THREE.WebGLRenderer({ canvas: map.getCanvas(), context: gl, antialias: true });
+      this.renderer.autoClear = false;
+    }
+
+    render({ gl, modelViewProjectionMatrix }) {
+      const THREE = this.THREE;
+      const l = new THREE.Matrix4()
+        .makeTranslation(this.origin.x, this.origin.y, this.origin.z)
+        .scale(new THREE.Vector3(this.mercatorScale, -this.mercatorScale, this.mercatorScale));
+      this.camera.projectionMatrix = new THREE.Matrix4().fromArray(modelViewProjectionMatrix).multiply(l);
+      this.renderer.resetState();
+      this.renderer.render(this.scene, this.camera);
+      this.map.triggerRepaint();
+    }
+  }
+
   class MapLibreEngine extends MapEngine {
     constructor(opts) {
       super(opts);
@@ -62,6 +126,15 @@ window.MapLibreEngine = (() => {
       this._markerLayers = {};
       this._zoomThresholds = [];
       this._idSeq = 0;
+      // 3D 能力狀態（見 enter3D()/exit3D()）：_3dCfg 是進入 3D 時收到的 {excludedBuildingIds,regions}，
+      // _modelLayerIds/_threeLoading/THREE/GLTFLoader 是自訂模型的延遲載入狀態，跟 map3d.js
+      // 舊版一致——這顆引擎不論是被當主引擎重用還是另開一顆給 3D 用，都走同一套。
+      this._navControlAdded = false;
+      this._3dCfg = null;
+      this._modelLayerIds = [];
+      this._threeLoading = false;
+      this.THREE = null;
+      this.GLTFLoader = null;
 
       this.map = new maplibregl.Map({
         container: o.container,
@@ -75,6 +148,7 @@ window.MapLibreEngine = (() => {
     }
 
     get type() { return 'maplibre'; }
+    get supports3D() { return true; }
     getRawMap() { return this.map; }
 
     _styleFor(dark) {
@@ -253,6 +327,69 @@ window.MapLibreEngine = (() => {
           mini.remove();
         },
       };
+    }
+
+    // ---- 3D（見 assets/js/plugins/map3d.js：這顆引擎不論是被當主引擎原地重用、還是另開
+    // 一顆專給 3D 用，都走同一套 enter3D()/exit3D()，呼叫端不用區分）----
+    enter3D(cfg) {
+      this._3dCfg = cfg || {};
+      this.map.easeTo({ pitch: 55, duration: 300 });
+      if (!this._navControlAdded) {
+        this.map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'bottom-right');
+        this._navControlAdded = true;
+      }
+      const run = () => {
+        this._applyBuildingExclusion(this._3dCfg.excludedBuildingIds);
+        this._maybeLoadThree();
+      };
+      if (this.map.loaded()) run(); else this.map.once('load', run);
+    }
+    exit3D() {
+      this.map.easeTo({ pitch: 0, duration: 300 });
+    }
+
+    // 排除機制見 api/regions3d.php 開頭的說明：清單是管理員存檔當下算好的靜態 id，這裡只是
+    // 原樣套成 filter，不做任何即時查詢或重算——圖層建立當下就生效，訪客怎麼平移都一樣。
+    _applyBuildingExclusion(excludedIds) {
+      if (!excludedIds || !excludedIds.length) return;
+      const style = this.map.getStyle();
+      const layer = style && style.layers && style.layers.find(
+        (l) => l.type === 'fill-extrusion' && (l['source-layer'] === 'building' || /building/i.test(l.id))
+      );
+      if (!layer) { console.warn('[maplibre-engine] 找不到公用建物 fill-extrusion 圖層，排除清單未套用'); return; }
+      const exclude = ['!', ['in', ['id'], ['literal', excludedIds]]];
+      this.map.setFilter(layer.id, layer.filter ? ['all', layer.filter, exclude] : exclude);
+    }
+
+    // three.js（~600KB）只有在這張地圖真的存了至少一個自訂模型時才載入，跟 kind-*.js
+    // 「沒用到就零痕跡」同一個精神。import map 由 view.php 靜態輸出、不含任何下載成本，
+    // 真正的檔案要等這裡的 import() 執行才會抓。
+    async _maybeLoadThree() {
+      const regions = this._3dCfg && this._3dCfg.regions;
+      if (this._threeLoading || this.THREE || !regions || !regions.length) return;
+      this._threeLoading = true;
+      try {
+        const [THREE, addon] = await Promise.all([
+          import('three'),
+          import('three/addons/loaders/GLTFLoader.js'),
+        ]);
+        this.THREE = THREE;
+        this.GLTFLoader = addon.GLTFLoader;
+        if (this.map.loaded()) this._renderCustomModels();
+        else this.map.once('load', () => this._renderCustomModels());
+      } catch (e) {
+        console.error('[maplibre-engine] three.js 載入失敗', e);
+      }
+    }
+
+    _renderCustomModels() {
+      const regions = this._3dCfg && this._3dCfg.regions;
+      if (!this.THREE || !regions) return;
+      regions.forEach((r) => {
+        if (!r.model || !r.model.anchor || !r.modelUrl || this._modelLayerIds.includes(r.id)) return;
+        this.map.addLayer(new Map3DModelLayer('m3d-model-' + r.id, r, this.THREE, this.GLTFLoader));
+        this._modelLayerIds.push(r.id);
+      });
     }
   }
 

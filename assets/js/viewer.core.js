@@ -519,7 +519,9 @@ window.MapApp = (() => {
       html: '<div class="' + cls + '" style="background:' + (c.color || '#888') + '"><span>' + c.num + '</span>' + badge + '</div>'
     };
   }
-  function renderChairs() {
+  // 引擎無關的 chairs marker spec 陣列——2D 主地圖跟 map3d.js 的 3D 模式共用同一份，
+  // 不要各刻一份（3D 之前自己重畫過一次簡化圓點，見 Part D 整併紀錄）。
+  function chairMarkerSpecs() {
     // 篩選單一投稿者時：角標改顯示「這個人在這個點的張數」，並跟路徑同色（同一個 personColor 快取）
     let personCounts = null, badgeColor = null;
     if (filterPerson) {
@@ -537,7 +539,10 @@ window.MapApp = (() => {
         onClick: () => { emitHook('panelReset'); openPanel(c); },
       });
     });
-    engine.setMarkerLayer('chairs', specs);
+    return specs;
+  }
+  function renderChairs() {
+    engine.setMarkerLayer('chairs', chairMarkerSpecs());
   }
   const THUMB_ZOOM = 15;   // ≥ 此縮放顯示縮圖，較遠只顯示小方塊
   // 一則投稿在地圖上的標記。照片與影片有縮圖就鋪成方塊（影片右下角補一個播放角標）；
@@ -1509,7 +1514,7 @@ window.MapApp = (() => {
     trackFeature: feature, currentScopeParams, getProjectId: () => PROJECT,
     // effectivePhotos／photoFullUrl 是「只有照片」的那份，route-tour／person-explore 兩個插件在用
     // （那些畫面只處理得了 <img>）；要拿到全部型別的投稿請用 effectiveEntries + entryFullUrl。
-    effectivePhotos, effectiveEntries, entryFullUrl, entryThumbUrl, effectivePoints,
+    effectivePhotos, effectiveEntries, entryFullUrl, entryThumbUrl, effectivePoints, chairMarkerSpecs,
     kindOf, contribCfg: () => CONTRIB_CFG, fmtDur,
     personColor, toast,
     displayName, anonName: () => SESSION_ANON, submitContribution, submitNewPoint,
