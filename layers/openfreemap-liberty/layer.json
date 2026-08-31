@@ -1,0 +1,9 @@
+{
+  "label": "OpenFreeMap Liberty",
+  "desc": "OpenStreetMap 資料、OpenFreeMap 供應的向量底圖，主引擎會自動切換成 MapLibre GL（見 assets/js/engine/maplibre-engine.js）。淺色用 Liberty，深色用 OpenFreeMap 內建的 Dark 風格。",
+  "type": "vector",
+  "pane": "base",
+  "url": "https://tiles.openfreemap.org/styles/liberty",
+  "urlDark": "https://tiles.openfreemap.org/styles/dark",
+  "attribution": "&copy; <a href=\"https://www.openstreetmap.org/copyright\" target=\"_blank\" rel=\"noopener\">OpenStreetMap</a> {osm_contributors} &middot; <a href=\"https://openfreemap.org\" target=\"_blank\" rel=\"noopener\">OpenFreeMap</a>"
+}

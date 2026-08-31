@@ -1146,9 +1146,16 @@ window.MapApp = (() => {
 
     rebuildCats();   // 此時 CONTRIB 還是空的，結果就是 POINTS 的分類；投稿載入後會再算一次
 
-    // 主引擎這輪先固定用 LeafletEngine（見 assets/js/engine/leaflet-engine.js）；
-    // 依 APP.engine 選擇 LeafletEngine／MapLibreEngine 是後續 Part C 的工作。
-    const EngineClass = window.LeafletEngine;
+    // 主引擎依 APP.engine（view.php 依 layers 裡有沒有 type:vector 算出來的）選擇。
+    // MapLibre 沒有 <script src> 吃得下去的全域版本（v6 只出 ESM），前面 <head> 那段
+    // type="module" shim 只保證晚於文件解析完才執行、服務不了這裡同步的 boot()——
+    // 所以主引擎是 maplibre 時自己 import() 動態載入，跟 map3d.js 對 three.js 的
+    // lazy-load 手法一致（見該檔 maybeLoadThree()）；跟 map3d 開關同時開時載入同一個
+    // 網址，瀏覽器 module 快取本來就會共用，不會重複下載。
+    if (APP.engine === 'maplibre' && !window.maplibregl) {
+      window.maplibregl = await import('https://unpkg.com/maplibre-gl@6.6.0/dist/maplibre-gl.mjs');
+    }
+    const EngineClass = APP.engine === 'maplibre' ? window.MapLibreEngine : window.LeafletEngine;
     engine = new EngineClass({
       container: 'map', center: META.center || [23.9, 120.7], zoom: META.zoom || 14,
       dark: isDark(), manifests: layerManifests(),

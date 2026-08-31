@@ -45,6 +45,13 @@ $pack = souliong_pack_for($apiCfg, $meta, $proj);
 // 這張地圖由下往上要疊哪幾層圖磚／插畫。跟 $pack 同樣是「用哪一包」而非布林開關，差別只在
 // 圖層是有序陣列。相對路徑的圖檔在這裡就被改寫成 <base>/layer/... 絕對網址，前端不必分辨。
 $layers = souliong_layers_public($apiCfg, $meta, $proj, $base);
+// 這張地圖的主引擎：只要 layers 裡有任何一筆 type 是 vector，整顆地圖就改用 MapLibreEngine
+// （向量 style 本身就是完整一張圖，沒辦法像光柵圖層一樣只疊局部——見 maplibre-engine.js 開頭註解）。
+// 逐專案 opt-in：沒特別選向量底圖的專案這個值一律是 leaflet，行為與拆分之前完全一樣。
+$primaryEngine = 'leaflet';
+foreach ($layers as $l) {
+    if (($l['type'] ?? '') === 'vector') { $primaryEngine = 'maplibre'; break; }
+}
 // 這張地圖開放哪些投稿型別、對話框預設開哪一頁、誰能建立地點（meta.json 的 contrib 區塊）。
 // 跟 $moduleState 同樣的原則：PHP 端解析一次，前端直接讀 APP.contrib，不在兩邊各自算預設值。
 $contribCfg = souliong_contrib_cfg($meta);
@@ -80,6 +87,7 @@ $APP = [
     'contrib'     => $contribCfg,
     'pack'        => $pack,
     'layers'      => $layers,
+    'engine'      => $primaryEngine,
     'map3d'       => $map3d,
 ];
 $jsonFlags = JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_APOS;
@@ -89,9 +97,15 @@ $jsonFlags = JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JS
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <title><?= $t('app_title') ?></title>
+<?php if ($primaryEngine === 'leaflet'): ?>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-<?php if ($mod('map3d')): /* 大型第三方函式庫走真的 <link>/<script src>,不用 readfile() 內嵌,才吃得到瀏覽器快取(理由同下方 leaflet.js) */ ?>
+<?php endif; ?>
+<?php if ($mod('map3d') || $primaryEngine === 'maplibre'): /* 大型第三方函式庫走真的 <link>/<script src>,不用 readfile() 內嵌,才吃得到瀏覽器快取(理由同下方 leaflet.js)；
+     向量主引擎的專案就算沒開 3D 開關也要拿到 MapLibre 本體，見下方 script 段落同款條件 */ ?>
 <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@6.6.0/dist/maplibre-gl.css">
+<?php endif; ?>
+<?php if ($mod('map3d')): /* three.js importmap 只服務 3D 切換鈕，跟主引擎是不是 MapLibre 無關——
+     向量底圖本身不需要 three.js */ ?>
 <script type="importmap">
 {"imports": {
   "three": "https://unpkg.com/three@0.184.0/build/three.module.js",
@@ -269,15 +283,18 @@ if ($pack) {
 </div>
 
 <script>window.APP = <?= json_encode($APP, $jsonFlags) ?>; window.I18N = <?= json_encode($DICT, $jsonFlags) ?>; window.LANG = <?= json_encode($LANG, $jsonFlags) ?>;</script>
+<?php if ($primaryEngine === 'leaflet'): ?>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<?php endif; ?>
 <?php if ($mod('map3d')): /* MapLibre v6 只出 ESM 版(dist/maplibre-gl.mjs),沒有 <script src> 吃得下去的全域
      版本了——用內嵌 type="module" 匯入後手動掛回 window.maplibregl,讓 map3d.js 仍以傳統全域變數方式
      使用它。map3d.js 也要標成 type="module",確保它排進「文件解析完才依序執行」這一批,晚於這段 shim
      ——3D 模式一律要使用者先按下切換鈕才會用到 maplibregl,不會跟這段非同步載入搶時間。
-     向量圖磚底圖（viewer.leaflet.js 的 VectorLayer）不吃這段：疊圖層發生在頁面一開始同步的
-     boot() 裡，等不了 ESM 才會就緒的全域變數,所以它自己用 import() 動態載入同一份 MapLibre，
-     做法比照 map3d.js 對 three.js 的 lazy-load（見該檔 maybeLoadThree()），兩邊載入同一個網址時
-     瀏覽器的 module 快取本來就會共用，不會重複下載。 */ ?>
+     主引擎是 MapLibre（$primaryEngine==='maplibre'）時不吃這段 shim：MapLibreEngine 掛載發生在
+     頁面一開始同步的 boot() 裡，等不了這段要等文件解析完才執行的 ESM 全域變數，所以 viewer.core.js
+     的 boot() 自己用 import() 動態載入同一份 MapLibre 並掛回 window.maplibregl，做法比照 map3d.js
+     對 three.js 的 lazy-load（見該檔 maybeLoadThree()）；兩邊載入同一個網址時瀏覽器的 module 快取
+     本來就會共用，不會重複下載，這裡不用特別判斷「已經載過了」再跳過。 */ ?>
 <script type="module">
 import * as maplibregl from 'https://unpkg.com/maplibre-gl@6.6.0/dist/maplibre-gl.mjs';
 window.maplibregl = maplibregl;
@@ -290,7 +307,12 @@ window.maplibregl = maplibregl;
 <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
 <script><?php readfile(__DIR__ . '/../assets/js/pin-input.js'); ?></script>
 <script><?php readfile(__DIR__ . '/../assets/js/engine/map-engine.js'); ?></script>
+<?php if ($primaryEngine === 'leaflet'): ?>
 <script><?php readfile(__DIR__ . '/../assets/js/engine/leaflet-engine.js'); ?></script>
+<?php endif; ?>
+<?php if ($primaryEngine === 'maplibre' || $mod('map3d')): ?>
+<script><?php readfile(__DIR__ . '/../assets/js/engine/maplibre-engine.js'); ?></script>
+<?php endif; ?>
 <script><?php readfile(__DIR__ . '/../assets/js/viewer.core.js'); ?></script>
 <?php if ($mod('identity')): ?>
 <script><?php readfile(__DIR__ . '/../assets/js/plugins/contributor-identity.js'); ?></script>
