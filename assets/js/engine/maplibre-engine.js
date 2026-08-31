@@ -119,8 +119,15 @@ window.MapLibreEngine = (() => {
       super(opts);
       const o = opts || {};
       this.manifests = (o.manifests && o.manifests.length) ? o.manifests : [MapEngine.FALLBACK_LAYER];
-      this.credit = MapEngine.buildCredit(this.manifests, MAPLIBRE_CREDIT);
       this._baseManifest = baseVectorManifest(this.manifests);
+      // 向量底圖 style 自己的來源標註，MapLibre 的 AttributionControl 會直接從載入的 style JSON
+      // 原生秀出來（不管有沒有傳 customAttribution，兩邊會並列而不是合併去重）——這裡如果再把
+      // 該筆 manifest 的 attribution 塞進 buildCredit()，畫面上會看到重複的版權文字。疊圖層
+      // （_overlayManifests()）用 addSource() 掛上去時沒有帶 attribution 屬性（見 _mountOverlays()），
+      // MapLibre 不會原生秀這些來源，所以疊圖層的 attribution 還是要靠 buildCredit() 補上。
+      const creditManifests = (this._baseManifest && this._baseManifest.type === 'vector')
+        ? this._overlayManifests() : this.manifests;
+      this.credit = MapEngine.buildCredit(creditManifests, MAPLIBRE_CREDIT);
       this._dark = !!o.dark;
       this._overlayIds = [];
       this._markerLayers = {};
