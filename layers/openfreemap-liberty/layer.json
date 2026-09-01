@@ -5,5 +5,9 @@
   "pane": "base",
   "url": "https://tiles.openfreemap.org/styles/liberty",
   "urlDark": "https://tiles.openfreemap.org/styles/dark",
-  "attribution": "&copy; <a href=\"https://www.openstreetmap.org/copyright\" target=\"_blank\" rel=\"noopener\">OpenStreetMap</a> {osm_contributors} &middot; <a href=\"https://openfreemap.org\" target=\"_blank\" rel=\"noopener\">OpenFreeMap</a>"
+  "attribution": [
+    { "text": "OpenFreeMap", "url": "https://openfreemap.org" },
+    { "text": "OpenMapTiles", "url": "https://www.openmaptiles.org/" },
+    { "text": "OpenStreetMap", "url": "https://www.openstreetmap.org/copyright", "copyright": true, "suffix": "{osm_contributors}" }
+  ]
 }

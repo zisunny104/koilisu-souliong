@@ -258,7 +258,7 @@ CSS 全部前綴 `.stat-card .col`，因為要蓋過同層的 `.stat-card .col o
   "url": "overlay.svg",
   "bounds": [[23.94, 120.66], [23.97, 120.70]],
   "opacity": 0.9,
-  "attribution": "繪圖：某某"
+  "attribution": [{ "text": "繪圖：某某" }]
 }
 ```
 
@@ -266,7 +266,7 @@ CSS 全部前綴 `.stat-card .col`，因為要蓋過同層的 `.stat-card .col o
 
 **這些欄位必須整組跟著 manifest，不能只抽 URL**：`subdomains`／`detectRetina`／`maxNativeZoom` 都是跟著來源走的屬性，少一個就破圖。
 
-`attribution` 也一樣跟著來源走——CARTO 的圖磚是 OSM 資料，國土測繪中心的不是，寫死在檢視器裡一定會錯。裡面可以用 `{key}` 引用翻譯字串（例 `{osm_contributors}`），這樣來源標註留在 manifest，又不必為每種語言各寫一份。檢視器的 `buildCredit()` 把各層的 attribution 去重串接，再接上固定的 Leaflet ＋ 自家連結。
+`attribution` 也一樣跟著來源走——CARTO 的圖磚是 OSM 資料，國土測繪中心的不是，寫死在檢視器裡一定會錯。格式是一個物件陣列，每則署名 `{text, url, copyright, suffix}`：`url` 有值才會包成連結，`copyright` 是 `true` 時前面加 `&copy;`，`suffix` 接在連結後面（例 `{osm_contributors}`，跟 `text` 一樣可以用 `{key}` 引用翻譯字串，不必為每種語言各寫一份）。標籤怎麼組（要不要連結、要不要 `&copy;`）固定由 `assets/js/engine/map-engine.js` 的 `buildCredit()`/`creditHtml()` 決定，manifest 只描述資料，不寫 HTML——這樣同一份框架換圖磚來源只是換這幾個欄位的值，不會因為換供應商就要在別的地方另刻一份標註邏輯。透過「建立圖層」／去背裁切工具（`api/admin.php`／`region3d.php`／`tilecut.php`）產生的圖層目前仍存純字串（管理員手打的單行署名），`creditListHtml()` 相容這個舊格式，原樣沿用不轉換。各層的 attribution 由 `buildCredit()` 去重串接，再接上固定的引擎（Leaflet／MapLibre）＋自家連結。
 
 `pane` 決定疊放層級。Leaflet 預設只有 `tilePane`(200)／`overlayPane`(400)／`markerPane`(600)，圖層之間沒有可指定的層級，所以檢視器替四種角色各開一個 pane：
 

@@ -8,5 +8,8 @@
   "subdomains": "abcd",
   "detectRetina": true,
   "maxZoom": 20,
-  "attribution": "&copy; <a href=\"https://www.openstreetmap.org/copyright\" target=\"_blank\" rel=\"noopener\">OpenStreetMap</a> {osm_contributors} &middot; <a href=\"https://carto.com/attributions\" target=\"_blank\" rel=\"noopener\">CARTO</a>"
+  "attribution": [
+    { "text": "OpenStreetMap", "url": "https://www.openstreetmap.org/copyright", "copyright": true, "suffix": "{osm_contributors}" },
+    { "text": "CARTO", "url": "https://carto.com/attributions" }
+  ]
 }

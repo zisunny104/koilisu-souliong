@@ -7,7 +7,7 @@
    manifests 陣列裡「pane 是 base 且 type 是 vector」的最後一筆整個當作地圖的 style；其餘每一筆
    （不論哪個 pane）在 style 載入完成後依序疊成 source+layer，疊在最上層、依陣列順序疊放。 */
 window.MapLibreEngine = (() => {
-  const MAPLIBRE_CREDIT = '<a href="https://maplibre.org" target="_blank" rel="noopener">MapLibre</a>';
+  const MAPLIBRE_CREDIT = { text: 'MapLibre', url: 'https://maplibre.org' };
 
   const paneKey = (m) => (m && m.pane) || 'art';
 
@@ -49,6 +49,28 @@ window.MapLibreEngine = (() => {
 
   const POS_MAP = { bottomleft: 'bottom-left', bottomright: 'bottom-right', topleft: 'top-left', topright: 'top-right' };
   const mapPos = (p, fallback) => POS_MAP[p] || p || fallback;
+
+  // MapLibre 原生的 AttributionControl 除了吃 customAttribution，還會自己去掃目前載入的
+  // style 裡每個 source 自帶的 attribution（向量 style JSON 內建的那份），兩邊用「|」接在一起
+  // 顯示、無法去重、也套不到我們自己的版權排版（cr-ext/cr-own/cr-sep，見 map-engine.js
+  // buildCredit()）——結果就是「我們的」版權跟「它原生秀出來的」擠在一起、風格對不上。
+  // 這裡完全不用原生控制項，自己刻一個只顯示 buildCredit() 產出內容的最小控制項：畫面上
+  // 看到的版權永遠是我們自己排版、自己翻譯過的那一份，向量 style 內建的來源標註改成透過
+  // buildCredit() 帶入的 manifest attribution 手動列出（見 layers/openfreemap-liberty/layer.json），
+  // 不假手 MapLibre 自己掃出來的原始樣式。
+  class CreditControl {
+    constructor(html) { this._html = html; }
+    onAdd() {
+      this._container = document.createElement('div');
+      this._container.className = 'maplibregl-ctrl cr-bar';
+      this._container.innerHTML = this._html;
+      return this._container;
+    }
+    onRemove() {
+      if (this._container && this._container.parentNode) this._container.parentNode.removeChild(this._container);
+      this._container = null;
+    }
+  }
 
   // MapLibre CustomLayerInterface（renderingMode:'3d'）＋ three.js 畫單一自訂模型，原本是
   // map3d.js 自己的類別，3D 能力整併進引擎時一起搬過來（見 docs 規劃 Part D）。座標換算沿用官方
@@ -120,14 +142,7 @@ window.MapLibreEngine = (() => {
       const o = opts || {};
       this.manifests = (o.manifests && o.manifests.length) ? o.manifests : [MapEngine.FALLBACK_LAYER];
       this._baseManifest = baseVectorManifest(this.manifests);
-      // 向量底圖 style 自己的來源標註，MapLibre 的 AttributionControl 會直接從載入的 style JSON
-      // 原生秀出來（不管有沒有傳 customAttribution，兩邊會並列而不是合併去重）——這裡如果再把
-      // 該筆 manifest 的 attribution 塞進 buildCredit()，畫面上會看到重複的版權文字。疊圖層
-      // （_overlayManifests()）用 addSource() 掛上去時沒有帶 attribution 屬性（見 _mountOverlays()），
-      // MapLibre 不會原生秀這些來源，所以疊圖層的 attribution 還是要靠 buildCredit() 補上。
-      const creditManifests = (this._baseManifest && this._baseManifest.type === 'vector')
-        ? this._overlayManifests() : this.manifests;
-      this.credit = MapEngine.buildCredit(creditManifests, MAPLIBRE_CREDIT);
+      this.credit = MapEngine.buildCredit(this.manifests, MAPLIBRE_CREDIT);
       this._dark = !!o.dark;
       this._overlayIds = [];
       this._markerLayers = {};
@@ -211,7 +226,7 @@ window.MapLibreEngine = (() => {
     mountControls(opts) {
       const o = opts || {};
       this.map.addControl(new maplibregl.NavigationControl(), mapPos(o.zoomPosition, 'bottom-left'));
-      this.map.addControl(new maplibregl.AttributionControl({ compact: false, customAttribution: this.credit }), mapPos(o.attributionPosition, 'bottom-right'));
+      this.map.addControl(new CreditControl(this.credit), mapPos(o.attributionPosition, 'bottom-right'));
     }
     onBackgroundClick(fn) { this.map.on('click', fn); }
 

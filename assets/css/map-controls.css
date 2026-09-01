@@ -1,30 +1,45 @@
-/* ---------- Leaflet 控制項（配合設計語彙） ---------- */
-.leaflet-control-zoom.leaflet-bar {
+/* ---------- 縮放／羅盤控制項（Leaflet 的 leaflet-bar／MapLibre 的 NavigationControl，
+   同一套玻璃感視覺，共同的宣告合併寫在同一個規則裡，只有各自才有的屬性才分開寫）---------- */
+.leaflet-control-zoom.leaflet-bar,
+.maplibregl-ctrl-group {
   border: 1px solid var(--line);
   border-radius: var(--r-md);
   overflow: hidden;
-  box-shadow: var(--sh-2);
+  box-shadow: var(--sh-2)
+}
+
+.leaflet-control-zoom.leaflet-bar {
   margin: 16px !important
 }
 
+.maplibregl-ctrl-group {
+  background: none
+}
+
 .leaflet-bar a,
-.leaflet-bar a:hover {
+.leaflet-bar a:hover,
+.maplibregl-ctrl-group button {
   width: 36px;
   height: 36px;
   line-height: 36px;
-  font-size: 1.125rem;
-  color: var(--fg);
   background: var(--glass);
   -webkit-backdrop-filter: blur(14px) saturate(1.4);
   backdrop-filter: blur(14px) saturate(1.4);
   border-bottom: 1px solid var(--line)
 }
 
-.leaflet-bar a:hover {
+.leaflet-bar a {
+  font-size: 1.125rem;
+  color: var(--fg)
+}
+
+.leaflet-bar a:hover,
+.maplibregl-ctrl-group button:hover {
   background: var(--hover)
 }
 
-.leaflet-bar a:last-child {
+.leaflet-bar a:last-child,
+.maplibregl-ctrl-group button:last-child {
   border-bottom: none
 }
 
@@ -32,7 +47,32 @@
   opacity: .4
 }
 
-.leaflet-control-attribution {
+.maplibregl-ctrl-group button:disabled .maplibregl-ctrl-icon {
+  opacity: .4
+}
+
+/* 深色主題下 MapLibre 內建的圖示是固定深色 SVG，玻璃底變暗之後會看不見，反相救回對比 */
+:root[data-theme="dark"] .maplibregl-ctrl-icon {
+  filter: invert(1)
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .maplibregl-ctrl-icon {
+    filter: invert(1)
+  }
+}
+
+.leaflet-touch .leaflet-bar a {
+  width: 36px;
+  height: 36px;
+  line-height: 36px
+}
+
+/* ---------- 版權標註（Leaflet 原生的 AttributionControl／MapLibre 的 CreditControl，見
+   maplibre-engine.js——兩邊內容都來自 map-engine.js 的 buildCredit()，樣式也共用同一組宣告，
+   不因為引擎不同各刻一份）---------- */
+.leaflet-control-attribution,
+.cr-bar {
   background: var(--glass) !important;
   -webkit-backdrop-filter: blur(10px);
   backdrop-filter: blur(10px);
@@ -54,11 +94,13 @@
   flex-wrap: wrap
 }
 
-.leaflet-control-attribution i {
+.leaflet-control-attribution i,
+.cr-bar i {
   margin: 0 1px
 }
 
-.leaflet-control-attribution a {
+.leaflet-control-attribution a,
+.cr-bar a {
   color: var(--muted) !important;
   text-decoration: none
 }
@@ -76,7 +118,8 @@
 }
 
 @media (max-width: 560px) {
-  .leaflet-control-attribution {
+  .leaflet-control-attribution,
+  .cr-bar {
     flex-direction: column
   }
 
@@ -86,12 +129,6 @@
     align-self: center;
     margin: .3em 0
   }
-}
-
-.leaflet-touch .leaflet-bar a {
-  width: 36px;
-  height: 36px;
-  line-height: 36px
 }
 
 /* 版權置中於下方（縮放留在左下） */
@@ -111,4 +148,3 @@
     filter: brightness(1.45) contrast(.9)
   }
 }
-

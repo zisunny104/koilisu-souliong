@@ -17,28 +17,51 @@ window.MapEngine = (() => {
   };
   // layer.json 的 attribution 裡可以寫 {key} 引用翻譯字串（例：{osm_contributors}）
   const i18nSub = (s) => String(s == null ? '' : s).replace(/\{([a-z0-9_]+)\}/gi, (_, k) => t(k));
+  const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[m]));
 
   // 版權標註（依 OSM 慣例含連結）：來源標註跟著圖層走（各層 layer.json 自己的 attribution，
   // 由 buildCredit() 去重串接），框架與自家連結則固定，依重要性排最後：引擎 → GitHub → Souliong → prjToka。
+  // 分隔符號只在這裡定義一次，凡是要把好幾則署名接成一行的地方（下面的 creditListHtml()／
+  // buildCredit()／這裡的自家連結）都套用同一個變數，不各自重複同一段字面字串。
+  const SEP = ' &middot; ';
   const REPO_URL = 'https://github.com/zisunny104/koilisu-souliong';
   const SITE_URL = (APP.base || '/');
   const ORG_URL = 'https://toka.dev';
   const CREDIT_OWN =
     '<span class="cr-sep" aria-hidden="true"></span>' +
     '<span class="cr-own">' +
-      '<a href="' + REPO_URL + '" target="_blank" rel="noopener" aria-label="' + t('github_source_aria') + '"><i class="fa-brands fa-github"></i></a> &middot; ' +
-      '<a href="' + SITE_URL + '">Souliong</a> &middot; <a href="' + ORG_URL + '" target="_blank" rel="noopener">prjToka</a>' +
+      '<a href="' + REPO_URL + '" target="_blank" rel="noopener" aria-label="' + t('github_source_aria') + '"><i class="fa-brands fa-github"></i></a>' + SEP +
+      '<a href="' + SITE_URL + '">Souliong</a>' + SEP + '<a href="' + ORG_URL + '" target="_blank" rel="noopener">prjToka</a>' +
     '</span>';
-  // engineCreditHtml：這份 manifests 實際掛在哪個引擎上的署名連結（Leaflet／MapLibre），由呼叫端
+
+  // 版權小工具：一則署名一律是 {text, url, copyright, suffix} 這個固定形狀——manifest 的
+  // attribution、引擎自己的署名連結（Leaflet／MapLibre）都套同一份渲染邏輯，圖磚來源或引擎不同
+  // 只是換這幾個欄位的值，標籤(<a>)怎麼組、要不要加 &copy;、要不要接 i18n 字尾（如
+  // {osm_contributors}）永遠由這裡決定，不會因為換平台就在別的地方另刻一份 HTML。
+  function creditHtml(part) {
+    if (!part) return '';
+    const text = esc(i18nSub(part.text));
+    const body = part.url ? '<a href="' + esc(part.url) + '" target="_blank" rel="noopener">' + text + '</a>' : text;
+    return (part.copyright ? '&copy; ' : '') + body + (part.suffix ? ' ' + i18nSub(part.suffix) : '');
+  }
+  // attribution 欄位可以是上面那種物件排成的陣列（新格式，多方署名各自標 text/url）；也相容
+  // 純字串（admin.php／region3d.php／tilecut.php 讓管理員手打圖磚署名時存的就是字串，直接沿用）。
+  function creditListHtml(attribution) {
+    if (Array.isArray(attribution)) return attribution.map(creditHtml).filter(Boolean).join(SEP);
+    return i18nSub(attribution);
+  }
+
+  // engineCredit：這份 manifests 實際掛在哪個引擎上的署名連結（Leaflet／MapLibre），由呼叫端
   // 傳入——同一份 manifests 理論上可能被不同引擎掛載，署名連結不該寫死在這個共用函式裡。
-  function buildCredit(manifests, engineCreditHtml) {
+  function buildCredit(manifests, engineCredit) {
     const src = [];
     (manifests || []).forEach(m => {
-      const a = i18nSub(m && m.attribution);
+      const a = creditListHtml(m && m.attribution);
       if (a && src.indexOf(a) < 0) src.push(a);   // 同一個來源疊兩層（例如底圖＋同來源道路層）只列一次
     });
-    if (engineCreditHtml) src.push(engineCreditHtml);
-    return '<span class="cr-ext">' + src.join(' &middot; ') + '</span>' + CREDIT_OWN;
+    const eng = creditHtml(engineCredit);
+    if (eng) src.push(eng);
+    return '<span class="cr-ext">' + src.join(SEP) + '</span>' + CREDIT_OWN;
   }
 
   // APP.layers 缺席時的保命底圖（獨立部署，或 view.php 還沒更新到有 layers 的版本）。內容與
@@ -50,7 +73,10 @@ window.MapEngine = (() => {
     url: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
     urlDark: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
     subdomains: 'abcd', detectRetina: true, maxZoom: 20,
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> {osm_contributors} &middot; <a href="https://carto.com/attributions" target="_blank" rel="noopener">CARTO</a>',
+    attribution: [
+      { text: 'OpenStreetMap', url: 'https://www.openstreetmap.org/copyright', copyright: true, suffix: '{osm_contributors}' },
+      { text: 'CARTO', url: 'https://carto.com/attributions' },
+    ],
   };
 
   class MapEngine {

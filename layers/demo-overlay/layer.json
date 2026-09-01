@@ -6,5 +6,5 @@
   "url": "overlay.svg",
   "bounds": [[23.945, 120.680], [23.960, 120.697]],
   "opacity": 0.95,
-  "attribution": "示範疊圖"
+  "attribution": [{ "text": "示範疊圖" }]
 }

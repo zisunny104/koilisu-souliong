@@ -2,7 +2,7 @@
    MapLayer/RasterLayer/ImageLayer/LayerStack 是從 viewer.leaflet.js 原封不動搬過來的圖層系統：
    新增圖層型別＝多一個 MapLayer 子類，核心（跟這個引擎）都不用再動，見 docs/EXTENDING.md §8.4。 */
 window.LeafletEngine = (() => {
-  const LEAFLET_CREDIT = '<a href="https://leafletjs.com" target="_blank" rel="noopener">Leaflet</a>';
+  const LEAFLET_CREDIT = { text: 'Leaflet', url: 'https://leafletjs.com' };
 
   // Leaflet 用「pane」分層決定圖層疊放順序；MapLibre 沒有這個概念（見 maplibre-engine.js），
   // 所以這組常數只活在這個檔案裡，不搬進 MapEngine 抽象介面。
