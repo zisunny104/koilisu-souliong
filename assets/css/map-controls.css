@@ -5,11 +5,10 @@
   border: 1px solid var(--line);
   border-radius: var(--r-md);
   overflow: hidden;
-  box-shadow: var(--sh-2)
-}
-
-.leaflet-control-zoom.leaflet-bar {
-  margin: 16px !important
+  /* !important：MapLibre 內建 CSS 對 .maplibregl-ctrl-group 也宣告了 box-shadow（畫一圈
+     實心灰環當它自己的邊框），選擇器優先權跟這裡一樣，純靠載入順序決勝負很脆弱——蓋掉
+     我們的陰影就會變成邊框＋灰環疊在一起的雙層框，淺色底圖下特別明顯 */
+  box-shadow: var(--sh-2) !important
 }
 
 .maplibregl-ctrl-group {
@@ -41,6 +40,13 @@
 .leaflet-bar a:last-child,
 .maplibregl-ctrl-group button:last-child {
   border-bottom: none
+}
+
+/* MapLibre 內建 CSS 自己也會在群組按鈕之間畫一條 border-top（寫死 #ddd，不吃 --line），
+   跟上面我們自己畫的 border-bottom 疊在同一條縫上，兩條線顏色對不齊、看起來像多一層框——
+   蓋掉內建那條，分隔線只留我們自己這條 */
+.maplibregl-ctrl-group button + button {
+  border-top: none
 }
 
 .leaflet-bar a.leaflet-disabled {
@@ -129,13 +135,33 @@
     align-self: center;
     margin: .3em 0
   }
+
+  /* .cr-bar 沒設寬度、靠內容撐開（shrink-to-fit）——不夠寬蓋外部義務標註那一整行，容器就會被
+     撐到跟那行一樣寬，比較短的自家連結那一行只好在那個寬度裡置中，兩側就留一大片空白。反正
+     文字本來就會自動換行（見上面 .cr-ext 的 white-space:normal），把這行的寬度限縮住逼它換成
+     兩三行，容器改跟著換行後的寬度縮小，兩側空白自然跟著消失 */
+  .cr-ext {
+    max-width: min(55vw, 170px);
+    display: inline-block
+  }
 }
 
-/* 版權置中於下方（縮放留在左下） */
+/* 版權置中於下方（縮放留在左下）。Leaflet 是把整個 bottom-right 角搬去置中——那個角本來就只擺
+   版權控制項，搬整角安全。MapLibre 的 bottom-right 角在 3D 模式會多疊一顆 NavigationControl（見
+   maplibre-engine.js 的 enter3D()），搬整角會連它一起搬走，改成只讓 .cr-bar 自己用 fixed 定位
+   置中，跳出 MapLibre 控制項容器的排版，兩邊視覺效果一致，只是各自用適合自己容器結構的手法。 */
 .leaflet-bottom.leaflet-right {
   left: 50%;
   right: auto;
   transform: translateX(-50%)
+}
+
+.cr-bar {
+  position: fixed;
+  left: 50%;
+  bottom: 14px;
+  transform: translateX(-50%);
+  margin: 0 !important
 }
 
 /* 深色底圖提亮，讓圖面與物件更清楚（不影響標記，標記在另一個 pane） */

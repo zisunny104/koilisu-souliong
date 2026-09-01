@@ -361,9 +361,11 @@ window.MapApp = (() => {
   const photoFilters = [];     // fn(photoEntry, currentPoint) => bool；renderEntries() 的照片清單要 AND 全部通過
   const entriesHintFns = [];   // fn(currentPoint) => HTMLElement|null；renderEntries() 會把回傳的節點插進卡片內容
   const scopeParamFns = [];    // fn() => {key: value}|null；插件自己在分享連結／嵌入碼網址上帶的額外參數，讀取時插件自己讀 location.search，不需要核心知道
+  const shortcuts = [];        // {key, label}；key 顯示鍵名（例："Esc"／"R"），label 是 i18n 過的說明字串——鍵盤快捷鍵提示彈窗（見 openShortcuts()）照登記順序列出，各檔案自己知道自己註冊了哪個鍵，核心不需要另外維護一份對照表
   function registerPhotoFilter(fn) { photoFilters.push(fn); }
   function registerEntriesHint(fn) { entriesHintFns.push(fn); }
   function registerScopeParam(fn) { scopeParamFns.push(fn); }
+  function registerShortcut(spec) { shortcuts.push(spec); }
 
   // 插件基底類別：每個插件檔案 class XxxPlugin extends MapApp.Plugin，只需覆寫 mount()——
   // 核心建立實例並呼叫 init(MapApp)，插件自己的 state/DOM/CSS 一律掛在 this 底下，不碰核心內部變數。
@@ -1161,7 +1163,7 @@ window.MapApp = (() => {
       container: 'map', center: META.center || [23.9, 120.7], zoom: META.zoom || 14,
       dark: isDark(), manifests: layerManifests(),
     });
-    engine.mountControls({ zoomPosition: 'bottomleft', attributionPosition: 'bottomright' });
+    engine.mountControls({ zoomPosition: 'bottomleft', attributionPosition: 'bottomright', opButtons: [{ el: document.getElementById('resetBtn') }] });
     engine.onZoomThresholdCross(THUMB_ZOOM, () => { if (photoLayerOn) renderContribLayer(); });
 
     buildLegend();
@@ -1329,13 +1331,15 @@ window.MapApp = (() => {
       if (/^(INPUT|TEXTAREA|SELECT)$/.test(tag) || e.metaKey || e.ctrlKey || e.altKey) return;
       const k = e.key.toLowerCase();
       if (k === 'escape') {
-        closePanel(); closeUnlock(); closePin(); closeAdminRedeem(); emitHook('closeAll');
+        closePanel(); closeUnlock(); closePin(); closeAdminRedeem(); closeShortcuts(); emitHook('closeAll');
         const trG = document.getElementById('topright'), trT = document.getElementById('trToggle');
         if (trG) { trG.classList.remove('open'); if (trT) trT.setAttribute('aria-expanded', 'false'); }
       }
       else if (k === 'r') { resetView(); }
       else if (k === 't') { const b = document.getElementById('themeBtn'); if (b) b.click(); }
     });
+    const shortcutsBtn = document.getElementById('shortcutsBtn');
+    if (shortcutsBtn) shortcutsBtn.onclick = openShortcuts;
 
     await computeMyHash();       // 先算出本裝置擁有者雜湊（供「刪自己的」判斷）
     await computeContribId();    // 若已建立投稿者身分，算出對外可見的投稿者ID（供「刪自己的」判斷）
@@ -1461,6 +1465,19 @@ window.MapApp = (() => {
   }
   function closePin() { const dlg = document.getElementById('pinDialog'); if (dlg) dlg.classList.remove('open'); }
 
+  // ── 鍵盤快捷鍵提示彈窗：內容不是寫死的清單，開啟當下才照 shortcuts 註冊表現組——
+  //    核心自己的 Esc/R/T 跟各插件各自登記的鍵（見 registerShortcut()），沒有哪個檔案要另外
+  //    維護一份別人的鍵位表。按鈕本身只在滑鼠／觸控板環境才會出現（見 page-frame.css 的
+  //    any-hover/any-pointer 媒體查詢），因為快捷鍵能不能用跟能不能發現是兩件事，但沒有實體
+  //    鍵盤的裝置沒必要看到這顆鈕。
+  function openShortcuts() {
+    const list = document.getElementById('shortcutsList');
+    if (list) list.innerHTML = shortcuts.map(s => '<dt>' + esc(s.key) + '</dt><dd>' + esc(s.label) + '</dd>').join('');
+    const dlg = document.getElementById('shortcutsDialog');
+    if (dlg) dlg.classList.add('open');
+  }
+  function closeShortcuts() { const dlg = document.getElementById('shortcutsDialog'); if (dlg) dlg.classList.remove('open'); }
+
   // ── 外部連結離站確認：任何連到不同網域的連結，先跳確認框才真的開新分頁 ──
   // （同一分頁工作階段內，同網域點過一次後不再重複詢問，避免每次點資料來源都要按兩下；
   //   Ctrl/Cmd/中鍵點擊等瀏覽器原生「開背景分頁」手勢不攔截，尊重使用者原本習慣）
@@ -1491,12 +1508,18 @@ window.MapApp = (() => {
   }
   function closeExtLinkDialog() { extLinkPending = null; const dlg = document.getElementById('extLinkDialog'); if (dlg) dlg.classList.remove('open'); }
 
+  // 核心自己的全域鍵位先登記——同步呼叫，保證排在任何插件（各自在自己的 mount() 裡登記）
+  // 前面，快捷鍵提示彈窗才會照「核心鍵在前、插件鍵在後」的固定順序列出。
+  registerShortcut({ key: 'Esc', label: t('shortcut_esc') });
+  registerShortcut({ key: 'R', label: t('shortcut_reset_view') });
+  registerShortcut({ key: 'T', label: t('shortcut_toggle_theme') });
+
   boot();
   return {
     closePanel, togglePanelSize, openLightbox, closeLightbox, closePin, closeUnlock, closeAdminRedeem,
-    extLinkProceed, closeExtLinkDialog,
+    extLinkProceed, closeExtLinkDialog, openShortcuts, closeShortcuts,
     // ---- 選用插件掛勾點 API（見 souliong/docs/EXTENDING.md）----
-    onHook, registerPhotoFilter, registerEntriesHint, registerScopeParam,
+    onHook, registerPhotoFilter, registerEntriesHint, registerScopeParam, registerShortcut,
     personTimeline, pointTitle, photoFullUrl, openPanel, openUnlock, refreshEntries: renderEntries,
     refreshPersonFilter: rebuildPersonFilter,
     // getEngine() 是正式的引擎存取介面；getMap() 只在目前的引擎是 LeafletEngine 時才回傳原始

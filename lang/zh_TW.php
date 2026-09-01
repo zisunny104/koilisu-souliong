@@ -26,6 +26,17 @@ return [
     'toggle_3d_aria'         => '切換 3D 地圖模式',
     'reset_view'              => '回到地圖初始位置（R）',
     'reset_view_aria'        => '重置地圖視角',
+
+    // 鍵盤快捷鍵提示按鈕與彈窗（只在滑鼠／觸控板環境顯示，見 page-frame.css 的
+    // any-hover/any-pointer 媒體查詢；內容由 assets/js/viewer.core.js 的 registerShortcut() 動態組成）
+    'shortcuts_btn'          => '鍵盤快捷鍵',
+    'shortcuts_dialog_title' => '鍵盤快捷鍵',
+    'shortcut_esc'           => '關閉目前彈窗／面板',
+    'shortcut_reset_view'    => '回到地圖初始位置',
+    'shortcut_toggle_theme'  => '切換主題',
+    'shortcut_upload'        => '開啟投稿',
+    'shortcut_share'         => '分享這張地圖',
+
     'contrib_fab'            => '投稿',
     'unlock_contrib'         => '解鎖投稿',
     'close'                   => '關閉',

@@ -125,9 +125,12 @@
 }
 
 /* 對話框內本來就是不透明表單控制項的區塊，墨色維持一般主題色，理由同 #panel（point-panel.css）。
-   .btn 不在這份排除名單裡——按鈕改用專屬的 --pack-btn-bg/--pack-btn-ink（見 control-card.css） */
+   .btn 不在這份排除名單裡——按鈕改用專屬的 --pack-btn-bg/--pack-btn-ink（見 control-card.css）。
+   .shortcuts-list dt 也要算進來：鍵名徽章自己另外鋪了一層 var(--bg) 淺底（見下面 .shortcuts-list
+   dt），不是直接坐在對話框材質上，套用材質的墨色（可能是白字）在自己這層淺底上會看不見。 */
 .dialog-box .name-in,
-.dialog-box textarea {
+.dialog-box textarea,
+.shortcuts-list dt {
   --fg: var(--fg-base);
   --muted: var(--muted-base);
   color: var(--fg);
@@ -166,6 +169,34 @@
   align-items: center;
   gap: 12px;
   margin-top: 12px
+}
+
+/* 鍵盤快捷鍵彈窗：dt 是鍵名（例："Esc"／"R"），dd 是說明——內容是開啟當下才由
+   viewer.core.js 的 openShortcuts() 動態組出來，這裡只管排版 */
+.shortcuts-list {
+  margin: 10px 0 0;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 8px 14px;
+  align-items: center
+}
+
+.shortcuts-list dt {
+  justify-self: start;
+  padding: 2px 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--bg);
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--fg)
+}
+
+.shortcuts-list dd {
+  margin: 0;
+  font-size: 0.8125rem;
+  color: var(--muted)
 }
 
 /* PIN 面板 */

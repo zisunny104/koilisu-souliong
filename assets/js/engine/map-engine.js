@@ -42,7 +42,9 @@ window.MapEngine = (() => {
     if (!part) return '';
     const text = esc(i18nSub(part.text));
     const body = part.url ? '<a href="' + esc(part.url) + '" target="_blank" rel="noopener">' + text + '</a>' : text;
-    return (part.copyright ? '&copy; ' : '') + body + (part.suffix ? ' ' + i18nSub(part.suffix) : '');
+    // &copy; 跟後面的名稱之間用不斷行空格——換行時「©」絕不能跟它所屬的名稱拆到兩行，
+    // 變成一個孤伶伶的符號吊在行尾
+    return (part.copyright ? '&copy;&nbsp;' : '') + body + (part.suffix ? ' ' + i18nSub(part.suffix) : '');
   }
   // attribution 欄位可以是上面那種物件排成的陣列（新格式，多方署名各自標 text/url）；也相容
   // 純字串（admin.php／region3d.php／tilecut.php 讓管理員手打圖磚署名時存的就是字串，直接沿用）。
@@ -93,6 +95,20 @@ window.MapEngine = (() => {
     // ---- 圖磚控制 ----
     mountControls(opts) {}
     onBackgroundClick(fn) { throw new Error('MapEngine.onBackgroundClick() not implemented'); }
+
+    // 「左下地圖操作」：一串固定在縮放鈕同一個角落、跟著一起排版的按鈕（例如 #resetBtn，見
+    // pages/view.php／viewer.core.js 的 mountControls() 呼叫）。哪顆鈕該出現、掛在哪個角落，
+    // 統一由這裡的清單跟 require 決定（require 對應引擎子類上的能力旗標，例如 get supports3D()，
+    // 沒填就是兩個引擎都掛）；引擎子類只需要各自實作 _addCornerControl() 這一個轉接器（把一個
+    // 現成的 DOM 元素包成自家控制項系統認得的格式），不用各自重寫「哪顆鈕該不該出現」這段判斷。
+    mountOpButtons(opButtons, position) {
+      (opButtons || []).forEach(b => {
+        if (!b || !b.el) return;
+        if (b.require && !this[b.require]) return;
+        this._addCornerControl(b.el, position);
+      });
+    }
+    _addCornerControl(el, position) { throw new Error('MapEngine._addCornerControl() not implemented'); }
 
     // ---- marker（spec 形狀：{id, lat, lon, html, size:[w,h], anchor:[ax,ay], onClick}）----
     setMarkerLayer(layerKey, specs) { throw new Error('MapEngine.setMarkerLayer() not implemented'); }

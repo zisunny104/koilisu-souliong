@@ -72,6 +72,16 @@ window.MapLibreEngine = (() => {
     }
   }
 
+  // 把一個現成的 DOM 元素（不是重新刻一顆，例如 pages/view.php 的 #resetBtn）包成 MapLibre
+  // 認得的 control，讓它掛進跟縮放鈕（含羅盤，見下面 mountControls()）同一個角落的堆疊，用
+  // MapLibre 自己的排版機制自動疊好，不用寫死高度數字去對齊——縮放鈕比 Leaflet 多一顆羅盤鈕、
+  // 高度不同，寫死數字對不齊就是這樣來的。不限於重置鈕，任何要掛角落的既有元素都能用這個包。
+  class DomControl {
+    constructor(el) { this._el = el; }
+    onAdd() { this._el.classList.add('maplibregl-ctrl'); return this._el; }
+    onRemove() { this._el.classList.remove('maplibregl-ctrl'); }
+  }
+
   // MapLibre CustomLayerInterface（renderingMode:'3d'）＋ three.js 畫單一自訂模型，原本是
   // map3d.js 自己的類別，3D 能力整併進引擎時一起搬過來（見 docs 規劃 Part D）。座標換算沿用官方
   // 文件那套 MercatorCoordinate 作法：模型原點換成麥卡托座標＋公尺→麥卡托單位的縮放係數，
@@ -225,8 +235,13 @@ window.MapLibreEngine = (() => {
 
     mountControls(opts) {
       const o = opts || {};
-      this.map.addControl(new maplibregl.NavigationControl(), mapPos(o.zoomPosition, 'bottom-left'));
+      const zoomPos = mapPos(o.zoomPosition, 'bottom-left');
+      this.map.addControl(new maplibregl.NavigationControl(), zoomPos);
+      this.mountOpButtons(o.opButtons, zoomPos);
       this.map.addControl(new CreditControl(this.credit), mapPos(o.attributionPosition, 'bottom-right'));
+    }
+    _addCornerControl(el, position) {
+      this.map.addControl(new DomControl(el), position);
     }
     onBackgroundClick(fn) { this.map.on('click', fn); }
 

@@ -27,6 +27,15 @@ return [
     'toggle_3d_aria'       => 'Toggle 3D map mode',
     'reset_view'           => 'Reset map view (R)',
     'reset_view_aria'      => 'Reset map view',
+
+    'shortcuts_btn'          => 'Keyboard shortcuts',
+    'shortcuts_dialog_title' => 'Keyboard shortcuts',
+    'shortcut_esc'           => 'Close current dialog/panel',
+    'shortcut_reset_view'    => 'Reset map view',
+    'shortcut_toggle_theme'  => 'Toggle theme',
+    'shortcut_upload'        => 'Open contribution form',
+    'shortcut_share'         => 'Share this map',
+
     'contrib_fab'          => 'Contribute',
     'unlock_contrib'       => 'Unlock submissions',
     'close'                => 'Close',

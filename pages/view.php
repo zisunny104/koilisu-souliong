@@ -177,6 +177,7 @@ if ($pack) {
   <div class="tr-items" id="trItems">
     <?php if ($mod('homeLink')): ?><a class="icon-btn hide-in-embed" id="homeBtn" href="<?= $b ?>" title="<?= $t('back_to_list') ?>" aria-label="<?= $t('back_to_list') ?>"><i class="fa-solid fa-house" aria-hidden="true"></i></a><?php endif; ?>
     <button id="themeBtn" class="icon-btn" title="<?= $t('toggle_theme') ?>" aria-label="<?= $t('toggle_theme_aria') ?>"><i class="fa-solid fa-circle-half-stroke" aria-hidden="true"></i></button>
+    <button id="shortcutsBtn" class="icon-btn shortcuts-btn" title="<?= $t('shortcuts_btn') ?>" aria-label="<?= $t('shortcuts_btn') ?>"><i class="fa-solid fa-keyboard" aria-hidden="true"></i></button>
     <div class="lang-menu hide-in-embed" id="langMenu">
       <button type="button" class="lang-btn" id="langBtn" title="<?= $t('lang_switch') ?>" aria-haspopup="listbox" aria-expanded="false">
         <span id="langBtnLabel"><?= $LANG === 'en' ? 'English' : '中文' ?></span>
@@ -279,6 +280,13 @@ if ($pack) {
       <button class="btn" onclick="MapApp.closeExtLinkDialog()"><?= $t('ext_link_cancel_btn') ?></button>
       <button class="btn primary" onclick="MapApp.extLinkProceed()"><?= $t('ext_link_confirm_btn') ?></button>
     </div>
+  </div>
+</div>
+
+<div id="shortcutsDialog" class="dialog">
+  <div class="dialog-box">
+    <div class="dialog-head"><b><?= $t('shortcuts_dialog_title') ?></b><button class="icon-btn" onclick="MapApp.closeShortcuts()" aria-label="<?= $t('close') ?>"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button></div>
+    <dl class="shortcuts-list" id="shortcutsList"></dl>
   </div>
 </div>
 

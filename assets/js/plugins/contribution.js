@@ -163,6 +163,7 @@
         if (pick) pick.onchange = e => { this.addFiles(Array.from(e.target.files)); };
         const submitAllBtn = document.getElementById('submitAllBtn');
         if (submitAllBtn) submitAllBtn.onclick = () => this.submitAll();
+        this.mapApp.registerShortcut({ key: 'U', label: t('shortcut_upload') });
       }
 
       document.addEventListener('keydown', e => {

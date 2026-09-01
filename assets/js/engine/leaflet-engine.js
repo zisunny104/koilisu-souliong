@@ -124,9 +124,17 @@ window.LeafletEngine = (() => {
 
     mountControls(opts) {
       const o = opts || {};
-      L.control.zoom({ position: o.zoomPosition || 'bottomleft' }).addTo(this.map);
+      const zoomPos = o.zoomPosition || 'bottomleft';
+      L.control.zoom({ position: zoomPos }).addTo(this.map);
       this.map.attributionControl.setPosition(o.attributionPosition || 'bottomright');
       this.map.attributionControl.setPrefix(false);
+      this.mountOpButtons(o.opButtons, zoomPos);
+    }
+    // 把一個現成的 DOM 元素（不是重新刻一顆）包成 Leaflet 認得的 control，讓它掛進跟縮放鈕同一個
+    // 角落的堆疊——角落容器自己會排版，不用算高度數字去對齊（那正是先前 resetBtn 蓋住縮放鈕的原因）。
+    _addCornerControl(el, position) {
+      const ElControl = L.Control.extend({ onAdd: () => el });
+      new ElControl({ position }).addTo(this.map);
     }
     onBackgroundClick(fn) { this.map.on('click', fn); }
 

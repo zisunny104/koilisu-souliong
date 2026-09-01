@@ -26,6 +26,7 @@
         if (/^(INPUT|TEXTAREA|SELECT)$/.test(tag) || e.metaKey || e.ctrlKey || e.altKey) return;
         if (e.key.toLowerCase() === 's' && !this.mapApp.isEmbedMode()) this.open();
       });
+      if (!this.mapApp.isEmbedMode()) this.mapApp.registerShortcut({ key: 'S', label: t('shortcut_share') });
     }
 
     // 比照 embed-code.js：只補「分享卡片獨有」的樣式，遮罩／卡片本體／關閉鈕／按鈕
