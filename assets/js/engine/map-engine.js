@@ -24,7 +24,7 @@ window.MapEngine = (() => {
   // 分隔符號只在這裡定義一次，凡是要把好幾則署名接成一行的地方（下面的 creditListHtml()／
   // buildCredit()／這裡的自家連結）都套用同一個變數，不各自重複同一段字面字串。
   const SEP = ' &middot; ';
-  const REPO_URL = 'https://github.com/zisunny104/koilisu-souliong';
+  const REPO_URL = 'https://github.com/zisunny104/souliong';
   const SITE_URL = (APP.base || '/');
   const ORG_URL = 'https://toka.dev';
   const CREDIT_OWN =

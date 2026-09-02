@@ -41,8 +41,8 @@ This service is not directed at children; do not upload content identifying mino
 
 ## 第三方 / Third parties
 
-地圖以 Leaflet 顯示、預設圖磚 © CARTO、圖資 © OpenStreetMap 貢獻者（ODbL）；QR 在你的瀏覽器本機產生。個別地圖可能改用其他圖磚來源或自繪疊圖，實際來源標示在地圖的圖資出處列。皆用於顯示功能，非廣告或追蹤。授權詳見 [LICENSE](https://github.com/zisunny104/koilisu-souliong/blob/main/LICENSE)。
-Map via Leaflet, default tiles © CARTO, data © OpenStreetMap contributors (ODbL); QR generated locally in your browser. Individual maps may use other tile sources or hand-drawn overlays — the actual source is credited in the map's attribution line. For display only. See [LICENSE](https://github.com/zisunny104/koilisu-souliong/blob/main/LICENSE).
+地圖以 Leaflet 顯示、預設圖磚 © CARTO、圖資 © OpenStreetMap 貢獻者（ODbL）；QR 在你的瀏覽器本機產生。個別地圖可能改用其他圖磚來源或自繪疊圖，實際來源標示在地圖的圖資出處列。皆用於顯示功能，非廣告或追蹤。授權詳見 [LICENSE](https://github.com/zisunny104/souliong/blob/main/LICENSE)。
+Map via Leaflet, default tiles © CARTO, data © OpenStreetMap contributors (ODbL); QR generated locally in your browser. Individual maps may use other tile sources or hand-drawn overlays — the actual source is credited in the map's attribution line. For display only. See [LICENSE](https://github.com/zisunny104/souliong/blob/main/LICENSE).
 
 ---
 

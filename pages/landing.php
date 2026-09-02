@@ -94,7 +94,7 @@ footer a{color:inherit}
   <div class="tag"><?= $t('landing_tagline_1') ?><br><?= $t('landing_tagline_2') ?></div>
   <div class="bar">
     <?php if ($maps && $randomExplore): ?><a class="btn primary" id="randomBtn"><i class="fa-solid fa-shuffle"></i> <?= $t('random_explore_btn') ?></a><?php endif; ?>
-    <a class="btn" href="https://github.com/zisunny104/koilisu-souliong" target="_blank" rel="noopener"><i class="fa-brands fa-github"></i> <?= $t('source_code_btn') ?></a>
+    <a class="btn" href="https://github.com/zisunny104/souliong" target="_blank" rel="noopener"><i class="fa-brands fa-github"></i> <?= $t('source_code_btn') ?></a>
   </div>
 </header>
 <div class="wrap">
@@ -120,7 +120,7 @@ footer a{color:inherit}
     </span>
     <span class="cr-sep" aria-hidden="true"></span>
     <span class="cr-own">
-      <a href="https://github.com/zisunny104/koilisu-souliong" target="_blank" rel="noopener"><i class="fa-brands fa-github"></i> GitHub</a>
+      <a href="https://github.com/zisunny104/souliong" target="_blank" rel="noopener"><i class="fa-brands fa-github"></i> GitHub</a>
       ・ <a href="<?= $b ?>">Souliong</a>
       ・ <a href="https://toka.dev" target="_blank" rel="noopener">prjToka</a>
     </span>
