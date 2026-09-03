@@ -43,6 +43,15 @@ $canProj = function (string $p) use ($cfg, $master): bool {
         && ($master || admin_can($cfg, $p));
 };
 $auditWho = fn(string $p) => $master ? 'master' : (($acc = account_current($cfg)) !== null ? 'acct:' . $acc['id'] : 'pin:' . (string)padm_pin_id($cfg, $p));
+// 依身份派生 CSRF token：master 用 admin_derived()，帳號用 account_derived()，專案 PIN 用
+// padm_derived()。與 admin.php 574-576 行同一套規則。
+$csrfFor = function (string $p) use ($cfg, $master): string {
+    if ($master) {
+        return admin_derived($cfg);
+    }
+    $acc = account_current($cfg);
+    return $acc !== null ? account_derived($cfg, (string)$acc['id']) : padm_derived($cfg, $p, (string)padm_pin_id($cfg, $p));
+};
 
 /** 這個圖層在磁碟上的位置；專案不合法或 projects_dir 沒設回 null。 */
 function tilecut_dir(array $cfg, string $project, string $id): ?string
@@ -87,10 +96,10 @@ if (($_GET['action'] ?? '') === 'srcfile') {
 
 // ── 開工：建立（或清空）圖層資料夾（POST，JSON 回應） ──
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'begin') {
-    if (!hash_equals(admin_derived($cfg), (string)($_POST['csrf'] ?? ''))) {
+    $project = preg_replace('/[^a-z0-9_-]/', '', $_POST['project'] ?? '');
+    if (!hash_equals($csrfFor($project), (string)($_POST['csrf'] ?? ''))) {
         json_out(['error' => $tr('csrf_invalid_ajax_msg')], 403);
     }
-    $project = preg_replace('/[^a-z0-9_-]/', '', $_POST['project'] ?? '');
     if (!$canProj($project)) {
         json_out(['error' => $tr('no_permission_title')], 403);
     }
@@ -127,10 +136,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'begin
 // ── 收磚：一次一批（POST，JSON 回應） ──
 // 欄位名就是座標：tiles[<z>_<x>_<y>]。不用另外傳一份對照表，省掉「檔案與座標對不上」這種錯。
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'tile') {
-    if (!hash_equals(admin_derived($cfg), (string)($_POST['csrf'] ?? ''))) {
+    $project = preg_replace('/[^a-z0-9_-]/', '', $_POST['project'] ?? '');
+    if (!hash_equals($csrfFor($project), (string)($_POST['csrf'] ?? ''))) {
         json_out(['error' => $tr('csrf_invalid_ajax_msg')], 403);
     }
-    $project = preg_replace('/[^a-z0-9_-]/', '', $_POST['project'] ?? '');
     if (!$canProj($project)) {
         json_out(['error' => $tr('no_permission_title')], 403);
     }
@@ -182,10 +191,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'tile'
 // 每一塊都帶 offset，伺服器比對現有長度符合才接：重送一塊已經落地的資料不會變成接兩次，
 // 這是分塊上傳唯一真正麻煩的地方（限流重試時一定會發生）。
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'srcput') {
-    if (!hash_equals(admin_derived($cfg), (string)($_POST['csrf'] ?? ''))) {
+    $project = preg_replace('/[^a-z0-9_-]/', '', $_POST['project'] ?? '');
+    if (!hash_equals($csrfFor($project), (string)($_POST['csrf'] ?? ''))) {
         json_out(['error' => $tr('csrf_invalid_ajax_msg')], 403);
     }
-    $project = preg_replace('/[^a-z0-9_-]/', '', $_POST['project'] ?? '');
     if (!$canProj($project)) {
         json_out(['error' => $tr('no_permission_title')], 403);
     }
@@ -265,10 +274,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'srcpu
 
 // ── 收尾：寫 layer.json（POST，JSON 回應） ──
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'finish') {
-    if (!hash_equals(admin_derived($cfg), (string)($_POST['csrf'] ?? ''))) {
+    $project = preg_replace('/[^a-z0-9_-]/', '', $_POST['project'] ?? '');
+    if (!hash_equals($csrfFor($project), (string)($_POST['csrf'] ?? ''))) {
         json_out(['error' => $tr('csrf_invalid_ajax_msg')], 403);
     }
-    $project = preg_replace('/[^a-z0-9_-]/', '', $_POST['project'] ?? '');
     if (!$canProj($project)) {
         json_out(['error' => $tr('no_permission_title')], 403);
     }
@@ -559,8 +568,8 @@ if (($_GET['help'] ?? '') !== '') {
     exit;
 }
 
-$csrf = admin_derived($cfg);
 $reqProject = in_array($backProject, $allProjects, true) ? $backProject : ($allProjects[0] ?? '');
+$csrf = $csrfFor($reqProject);
 
 // 分塊多大：取 upload_max_filesize 與 post_max_size 的較小者再留兩成給表單其他欄位。
 // 寫死一個「安全值」的話，設定寬鬆的主機會白白多送幾十趟。

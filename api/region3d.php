@@ -46,6 +46,15 @@ $canProj = function (string $p) use ($cfg, $master): bool {
 };
 $canEdit = fn(string $p): bool => admin_perm($cfg, $p, 'edit_3d_regions');
 $auditWho = fn(string $p) => $master ? 'master' : (($acc = account_current($cfg)) !== null ? 'acct:' . $acc['id'] : 'pin:' . (string)padm_pin_id($cfg, $p));
+// 依身份派生 CSRF token：master 用 admin_derived()，帳號用 account_derived()，專案 PIN 用
+// padm_derived()。與 admin.php 574-576 行同一套規則。
+$csrfFor = function (string $p) use ($cfg, $master): string {
+    if ($master) {
+        return admin_derived($cfg);
+    }
+    $acc = account_current($cfg);
+    return $acc !== null ? account_derived($cfg, (string)$acc['id']) : padm_derived($cfg, $p, (string)padm_pin_id($cfg, $p));
+};
 
 /** GeoJSON Polygon 驗證：單一外環、經緯度範圍合理、點數有上限。回傳整理過（只留 [lon,lat]）的結構，不合法回 null。 */
 function region3d_valid_polygon($raw): ?array
@@ -93,10 +102,10 @@ function region3d_valid_ids($raw): array
 // 跟 tilecut 的 begin 不同：這裡不清空舊檔——只改多邊形或模型參數、不重新上傳 model.glb 時，
 // 舊模型必須原封不動留著（見檔頭說明）。
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'begin') {
-    if (!hash_equals(admin_derived($cfg), (string)($_POST['csrf'] ?? ''))) {
+    $project = preg_replace('/[^a-z0-9_-]/', '', $_POST['project'] ?? '');
+    if (!hash_equals($csrfFor($project), (string)($_POST['csrf'] ?? ''))) {
         json_out(['error' => $tr('csrf_invalid_ajax_msg')], 403);
     }
-    $project = preg_replace('/[^a-z0-9_-]/', '', $_POST['project'] ?? '');
     if (!$canProj($project) || !$canEdit($project)) {
         json_out(['error' => $tr('no_permission_title')], 403);
     }
@@ -120,10 +129,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'begin
 // 但少了 idx 欄位；分塊道理同 tilecut：模型檔可能到幾 MB，單一 POST 容易撞 upload_max_filesize
 // 或逾時，offset 對不上就回 409 附帶伺服器手上的長度，前端照那個續傳。
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'srcput') {
-    if (!hash_equals(admin_derived($cfg), (string)($_POST['csrf'] ?? ''))) {
+    $project = preg_replace('/[^a-z0-9_-]/', '', $_POST['project'] ?? '');
+    if (!hash_equals($csrfFor($project), (string)($_POST['csrf'] ?? ''))) {
         json_out(['error' => $tr('csrf_invalid_ajax_msg')], 403);
     }
-    $project = preg_replace('/[^a-z0-9_-]/', '', $_POST['project'] ?? '');
     if (!$canProj($project) || !$canEdit($project)) {
         json_out(['error' => $tr('no_permission_title')], 403);
     }
@@ -182,10 +191,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'srcpu
 
 // ── 收尾：寫 region.json（POST，JSON 回應） ──
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'finish') {
-    if (!hash_equals(admin_derived($cfg), (string)($_POST['csrf'] ?? ''))) {
+    $project = preg_replace('/[^a-z0-9_-]/', '', $_POST['project'] ?? '');
+    if (!hash_equals($csrfFor($project), (string)($_POST['csrf'] ?? ''))) {
         json_out(['error' => $tr('csrf_invalid_ajax_msg')], 403);
     }
-    $project = preg_replace('/[^a-z0-9_-]/', '', $_POST['project'] ?? '');
     if (!$canProj($project) || !$canEdit($project)) {
         json_out(['error' => $tr('no_permission_title')], 403);
     }
@@ -243,10 +252,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'finis
 // 這是 feature.id 萬一失效的復原路徑（見檔頭說明）：前端重新對照目前畫面上的多邊形查一次
 // queryRenderedFeatures，把新算出來的清單送過來，這裡只負責驗證與覆寫那一個欄位。
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'rescan') {
-    if (!hash_equals(admin_derived($cfg), (string)($_POST['csrf'] ?? ''))) {
+    $project = preg_replace('/[^a-z0-9_-]/', '', $_POST['project'] ?? '');
+    if (!hash_equals($csrfFor($project), (string)($_POST['csrf'] ?? ''))) {
         json_out(['error' => $tr('csrf_invalid_ajax_msg')], 403);
     }
-    $project = preg_replace('/[^a-z0-9_-]/', '', $_POST['project'] ?? '');
     if (!$canProj($project) || !$canEdit($project)) {
         json_out(['error' => $tr('no_permission_title')], 403);
     }
@@ -280,8 +289,8 @@ if (!$master && !$allProjects) {
     exit;
 }
 
-$csrf = admin_derived($cfg);
 $reqProject = in_array($backProject, $allProjects, true) ? $backProject : ($allProjects[0] ?? '');
+$csrf = $csrfFor($reqProject);
 
 // 分塊多大：跟 tilecut.php 同一套算法（取 upload_max_filesize 與 post_max_size 的較小者留兩成餘裕）。
 $iniBytes = function (string $k): int {
