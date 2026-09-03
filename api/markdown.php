@@ -153,48 +153,6 @@ final class Markdown
         return implode("\n", $out);
     }
 
-    /** 讀一份 .md 檔並算繪。檔案不在就回 null，讓呼叫端自己決定要不要當錯誤。 */
-    public static function file(string $path, array $opt = []): ?string
-    {
-        if (!is_file($path) || !is_readable($path)) {
-            return null;
-        }
-        $md = file_get_contents($path);
-        return $md === false ? null : self::toHtml($md, $opt);
-    }
-
-    /**
-     * 抽出標題清單，給目錄用。回傳 [['level'=>2,'text'=>'…','id'=>'…'], …]。
-     * id 的算法跟 toHtml() 共用 slug()，所以目錄連得到內文。
-     */
-    public static function headings(string $md, int $maxLevel = 3): array
-    {
-        $out  = [];
-        $seen = [];
-        $fence = false;
-        foreach (explode("\n", str_replace(["\r\n", "\r"], "\n", $md)) as $line) {
-            if (preg_match('/^```+/', trim($line))) {
-                $fence = !$fence;
-                continue;
-            }
-            if ($fence || !preg_match('/^(#{1,6})\s+(.*)$/', trim($line), $m)) {
-                continue;
-            }
-            $lv = strlen($m[1]);
-            if ($lv > $maxLevel) {
-                continue;
-            }
-            $text = rtrim($m[2], " #");
-            $slug = self::slug($text);
-            if ($slug === '') {
-                continue;
-            }
-            $seen[$slug] = ($seen[$slug] ?? 0) + 1;
-            $out[] = ['level' => $lv, 'text' => $text, 'id' => $slug . ($seen[$slug] > 1 ? '-' . $seen[$slug] : '')];
-        }
-        return $out;
-    }
-
     // ── 以下為內部實作 ────────────────────────────────────────────────
 
     /** 分隔列：`|---|:--:|` 這種。只有它能把一堆含 | 的行變成表格。 */

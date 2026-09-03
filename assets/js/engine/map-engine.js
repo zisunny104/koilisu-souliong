@@ -137,8 +137,6 @@ window.MapEngine = (() => {
   }
 
   MapEngine.buildCredit = buildCredit;
-  MapEngine.i18nSub = i18nSub;
-  MapEngine.t = t;
   MapEngine.FALLBACK_LAYER = FALLBACK_LAYER;
 
   return MapEngine;

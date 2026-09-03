@@ -54,7 +54,7 @@
       const def = (this.mapApp.contribCfg() || {}).default;
       this.tab = this.tabs.includes(def) ? def : this.tabs[0];
     }
-    tabKinds(tab) { return SL.kinds.filter(k => k.tab === tab); }
+    tabKinds(tab) { return SL.byTab(tab); }
     // 目前分頁能接受的檔案型別；擋在檔案選擇器上，而不是等使用者選完才跳警告
     tabAccept(tab) { return this.tabKinds(tab).map(k => k.acceptAttr()).filter(Boolean).join(','); }
 

@@ -1522,10 +1522,8 @@ window.MapApp = (() => {
     onHook, registerPhotoFilter, registerEntriesHint, registerScopeParam, registerShortcut,
     personTimeline, pointTitle, photoFullUrl, openPanel, openUnlock, refreshEntries: renderEntries,
     refreshPersonFilter: rebuildPersonFilter,
-    // getEngine() 是正式的引擎存取介面；getMap() 只在目前的引擎是 LeafletEngine 時才回傳原始
-    // 地圖物件，是給還沒遷移完成的呼叫端用的相容用途（見 docs/EXTENDING.md），新的 plugin 不該再用它。
+    // 正式的引擎存取介面，回傳 MapEngine 抽象基底的實例（見 docs/EXTENDING.md）。
     getEngine: () => engine,
-    getMap: () => (engine && engine.type === 'leaflet') ? engine.getRawMap() : null,
     getFilterPerson: () => filterPerson, isPhotoLayerOn: () => photoLayerOn,
     getCurrentPoint: () => current,
     isUnlocked, isEmbedMode: () => EMBED,
