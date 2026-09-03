@@ -55,6 +55,9 @@ switch ($action) {
         $_GET['f'] = count($seg) > 1 ? implode('/', array_slice($seg, 1)) : ($_GET['f'] ?? '');
         require __DIR__ . '/api/model3dfile.php';   // 自訂 3D 模型檔：<base>/model3d/<project>/<id>/model.glb
         return;
+    case 'appasset':
+        require __DIR__ . '/api/appasset.php';   // 第一方 CSS／JS 靜態資源：<base>?api=appasset&f=...
+        return;
     case 'delete':
         require __DIR__ . '/api/delete.php';
         return;

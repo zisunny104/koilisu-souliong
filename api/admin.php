@@ -1376,6 +1376,11 @@ if (!$authed) {
         // 編輯版本的 photo/exif 依設計為 null（沿用原始投稿），顯示時要透過 edit_of 回原始那筆取值
         $byId = [];
         foreach ($rows as $r) { $byId[$r['project'] . '/' . (string)($r['id'] ?? '')] = $r; }
+        // 依 project 分組，供下方專案清單迴圈依 key 取用。
+        $rowsByProject = [];
+        foreach ($rows as $r) { $rowsByProject[$r['project']][] = $r; }
+        // 全站 pins 資料，讀一次供下方迴圈依 key 取用。
+        $pinsAllData = pins_load($cfg);
 
         header('Content-Type: text/html; charset=utf-8');
           ?>
@@ -3113,7 +3118,7 @@ if (!$authed) {
     <?php foreach ($viewProjects as $p):
       $meta = json_decode((string)@file_get_contents($cfg['projects_dir'] . '/' . $p . '/meta.json'), true);
       $contribOpen = contrib_open($cfg, $p);   // 有沒有還有效的投稿碼＝這張地圖現在開不開放投稿
-      $ppinsAll = pins_load($cfg)['projects'][$p] ?? [];
+      $ppinsAll = $pinsAllData['projects'][$p] ?? [];
       $realPins = array_values(array_filter($ppinsAll, fn($e) => ($e['kind'] ?? 'pin') !== 'invite'));
       $invites = array_values(array_filter($ppinsAll, fn($e) => ($e['kind'] ?? 'pin') === 'invite'));
     ?>
@@ -3121,7 +3126,11 @@ if (!$authed) {
         <div class="projtitle"><i class="fa-solid fa-map-location-dot"></i> <?= $esc($meta['title'] ?? $p) ?>（<?= $esc($p) ?>）</div>
         <div class="projactions">
           <a class="btn" href="<?= $esc(Route::backupProject($p)) ?>"><i class="fa-solid fa-download"></i> <?= $t('backup_project_btn') ?></a>
-          <?php if ($canProject($p)): ?>
+          <?php if ($canProject($p)):
+            // 本區塊內 pack／layer 清單，供下方設定對話框與專案專屬清單共用。
+            $packListAll = souliong_pack_list($cfg, $p);
+            $layAllForP = souliong_layer_list($cfg, $p);
+          ?>
           <button type="button" class="btn" onclick="document.getElementById('metadlg-<?= $esc($p) ?>').showModal()"><i class="fa-solid fa-pen-to-square"></i> <?= $t('edit_project_desc_btn') ?></button>
           <dialog id="metadlg-<?= $esc($p) ?>" class="metadlg" onclick="if(event.target===this)this.close()">
             <form method="post" class="metaform">
@@ -3136,7 +3145,7 @@ if (!$authed) {
                 // 三態下拉（對應上面 action=meta 的 pack 處理）：沒有 pack 欄位＝跟隨全站，
                 // 空字串＝這張地圖明確不套用。順便把全站目前設的是哪一包寫在選項裡，
                 // 才不用切到「工具」分頁才知道「跟隨全站」實際上會長什麼樣。
-                $packList = souliong_pack_list($cfg, $p);
+                $packList = $packListAll;
                 $packHas  = is_array($meta) && array_key_exists('pack', $meta) && is_string($meta['pack']);
                 $packSel  = $packHas ? $meta['pack'] : null;
                 $sitePack = souliong_site_pack($cfg);
@@ -3159,7 +3168,7 @@ if (!$authed) {
                 // 圖層挑選器。清單由上而下＝由頂層到底層（跟繪圖軟體的圖層面板一致），
                 // meta.json 存的是相反方向，兩邊各自反轉一次，見上面 action=meta 的處理。
                 // 勾選的排在前面（照現有疊法），沒勾的接在後面等著被叫上來。
-                $layAll  = souliong_layer_list($cfg, $p);
+                $layAll  = $layAllForP;
                 $layCur  = array_values(array_filter(
                   array_reverse((array)($meta['layers'] ?? [])),
                   fn($lid) => is_string($lid) && isset($layAll[$lid])
@@ -3253,7 +3262,7 @@ if (!$authed) {
             // 這張地圖自己的圖層（projects/<id>/layers/）。放在專案卡而不是「工具」分頁，因為
             // 工具分頁只有主要管理者看得到，而自繪插畫本來就該由該地圖的管理者自己換。
             // 全站層在這裡只列不給刪改——要動它得去工具分頁。
-            $projLayers = array_filter(souliong_layer_list($cfg, $p), fn($li) => ($li['scope'] ?? '') === 'project');
+            $projLayers = array_filter($layAllForP, fn($li) => ($li['scope'] ?? '') === 'project');
           ?>
           <button type="button" class="btn" onclick="document.getElementById('lyrdlg-<?= $esc($p) ?>').showModal()"><i class="fa-solid fa-layer-group"></i> <?= $t('layers_heading') ?></button>
           <dialog id="lyrdlg-<?= $esc($p) ?>" class="metadlg" onclick="if(event.target===this)this.close()">
@@ -3318,7 +3327,7 @@ if (!$authed) {
           <?php
             // 這張地圖自己的主題包（projects/<id>/packs/）。跟上面的圖層對話框同一個道理：
             // 客製材質不想污染全站清單時，直接匯進這裡。全站包在這裡只列不給刪改。
-            $projPacks = array_filter(souliong_pack_list($cfg, $p), fn($pk) => ($pk['scope'] ?? '') === 'project');
+            $projPacks = array_filter($packListAll, fn($pk) => ($pk['scope'] ?? '') === 'project');
           ?>
           <button type="button" class="btn" onclick="document.getElementById('pkrdlg-<?= $esc($p) ?>').showModal()"><i class="fa-solid fa-swatchbook"></i> <?= $t('packs_heading') ?></button>
           <dialog id="pkrdlg-<?= $esc($p) ?>" class="metadlg" onclick="if(event.target===this)this.close()">
@@ -3362,8 +3371,7 @@ if (!$authed) {
         // 依實際投稿紀錄統計每個身分的則數：有 PIN 身分的算 contrib_id，其餘（含匿名）算 owner_hash 分組。
         $contribCounts = [];
         $ownerGroups = [];
-        foreach ($rows as $r) {
-          if (($r['project'] ?? '') !== $p) continue;
+        foreach ($rowsByProject[$p] ?? [] as $r) {
           $cid = $r['contrib_id'] ?? null;
           if ($cid) { $contribCounts[$cid] = ($contribCounts[$cid] ?? 0) + 1; continue; }
           $oh = $r['owner_hash'] ?? null;

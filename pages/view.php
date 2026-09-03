@@ -91,6 +91,12 @@ $APP = [
     'map3d'       => $map3d,
 ];
 $jsonFlags = JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_APOS;
+$esc = fn($s): string => htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8');
+// 產生第一方 CSS／JS 網址（經 api/appasset.php 供應），版本號取檔案 mtime 供快取失效用。
+$assetUrl = function (string $rel) use ($esc): string {
+    $abs = __DIR__ . '/../' . $rel;
+    return $esc(Route::api('appasset', ['f' => $rel, 'v' => (string)(@filemtime($abs) ?: 0)]));
+};
 ?><!DOCTYPE html>
 <html lang="<?= $LANG === 'en' ? 'en' : 'zh-Hant' ?>">
 <head>
@@ -117,25 +123,30 @@ $jsonFlags = JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JS
       // 已存自訂模型時才會執行,沒有自訂模型的地圖不用付這個下載成本(見該檔 _maybeLoadThree()) ?>
 <?php endif; ?>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-<style><?php
-// 依原本 style.css 的層疊順序拆成多檔（見 assets/css/），新增樣式分類時只要在陣列裡加檔名即可
+<?php
+// 依 style.css 原本的層疊順序列出各檔（見 assets/css/），新增樣式分類時在陣列加檔名即可。
 $cssFiles = ['theme', 'control-card', 'popups', 'map-markers', 'point-panel', 'map-controls', 'lightbox', 'page-frame'];
 // 投稿對話框的樣式跟著它的外掛走：唯讀地圖根本不會有 #contribModal，沒必要送這段 CSS
 if ($mod('upload')) {
     $cssFiles[] = 'contrib';
 }
 foreach ($cssFiles as $f) {
-    readfile(__DIR__ . "/../assets/css/$f.css");
+?>
+<link rel="stylesheet" href="<?= $assetUrl("assets/css/$f.css") ?>">
+<?php
 }
-// 主題包接在 base 主題之後,純靠 cascade 順序覆寫 --pack-* 變數；沒選包就不會 readfile,
-// 各面板裡的 var(--pack-*, <預設值>) 全部退回預設值，畫面與拆分之前一致。
+// 主題包接在 base 主題之後，靠 cascade 覆寫 --pack-* 變數；未選包時不輸出這個 <link>，
+// 各面板改用 var(--pack-*, 預設值) 的預設值。
 if ($pack) {
     $packDir = souliong_pack_dir($apiCfg, $pack['id'], $proj);
     if ($packDir !== null) {
-        readfile($packDir . '/pack.css');
+        $packVer = (string)(@filemtime($packDir . '/pack.css') ?: 0);
+?>
+<link rel="stylesheet" href="<?= $esc(Route::api('appasset', ['pack' => $pack['id'], 'project' => $proj, 'v' => $packVer])) ?>">
+<?php
     }
 }
-?></style>
+?>
 <script>try{var t=localStorage.getItem('theme');if(t==='dark'||t==='light')document.documentElement.dataset.theme=t;}catch(e){}</script>
 </head>
 <body class="<?= $embed ? 'embed' : '' ?>">
@@ -313,43 +324,43 @@ window.maplibregl = maplibregl;
 <script src="https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js"></script>
 <?php endif; ?>
 <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
-<script><?php readfile(__DIR__ . '/../assets/js/pin-input.js'); ?></script>
-<script><?php readfile(__DIR__ . '/../assets/js/engine/map-engine.js'); ?></script>
+<script src="<?= $assetUrl('assets/js/pin-input.js') ?>"></script>
+<script src="<?= $assetUrl('assets/js/engine/map-engine.js') ?>"></script>
 <?php if ($primaryEngine === 'leaflet'): ?>
-<script><?php readfile(__DIR__ . '/../assets/js/engine/leaflet-engine.js'); ?></script>
+<script src="<?= $assetUrl('assets/js/engine/leaflet-engine.js') ?>"></script>
 <?php endif; ?>
 <?php if ($primaryEngine === 'maplibre' || $mod('map3d')): ?>
-<script><?php readfile(__DIR__ . '/../assets/js/engine/maplibre-engine.js'); ?></script>
+<script src="<?= $assetUrl('assets/js/engine/maplibre-engine.js') ?>"></script>
 <?php endif; ?>
-<script><?php readfile(__DIR__ . '/../assets/js/viewer.core.js'); ?></script>
+<script src="<?= $assetUrl('assets/js/viewer.core.js') ?>"></script>
 <?php if ($mod('identity')): ?>
-<script><?php readfile(__DIR__ . '/../assets/js/plugins/contributor-identity.js'); ?></script>
+<script src="<?= $assetUrl('assets/js/plugins/contributor-identity.js') ?>"></script>
 <?php endif; ?>
 <?php if ($contribFiles): /* 型別檔要在外掛之前載入：外掛開機時就要有完整的型別註冊表才能決定分頁 */ ?>
-<script><?php readfile(__DIR__ . '/../assets/js/contrib/kind-base.js'); ?></script>
+<script src="<?= $assetUrl('assets/js/contrib/kind-base.js') ?>"></script>
 <?php foreach ($contribFiles as $kf): ?>
-<script><?php readfile(__DIR__ . '/../assets/js/contrib/kind-' . $kf . '.js'); ?></script>
+<script src="<?= $assetUrl('assets/js/contrib/kind-' . $kf . '.js') ?>"></script>
 <?php endforeach; ?>
-<script><?php readfile(__DIR__ . '/../assets/js/plugins/contribution.js'); ?></script>
+<script src="<?= $assetUrl('assets/js/plugins/contribution.js') ?>"></script>
 <?php endif; ?>
 <?php if ($mod('embed')): ?>
-<script><?php readfile(__DIR__ . '/../assets/js/plugins/embed-code.js'); ?></script>
+<script src="<?= $assetUrl('assets/js/plugins/embed-code.js') ?>"></script>
 <?php endif; ?>
 <?php if ($mod('share')): ?>
-<script><?php readfile(__DIR__ . '/../assets/js/vendor/qrcode-generator.js'); ?></script>
-<script><?php readfile(__DIR__ . '/../assets/js/plugins/share-link.js'); ?></script>
+<script src="<?= $assetUrl('assets/js/vendor/qrcode-generator.js') ?>"></script>
+<script src="<?= $assetUrl('assets/js/plugins/share-link.js') ?>"></script>
 <?php endif; ?>
 <?php if ($mod('route')): ?>
-<script><?php readfile(__DIR__ . '/../assets/js/plugins/route-tour.js'); ?></script>
+<script src="<?= $assetUrl('assets/js/plugins/route-tour.js') ?>"></script>
 <?php endif; ?>
 <?php if ($mod('story')): ?>
-<script><?php readfile(__DIR__ . '/../assets/js/plugins/story-editor.js'); ?></script>
+<script src="<?= $assetUrl('assets/js/plugins/story-editor.js') ?>"></script>
 <?php endif; ?>
 <?php if ($mod('personExplore')): ?>
-<script><?php readfile(__DIR__ . '/../assets/js/plugins/person-explore.js'); ?></script>
+<script src="<?= $assetUrl('assets/js/plugins/person-explore.js') ?>"></script>
 <?php endif; ?>
 <?php if ($mod('map3d')): ?>
-<script type="module"><?php readfile(__DIR__ . '/../assets/js/plugins/map3d.js'); ?></script>
+<script type="module" src="<?= $assetUrl('assets/js/plugins/map3d.js') ?>"></script>
 <?php endif; ?>
 </body>
 </html>
